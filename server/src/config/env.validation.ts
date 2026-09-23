@@ -20,6 +20,8 @@ export const envValidationSchema = Joi.object({
   STORAGE_PROVIDER: Joi.string().valid('local', 's3').default('local'),
   ADMIN_EMAIL: Joi.string().email().optional(),
   ADMIN_PASSWORD: Joi.string().allow('').optional(),
+  AZURE_STORAGE_CONNECTION_STRING: Joi.string().allow('').optional(),
+  AZURE_STORAGE_CONTAINER: Joi.string().default('event-posters'),
 });
 
 export type EnvConfig = {

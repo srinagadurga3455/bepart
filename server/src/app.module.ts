@@ -9,6 +9,7 @@ import { EventsModule } from './events/events.module';
 import { RegistrationsModule } from './registrations/registrations.module';
 import { AdminModule } from './admin/admin.module';
 import { StorageModule } from './storage/storage.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -22,6 +23,7 @@ import { RolesGuard } from './common/guards/roles.guard';
         limit: 60,
       },
     ]),
+    WhatsappModule,
     AuthModule,
     OrganizersModule,
     EventsModule,

@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -124,5 +125,39 @@ export class EventsController {
   @ApiResponse({ status: 404, description: 'Not found' })
   cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return this.eventsService.cancel(id, user.userId || user.id, user.role);
+  }
+
+  @Post(':id/poster')
+  @Roles(Role.ORGANIZER)
+  @ApiBearerAuth('JWT-auth')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!allowed.includes(file.mimetype)) {
+          return cb(new BadRequestException(`Invalid file type ${file.mimetype}. Allowed: jpeg, png, webp`), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload event poster', description: 'ORGANIZER only — upload poster for own event. Returns posterUrl.' })
+  @ApiParam({ name: 'id', type: Number, description: 'Event integer ID' })
+  @ApiBody({
+    description: 'Poster image (jpeg/png/webp, max 5 MB)',
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Poster uploaded {message, posterUrl}' })
+  @ApiResponse({ status: 400, description: 'Invalid file type / too large / missing' })
+  @ApiResponse({ status: 403, description: 'Not owner' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  uploadPoster(@Param('id', ParseIntPipe) id: number, @UploadedFile() file: Express.Multer.File, @CurrentUser() user: RequestUser) {
+    return this.eventsService.uploadPoster(id, file, user.userId || user.id);
   }
 }

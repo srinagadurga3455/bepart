@@ -1,18 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RegistrationsService } from './registrations.service';
-import { PrismaService } from '../database/prisma.service';
+import { RegistrationsRepository } from './registrations.repo';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 
 describe('RegistrationsService - Updated Schema Int EventId', () => {
   let service: RegistrationsService;
   let mockTx: any;
 
-  const mockPrisma: any = {
-    $transaction: jest.fn((cb) => cb(mockTx)),
-    registration: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
-    organizer: { findUnique: jest.fn() },
-    event: { findUnique: jest.fn() },
-    user: { findUnique: jest.fn() },
+  const mockRegistrationsRepo: any = {
+    transaction: jest.fn((cb) => cb(mockTx)),
+    findAll: jest.fn(),
+    findByOrganizerId: jest.fn(),
+    findByPhone: jest.fn(),
+    findByRegistrationId: jest.fn(),
+    findOrganizerByUserId: jest.fn(),
+    findEventById: jest.fn(),
+    findUserById: jest.fn(),
+    deleteByRegistrationId: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -21,13 +25,13 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
       event: { findUnique: jest.fn() },
       registration: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), count: jest.fn() },
     };
-    mockPrisma.registration.findUnique = jest.fn();
-    mockPrisma.organizer.findUnique = jest.fn();
-    mockPrisma.event.findUnique = jest.fn();
-    mockPrisma.user.findUnique = jest.fn();
+    mockRegistrationsRepo.findByRegistrationId = jest.fn();
+    mockRegistrationsRepo.findOrganizerByUserId = jest.fn();
+    mockRegistrationsRepo.findEventById = jest.fn();
+    mockRegistrationsRepo.findUserById = jest.fn();
 
     const mod: TestingModule = await Test.createTestingModule({
-      providers: [RegistrationsService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [RegistrationsService, { provide: RegistrationsRepository, useValue: mockRegistrationsRepo }],
     }).compile();
     service = mod.get(RegistrationsService);
   });
@@ -66,15 +70,15 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
   });
 
   it('should restrict student to own phone', async () => {
-    mockPrisma.registration.findUnique.mockResolvedValue({ registrationId: 'r1', phone: '+91 1111111111', eventId: 1 });
-    mockPrisma.user.findUnique.mockResolvedValue({ id: 'user1', phone: '+91 9999999999' });
+    mockRegistrationsRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', phone: '+91 1111111111', eventId: 1 });
+    mockRegistrationsRepo.findUserById.mockResolvedValue({ id: 'user1', phone: '+91 9999999999' });
     await expect(service.findOne('r1', 'user1', 'STUDENT')).rejects.toThrow(ForbiddenException);
   });
 
   it('should restrict organizer to own event', async () => {
-    mockPrisma.registration.findUnique.mockResolvedValue({ registrationId: 'r1', phone: '+91 9999999999', eventId: 1 });
-    mockPrisma.event.findUnique.mockResolvedValue({ id: 1, organizerId: 'org1' });
-    mockPrisma.organizer.findUnique.mockResolvedValue({ id: 'org2' });
+    mockRegistrationsRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', phone: '+91 9999999999', eventId: 1 });
+    mockRegistrationsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1' });
+    mockRegistrationsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org2' });
     await expect(service.findOne('r1', 'user1', 'ORGANIZER')).rejects.toThrow(ForbiddenException);
   });
 });

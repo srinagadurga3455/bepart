@@ -5,9 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { AuthRepository } from './auth.repo';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
+    WhatsappModule,
+    UsersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -18,7 +23,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, AuthRepository, JwtStrategy],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

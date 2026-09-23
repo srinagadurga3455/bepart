@@ -47,7 +47,7 @@ enum EventStatus {
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
-  password  String
+  password  String?
   name      String
   phone     String?
   role      Role     @default(STUDENT)
@@ -60,6 +60,26 @@ model User {
   @@index([role])
   @@index([createdAt])
   @@map("users")
+}
+
+enum OtpPurpose {
+  ADMIN_LOGIN
+  ORGANIZER_LOGIN
+}
+
+model OtpVerification {
+  id         String     @id @default(cuid())
+  identifier String
+  otpHash    String
+  purpose    OtpPurpose
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  verified   Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("otp_verifications")
 }
 
 model Admin {
@@ -112,6 +132,7 @@ model Event {
   closingTime   DateTime
   status        EventStatus @default(DRAFT)
   formStructure Json?
+  posterUrl     String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

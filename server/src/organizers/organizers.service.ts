@@ -1,118 +1,113 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { OrganizersRepository } from './organizers.repo';
 import { CreateOrganizerDto } from './dto/create-organizer.dto';
 import { UpdateOrganizerDto } from './dto/update-organizer.dto';
 import { OrganizerStatus, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { ConfigService } from '@nestjs/config';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class OrganizersService {
+  private readonly logger = new Logger(OrganizersService.name);
+
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly organizersRepo: OrganizersRepository,
+    private readonly whatsappService: WhatsappService,
   ) {}
 
   private async getOrganizerOrFail(id: string) {
-    const org = await this.prisma.organizer.findUnique({ where: { id }, include: { user: true } });
+    const org = await this.organizersRepo.findOrganizerById(id);
     if (!org) throw new NotFoundException('Organizer not found');
     return org;
   }
 
   private async getOrganizerByUserId(userId: string) {
-    return this.prisma.organizer.findUnique({ where: { userId }, include: { user: true } });
+    return this.organizersRepo.findOrganizerByUserId(userId);
   }
 
   // ADMIN creates Organizer directly — creates User (ORGANIZER) + Organizer profile, links adminId
+  // Password no longer required; OTP will be used for login. User.password stored as null.
   async adminCreate(dto: import('./dto/admin-create-organizer.dto').AdminCreateOrganizerDto, adminUserId: string) {
     const normalizedEmail = dto.email.toLowerCase().trim();
 
-    // Check duplicate User email (login email)
-    const existingUser = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
+    const existingUser = await this.organizersRepo.findUserByEmail(normalizedEmail);
     if (existingUser) throw new ConflictException('Email already registered');
 
-    // Check duplicate Organizer email (contact email, unique)
-    const existingOrgByEmail = await this.prisma.organizer
-      .findUnique({ where: { email: normalizedEmail } })
-      .catch(() => null);
+    const existingOrgByEmail = await this.organizersRepo.findOrganizerByEmail(normalizedEmail).catch(() => null);
     if (existingOrgByEmail) throw new ConflictException('Organizer email already used');
 
-    // Hash password using existing bcrypt setup
-    const rounds = this.config.get<number>('BCRYPT_SALT_ROUNDS', 10);
-    const hashed = await bcrypt.hash(dto.password, rounds);
-
-    // Resolve adminId for linking (Admin.id == User.id per seed)
     let adminId: string | null = null;
-    const adminProfile = await this.prisma.admin.findUnique({ where: { id: adminUserId } });
+    const adminProfile = await this.organizersRepo.findAdminById(adminUserId);
     if (adminProfile) adminId = adminProfile.id;
     else {
-      const anyAdmin = await this.prisma.admin.findFirst();
+      const anyAdmin = await this.organizersRepo.findFirstAdmin();
       if (anyAdmin) adminId = anyAdmin.id;
     }
 
-    // Transaction: create User + Organizer atomically
-    const result = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email: normalizedEmail,
-          password: hashed,
-          name: dto.name.trim(),
-          phone: dto.phone?.trim(),
-          role: Role.ORGANIZER,
-          isActive: true,
-        },
-      });
-
-      const organizer = await tx.organizer.create({
-        data: {
-          userId: user.id,
-          adminId,
-          name: dto.name.trim(),
-          description: dto.description?.trim(),
-          phone: dto.phone?.trim(),
-          email: normalizedEmail,
-          upiId: dto.upiId?.trim(),
-          status: OrganizerStatus.APPROVED,
-        },
-        include: { user: { select: { id: true, name: true, email: true, role: true, isActive: true } }, admin: true },
-      });
-
-      return organizer;
+    const result = await this.organizersRepo.createOrganizerWithUser({
+      email: normalizedEmail,
+      name: dto.name.trim(),
+      phone: dto.phone?.trim(),
+      description: dto.description?.trim(),
+      upiId: dto.upiId?.trim(),
+      adminId,
     });
+
+    // Generate OTP for organizer and log via console + Whatsapp mock
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await this.organizersRepo.createOtp({
+      identifier: normalizedEmail,
+      otpHash,
+      purpose: 'ORGANIZER_LOGIN' as any,
+      expiresAt,
+    });
+    console.log(`[OTP] ORGANIZER ${normalizedEmail} -> ${otp}`);
+    this.logger.log(`[OTP] ORGANIZER ${normalizedEmail} -> ${otp}`);
+    await this.whatsappService.sendOtp(normalizedEmail, otp);
 
     return result;
   }
 
   async create(dto: CreateOrganizerDto, userId: string, userRole: string) {
     if (userRole === Role.STUDENT) throw new ForbiddenException('Students cannot create organizer profiles. Register as ORGANIZER.');
-    const existing = await this.prisma.organizer.findUnique({ where: { userId } });
+    const existing = await this.organizersRepo.findOrganizerByUserId(userId);
     if (existing) throw new ConflictException('Organizer profile already exists for this user');
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.organizersRepo.findUserById(userId);
     if (!user) throw new NotFoundException('User not found');
     if (dto.email) {
-      const dup = await this.prisma.organizer.findUnique({ where: { email: dto.email.toLowerCase().trim() } }).catch(() => null);
+      const dup = await this.organizersRepo.findOrganizerByEmail(dto.email.toLowerCase().trim()).catch(() => null);
       if (dup) throw new ConflictException('Email already used');
     }
-    const organizer = await this.prisma.organizer.create({
-      data: {
-        userId,
-        name: dto.name.trim(),
-        description: dto.description?.trim(),
-        phone: dto.phone?.trim(),
-        email: dto.email?.toLowerCase().trim(),
-        upiId: dto.upiId?.trim(),
-        status: OrganizerStatus.APPROVED,
-      },
-      include: { user: { select: { id: true, name: true, email: true, role: true } } },
+    const organizer = await this.organizersRepo.createOrganizer({
+      userId,
+      name: dto.name.trim(),
+      description: dto.description?.trim(),
+      phone: dto.phone?.trim(),
+      email: dto.email?.toLowerCase().trim(),
+      upiId: dto.upiId?.trim(),
+      status: OrganizerStatus.APPROVED,
     });
     return organizer;
   }
 
   async findAll() {
-    return this.prisma.organizer.findMany({
-      include: { user: { select: { id: true, name: true, email: true, role: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.organizersRepo.findAllOrganizers();
+  }
+
+  async getOrganizerEvents(organizerId: string, query: { page?: number; limit?: number }) {
+    const organizer = await this.organizersRepo.findOrganizerById(organizerId);
+    if (!organizer) throw new NotFoundException('Organizer not found');
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(50, Math.max(1, query.limit || 10));
+    const skip = (page - 1) * limit;
+    const where = { organizerId };
+    const [data, total] = await Promise.all([
+      this.organizersRepo.findEventsByOrganizer(organizerId, skip, limit),
+      this.organizersRepo.countEvents(where),
+    ]);
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async findMyOrganizer(userId: string) {
@@ -138,51 +133,36 @@ export class OrganizersService {
     if (dto.phone !== undefined) data.phone = dto.phone?.trim();
     if (dto.email !== undefined) data.email = dto.email?.toLowerCase().trim();
     if (dto.upiId !== undefined) data.upiId = dto.upiId?.trim();
-    return this.prisma.organizer.update({
-      where: { id },
-      data,
-      include: { user: { select: { id: true, name: true, email: true, role: true } } },
-    });
+    return this.organizersRepo.updateOrganizer(id, data);
   }
 
   async remove(id: string) {
     const org = await this.getOrganizerOrFail(id);
-    const eventCount = await this.prisma.event.count({ where: { organizerId: id } });
+    const eventCount = await this.organizersRepo.countEventsByOrganizer(id);
     if (eventCount > 0) throw new ConflictException(`Cannot delete organizer with ${eventCount} event(s). Deactivate instead.`);
-    await this.prisma.organizer.delete({ where: { id } });
+    await this.organizersRepo.deleteOrganizer(id);
     return { message: 'Organizer deleted', id: org.id };
   }
 
   async deactivate(id: string) {
     const org = await this.getOrganizerOrFail(id);
-    const [updatedOrg] = await this.prisma.$transaction([
-      this.prisma.organizer.update({
-        where: { id },
-        data: { status: OrganizerStatus.REJECTED },
-        include: { user: { select: { id: true, name: true, email: true, role: true } } },
-      }),
-      this.prisma.user.update({ where: { id: org.userId! }, data: { isActive: false } }),
-    ]);
+    const [updatedOrg] = await this.organizersRepo.deactivateTransaction(id, org.userId!);
     return updatedOrg;
   }
 
   async approve(id: string) {
     const org = await this.getOrganizerOrFail(id);
     if (org.status === OrganizerStatus.APPROVED) return org;
-    return this.prisma.organizer.update({ where: { id }, data: { status: OrganizerStatus.APPROVED }, include: { user: true } });
+    return this.organizersRepo.updateOrganizerStatus(id, OrganizerStatus.APPROVED, true);
   }
 
   async reject(id: string, reason?: string) {
     await this.getOrganizerOrFail(id);
-    return this.prisma.organizer.update({
-      where: { id },
-      data: { status: OrganizerStatus.REJECTED },
-      include: { user: true },
-    });
+    return this.organizersRepo.updateOrganizerStatus(id, OrganizerStatus.REJECTED, true);
   }
 
   async getApprovedOrganizerByUserId(userId: string) {
-    const org = await this.prisma.organizer.findUnique({ where: { userId } });
+    const org = await this.organizersRepo.findOrganizerByUserId(userId);
     if (!org) throw new NotFoundException('Organizer profile not found');
     if (org.status !== OrganizerStatus.APPROVED) throw new ForbiddenException(`Organizer not approved (status: ${org.status}). Only APPROVED organizers can manage events.`);
     return org;

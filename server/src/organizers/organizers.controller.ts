@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OrganizersService } from './organizers.service';
 import { CreateOrganizerDto } from './dto/create-organizer.dto';
 import { AdminCreateOrganizerDto } from './dto/admin-create-organizer.dto';
@@ -19,10 +19,10 @@ export class OrganizersController {
   @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Create organizer (ADMIN only)',
-    description: 'ADMIN creates Organizer directly — creates User (role=ORGANIZER, hashed password) + Organizer profile linked via adminId and set to APPROVED. No approval step required. Organizer can then login via /api/auth/login and manage events.',
+    description: 'ADMIN creates Organizer directly — creates User (role=ORGANIZER) + Organizer profile linked via adminId and set to APPROVED. OTP is generated and logged to server console (Whatsapp mock). Organizer logs in via POST /api/auth/verify-otp.',
   })
   @ApiBody({ type: AdminCreateOrganizerDto })
-  @ApiResponse({ status: 201, description: 'Organizer + User created (APPROVED), organizer can login and manage events' })
+  @ApiResponse({ status: 201, description: 'Organizer + User created (APPROVED), OTP logged to console, organizer can verify OTP and manage events' })
   @ApiResponse({ status: 403, description: 'ADMIN only' })
   @ApiResponse({ status: 409, description: 'Email already registered/used' })
   create(@Body() dto: AdminCreateOrganizerDto, @CurrentUser() user: RequestUser) {
@@ -41,10 +41,28 @@ export class OrganizersController {
   @Get()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List all organizers (ADMIN only)' })
-  @ApiResponse({ status: 200, description: 'Organizer list' })
+  @ApiResponse({ status: 200, description: 'Organizer list with _count.events' })
   @ApiResponse({ status: 403, description: 'ADMIN only' })
   findAll() {
     return this.organizersService.findAll();
+  }
+
+  @Get(':id/events')
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'List events for an organizer (ADMIN)' })
+  @ApiParam({ name: 'id', description: 'Organizer ID' })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  @ApiResponse({ status: 200, description: 'Paginated events {data, meta} for organizer' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'ADMIN only' })
+  @ApiResponse({ status: 404, description: 'Organizer not found' })
+  getOrganizerEvents(@Param('id') id: string, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.organizersService.getOrganizerEvents(id, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 
   @Get(':id')

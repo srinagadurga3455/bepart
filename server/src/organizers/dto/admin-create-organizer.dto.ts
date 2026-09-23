@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class AdminCreateOrganizerDto {
   @ApiProperty({ example: 'Tech Club', description: 'Organizer/club name' })
@@ -12,12 +12,6 @@ export class AdminCreateOrganizerDto {
   @IsEmail()
   @MaxLength(255)
   email: string;
-
-  @ApiProperty({ example: 'Organizer@123', description: 'Login password for organizer (min 8 chars, hashed via bcrypt)' })
-  @IsString()
-  @MinLength(8)
-  @MaxLength(128)
-  password: string;
 
   @ApiPropertyOptional({ example: 'Official tech club' })
   @IsOptional()

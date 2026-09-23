@@ -1,20 +1,28 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
-import { PrismaService } from '../database/prisma.service';
+import { AuthRepository } from './auth.repo';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { Role } from '../common/constants/roles';
 
-const mockPrisma = {
-  user: {
-    findUnique: jest.fn(),
-    create: jest.fn(),
-  },
+const mockAuthRepo: any = {
+  findUserByEmail: jest.fn(),
+  findUserByPhone: jest.fn(),
+  findUserByEmailOrPhone: jest.fn(),
+  findUserByIdWithProfile: jest.fn(),
+  findUserByEmailNormalized: jest.fn(),
+  createOtp: jest.fn(),
+  findLatestValidOtp: jest.fn(),
+  incrementOtpAttempts: jest.fn(),
+  markOtpVerified: jest.fn(),
 };
 
-describe('AuthService', () => {
+const mockWhatsapp = { sendOtp: jest.fn().mockResolvedValue(undefined) };
+
+describe('AuthService OTP', () => {
   let service: AuthService;
 
   beforeEach(async () => {
@@ -22,7 +30,8 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        { provide: PrismaService, useValue: mockPrisma },
+        { provide: AuthRepository, useValue: mockAuthRepo },
+        { provide: WhatsappService, useValue: mockWhatsapp },
         {
           provide: ConfigService,
           useValue: {
@@ -34,79 +43,103 @@ describe('AuthService', () => {
             }),
           },
         },
-        {
-          provide: JwtService,
-          useValue: { sign: jest.fn(() => 'mock.jwt.token') },
-        },
+        { provide: JwtService, useValue: { sign: jest.fn(() => 'mock.jwt.token') } },
       ],
     }).compile();
-
     service = module.get<AuthService>(AuthService);
   });
 
-  describe('login', () => {
-    it('should return token on valid credentials', async () => {
-      const hashed = await bcrypt.hash('correctpassword', 4);
-      mockPrisma.user.findUnique.mockResolvedValue({
-        id: '1',
-        email: 'test@campus.edu',
-        password: hashed,
-        name: 'Test',
-        role: Role.STUDENT,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+  describe('login (disabled)', () => {
+    it('should throw BadRequest for password login', async () => {
+      await expect(service.login({ email: 'test@campus.edu', password: 'pass' } as any)).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('requestOtp', () => {
+    it('should generate OTP for ADMIN', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 'admin@pravesh.local', role: Role.ADMIN, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp1' });
+      const result = await service.requestOtp({ email: 'admin@pravesh.local' });
+      expect(result).toHaveProperty('message');
+      expect(mockAuthRepo.createOtp).toHaveBeenCalled();
+      expect(mockWhatsapp.sendOtp).toHaveBeenCalled();
+    });
+
+    it('should reject unknown user', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue(null);
+      await expect(service.requestOtp({ email: 'no@campus.edu' })).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('should reject STUDENT role', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 's@campus.edu', role: Role.STUDENT, isActive: true });
+      await expect(service.requestOtp({ email: 's@campus.edu' })).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('should reject deactivated', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 'admin@pravesh.local', role: Role.ADMIN, isActive: false });
+      await expect(service.requestOtp({ email: 'admin@pravesh.local' })).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('verifyOtp', () => {
+    it('should return JWT on valid OTP', async () => {
+      const otp = '123456';
+      const hash = await bcrypt.hash(otp, 4);
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue({
+        id: 'otp1',
+        identifier: 'admin@pravesh.local',
+        otpHash: hash,
+        purpose: 'ADMIN_LOGIN',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 0,
+        verified: false,
       });
-      const result = await service.login({ email: 'test@campus.edu', password: 'correctpassword' });
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 'admin@pravesh.local', role: Role.ADMIN, isActive: true, name: 'Admin' });
+      mockAuthRepo.findUserByEmailOrPhone.mockResolvedValue(null);
+      mockAuthRepo.markOtpVerified.mockResolvedValue({});
+      const result = await service.verifyOtp({ email: 'admin@pravesh.local', otp });
       expect(result).toHaveProperty('accessToken');
       expect(result.user).not.toHaveProperty('password');
     });
 
-    it('should reject invalid password', async () => {
-      const hashed = await bcrypt.hash('correct', 4);
-      mockPrisma.user.findUnique.mockResolvedValue({
-        id: '1',
-        email: 'test@campus.edu',
-        password: hashed,
-        name: 'Test',
-        role: Role.STUDENT,
-        isActive: true,
+    it('should reject invalid OTP', async () => {
+      const hash = await bcrypt.hash('123456', 4);
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue({
+        id: 'otp1',
+        identifier: 'admin@pravesh.local',
+        otpHash: hash,
+        purpose: 'ADMIN_LOGIN',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 0,
+        verified: false,
       });
-      await expect(service.login({ email: 'test@campus.edu', password: 'wrong' })).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      mockAuthRepo.incrementOtpAttempts.mockResolvedValue({});
+      await expect(service.verifyOtp({ email: 'admin@pravesh.local', otp: '000000' })).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    it('should reject deactivated account', async () => {
-      const hashed = await bcrypt.hash('pass12345', 4);
-      mockPrisma.user.findUnique.mockResolvedValue({
-        id: '1',
-        email: 'test@campus.edu',
-        password: hashed,
-        role: Role.STUDENT,
-        isActive: false,
+    it('should reject expired OTP', async () => {
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue(null);
+      await expect(service.verifyOtp({ email: 'admin@pravesh.local', otp: '123456' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should reject too many attempts', async () => {
+      const hash = await bcrypt.hash('123456', 4);
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue({
+        id: 'otp1',
+        identifier: 'admin@pravesh.local',
+        otpHash: hash,
+        purpose: 'ADMIN_LOGIN',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 5,
+        verified: false,
       });
-      await expect(service.login({ email: 'test@campus.edu', password: 'pass12345' })).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-    });
-
-    it('should reject non-existent user', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-      await expect(service.login({ email: 'no@campus.edu', password: 'pass12345' })).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-    });
-
-    it('should not allow ADMIN via public register (register removed)', async () => {
-      // Public POST /api/auth/register is removed — only ADMIN can create ADMIN via POST /api/admin/admins
-      expect((service as any).register).toBeUndefined();
+      await expect(service.verifyOtp({ email: 'admin@pravesh.local', otp: '123456' })).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
   describe('getMe', () => {
     it('should sanitize password', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({
+      mockAuthRepo.findUserByIdWithProfile.mockResolvedValue({
         id: '1',
         email: 'me@campus.edu',
         password: 'hashed',
@@ -122,5 +155,9 @@ describe('AuthService', () => {
       expect(result).not.toHaveProperty('password');
       expect(result.email).toBe('me@campus.edu');
     });
+  });
+
+  it('should not allow ADMIN via public register (register removed)', async () => {
+    expect((service as any).register).toBeUndefined();
   });
 });
