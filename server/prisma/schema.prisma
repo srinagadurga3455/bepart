@@ -1,0 +1,142 @@
+// Pravesh - Prisma Schema — Updated to Required Design
+// Preserves User for Auth/RBAC, implements Admin/Organizer/Event/Registration as per spec
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────
+// Enums (kept only where needed)
+// ─────────────────────────────────────
+enum Role {
+  STUDENT
+  ORGANIZER
+  ADMIN
+}
+
+enum OrganizerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AdminStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  INACTIVE
+}
+
+enum EventStatus {
+  DRAFT
+  PREVIEW
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+// ─────────────────────────────────────
+// Core Models — Preserved User for Auth/RBAC
+// ─────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      Role     @default(STUDENT)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizerProfile Organizer?
+
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Admin {
+  id          String      @id @default(cuid())
+  companyName String
+  description String?     @db.Text
+  status      AdminStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  organizers Organizer[]
+
+  @@index([status])
+  @@map("admins")
+}
+
+model Organizer {
+  id          String          @id @default(cuid())
+  name        String
+  description String?         @db.Text
+  phone       String?
+  email       String?         @unique
+  upiId       String?
+  status      OrganizerStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relations: preserve link to User for RBAC + Admin management
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  events Event[]
+
+  @@index([status])
+  @@index([userId])
+  @@index([adminId])
+  @@index([email])
+  @@map("organizers")
+}
+
+model Event {
+  id            Int         @id @default(autoincrement())
+  eventName     String
+  description   String?     @db.Text
+  date          DateTime
+  slots         Int
+  closingTime   DateTime
+  status        EventStatus @default(DRAFT)
+  formStructure Json?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  organizerId String
+  organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  registrations Registration[]
+
+  @@index([organizerId])
+  @@index([status])
+  @@index([date])
+  @@map("events")
+}
+
+model Registration {
+  registrationId String   @id @default(cuid())
+  phone          String
+  formData       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  eventId Int
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([phone])
+  @@map("registrations")
+}

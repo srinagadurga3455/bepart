@@ -1,0 +1,14 @@
+# Render Blueprint - root level (alternative if Render expects at repo root)
+# If your service rootDir is server, this file at repo root will still work
+services:
+  - type: web
+    name: pravesh-server
+    env: node
+    plan: starter
+    region: singapore
+    branch: main
+    rootDir: server
+    buildCommand: npm ci && npm run build && npx prisma generate
+    startCommand: npm run start:prod  # = node dist/src/main.js
+    healthCheckPath: /api/docs
+    autoDeploy: false

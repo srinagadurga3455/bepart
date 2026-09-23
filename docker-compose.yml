@@ -1,0 +1,34 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: pravesh-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pravesh
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./server
+    container_name: pravesh-backend
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pravesh?schema=public
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ./frontend
+    container_name: pravesh-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

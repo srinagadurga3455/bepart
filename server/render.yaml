@@ -1,0 +1,45 @@
+# Render Blueprint for Pravesh Backend
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: pravesh-server
+    env: node
+    plan: starter
+    region: singapore
+    branch: main
+    rootDir: server
+    buildCommand: npm ci && npm run build && npx prisma generate
+    # CRITICAL: use node dist/src/main.js (not dist/main) — nest-cli outputs to dist/src/main.js
+    startCommand: npm run start:prod
+    # Health check — Render expects 200 at this path
+    healthCheckPath: /api/docs
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+        sync: false
+      - key: API_PREFIX
+        value: api
+        sync: false
+      # ---- Required — set in Render Dashboard (never commit) ----
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+# Database — use Render PostgreSQL (or external Neon/Supabase)
+# If using Render Postgres, add:
+# databases:
+#   - name: pravesh-db
+#     plan: starter
+#     databaseName: pravesh
+#     user: pravesh
