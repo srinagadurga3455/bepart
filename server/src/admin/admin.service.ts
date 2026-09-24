@@ -3,6 +3,7 @@ import { AdminRepository } from './admin.repo';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
+import { normalizePhone } from '../common/utils/phone';
 
 @Injectable()
 export class AdminService {
@@ -39,7 +40,7 @@ export class AdminService {
       name: dto.name.trim(),
       email: normalizedEmail,
       password: hashed,
-      phone: dto.phone?.trim(),
+      phone: dto.phone ? normalizePhone(dto.phone) : undefined,
       companyName: dto.companyName.trim(),
       description: dto.description?.trim(),
     });

@@ -24,6 +24,7 @@ const mockOrganizersRepo: any = {
   createOtp: jest.fn().mockResolvedValue({ id: 'otp1' }),
   createOrganizerWithUser: jest.fn(),
   deactivateTransaction: jest.fn(),
+  updateUserPhone: jest.fn().mockResolvedValue({}),
 };
 
 describe('OrganizersService - Phase 2', () => {
@@ -117,6 +118,34 @@ describe('OrganizersService - Phase 2', () => {
     expect(res.name).toBe('Tech Club');
   });
 
+  it('should store normalized phone when ADMIN creates organizer', async () => {
+    mockOrganizersRepo.findUserByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.findOrganizerByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.findAdminById.mockResolvedValue({ id: 'admin1' });
+    mockOrganizersRepo.createOrganizerWithUser.mockResolvedValue({ id: 'oNew', status: OrganizerStatus.APPROVED, name: 'Phone Club', phone: '9876543224' } as any);
+    await service.adminCreate(
+      { name: 'Phone Club', email: 'phone@example.com', phone: '+91 98765-43224' } as any,
+      'admin1',
+    );
+    expect(mockOrganizersRepo.createOrganizerWithUser).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: '+919876543224' }),
+    );
+  });
+
+  it('should normalize phone with spaces/hyphens/parentheses on create', async () => {
+    mockOrganizersRepo.findUserByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.findOrganizerByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.findAdminById.mockResolvedValue({ id: 'admin1' });
+    mockOrganizersRepo.createOrganizerWithUser.mockResolvedValue({ id: 'oNew', status: OrganizerStatus.APPROVED, name: 'Phone Club 2' } as any);
+    await service.adminCreate(
+      { name: 'Phone Club 2', email: 'phone2@example.com', phone: '(+91) 98765 43224' } as any,
+      'admin1',
+    );
+    expect(mockOrganizersRepo.createOrganizerWithUser).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: '+919876543224' }),
+    );
+  });
+
   it('should reject adminCreate if email already registered', async () => {
     mockOrganizersRepo.findUserByEmail.mockResolvedValue({ id: 'existing', email: 'neworg@example.com' });
     await expect(
@@ -137,5 +166,25 @@ describe('OrganizersService - Phase 2', () => {
     mockOrganizersRepo.deactivateTransaction.mockResolvedValue([{ id: 'o1', status: OrganizerStatus.REJECTED }]);
     await service.deactivate('o1');
     expect(mockOrganizersRepo.deactivateTransaction).toHaveBeenCalledWith('o1', 'u1');
+  });
+
+  it('should keep Organizer.phone synchronized with User.phone on update', async () => {
+    mockOrganizersRepo.findOrganizerById.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.APPROVED });
+    mockOrganizersRepo.updateOrganizer.mockResolvedValue({ id: 'o1', phone: '+919876543224' });
+    mockOrganizersRepo.updateUserPhone.mockResolvedValue({ id: 'u1', phone: '+919876543224' });
+    await service.update('o1', { phone: '+91 98765-43224' } as any, 'admin1', Role.ADMIN);
+    expect(mockOrganizersRepo.updateOrganizer).toHaveBeenCalledWith('o1', expect.objectContaining({ phone: '+919876543224' }));
+    expect(mockOrganizersRepo.updateUserPhone).toHaveBeenCalledWith('u1', '+919876543224');
+  });
+
+  it('should synchronize User.phone when creating organizer via create', async () => {
+    mockOrganizersRepo.findOrganizerByUserId.mockResolvedValue(null);
+    mockOrganizersRepo.findUserById.mockResolvedValue({ id: 'u1', role: Role.ORGANIZER, isActive: true });
+    mockOrganizersRepo.createOrganizer.mockResolvedValue({ id: 'o1', status: OrganizerStatus.APPROVED, name: 'SyncTech', phone: '+919876543224' });
+    mockOrganizersRepo.updateUserPhone.mockResolvedValue({ id: 'u1', phone: '+919876543224' });
+    const res = await service.create({ name: 'SyncTech', phone: '(+91) 98765-43224' } as any, 'u1', Role.ORGANIZER);
+    expect(res.phone).toBe('+919876543224');
+    expect(mockOrganizersRepo.createOrganizer).toHaveBeenCalledWith(expect.objectContaining({ phone: '+919876543224' }));
+    expect(mockOrganizersRepo.updateUserPhone).toHaveBeenCalledWith('u1', '+919876543224');
   });
 });

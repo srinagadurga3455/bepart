@@ -76,6 +76,10 @@ export class OrganizersRepository {
     return this.prisma.user.update({ where: { id }, data: { isActive } });
   }
 
+  updateUserPhone(id: string, phone: string | null) {
+    return this.prisma.user.update({ where: { id }, data: { phone } });
+  }
+
   // Admin queries
   findAdminById(id: string) {
     return this.prisma.admin.findUnique({ where: { id } });

@@ -53,7 +53,7 @@ async function main() {
       isActive: true,
       name: 'Sample Club Organizer',
       role: Role.ORGANIZER,
-      phone: '+91 9876543210',
+      phone: '+919876543210',
       password: await bcrypt.hash('Organizer@123', 10),
     },
     create: {
@@ -61,7 +61,7 @@ async function main() {
       password: await bcrypt.hash('Organizer@123', 10),
       name: 'Sample Club Organizer',
       role: Role.ORGANIZER,
-      phone: '+91 9876543210',
+      phone: '+919876543210',
     },
   });
 
@@ -71,7 +71,7 @@ async function main() {
       name: 'Sample Tech Club',
       description: 'Seeded organizer for development',
       email: 'organizer@pravesh.local',
-      phone: '+91 9876543210',
+      phone: '+919876543210',
       upiId: 'sample@upi',
       status: 'APPROVED',
       adminId: admin.id,
@@ -82,7 +82,7 @@ async function main() {
       name: 'Sample Tech Club',
       description: 'Seeded organizer for development',
       email: 'organizer@pravesh.local',
-      phone: '+91 9876543210',
+      phone: '+919876543210',
       upiId: 'sample@upi',
       status: 'APPROVED',
     },
@@ -96,7 +96,7 @@ async function main() {
       password: await bcrypt.hash('Student@123', 10),
       name: 'Sample Student',
       role: Role.STUDENT,
-      phone: '+91 9999999999',
+      phone: '+919999999999',
     },
   });
 

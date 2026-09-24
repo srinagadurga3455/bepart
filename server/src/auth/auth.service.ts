@@ -14,6 +14,7 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { Role as PrismaRole } from '@prisma/client';
 import { Role } from '../common/constants/roles';
+import { normalizePhone } from '../common/utils/phone';
 
 @Injectable()
 export class AuthService {
@@ -46,7 +47,7 @@ export class AuthService {
 
   private normalizeIdentifier(dto: RequestOtpDto | VerifyOtpDto): string {
     if (dto.email) return dto.email.toLowerCase().trim();
-    if (dto.phone) return dto.phone.trim();
+    if (dto.phone) return normalizePhone(dto.phone);
     throw new BadRequestException('Either email or phone is required');
   }
 
@@ -66,10 +67,6 @@ export class AuthService {
       user = await this.authRepo.findUserByEmail(identifier);
     } else {
       user = await this.authRepo.findUserByPhone(identifier);
-      if (!user) {
-        // fallback: try normalized without spaces
-        user = await this.authRepo.findUserByPhone(dto.phone!.trim());
-      }
     }
 
     if (!user) {

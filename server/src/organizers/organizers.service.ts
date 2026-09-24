@@ -5,6 +5,7 @@ import { UpdateOrganizerDto } from './dto/update-organizer.dto';
 import { OrganizerStatus, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { normalizePhone } from '../common/utils/phone';
 
 @Injectable()
 export class OrganizersService {
@@ -44,10 +45,11 @@ export class OrganizersService {
       if (anyAdmin) adminId = anyAdmin.id;
     }
 
+    const normalizedPhone = dto.phone ? normalizePhone(dto.phone) : undefined;
     const result = await this.organizersRepo.createOrganizerWithUser({
       email: normalizedEmail,
       name: dto.name.trim(),
-      phone: dto.phone?.trim(),
+      phone: normalizedPhone,
       description: dto.description?.trim(),
       upiId: dto.upiId?.trim(),
       adminId,
@@ -80,15 +82,20 @@ export class OrganizersService {
       const dup = await this.organizersRepo.findOrganizerByEmail(dto.email.toLowerCase().trim()).catch(() => null);
       if (dup) throw new ConflictException('Email already used');
     }
+    const normalizedPhone = dto.phone ? normalizePhone(dto.phone) : undefined;
     const organizer = await this.organizersRepo.createOrganizer({
       userId,
       name: dto.name.trim(),
       description: dto.description?.trim(),
-      phone: dto.phone?.trim(),
+      phone: normalizedPhone,
       email: dto.email?.toLowerCase().trim(),
       upiId: dto.upiId?.trim(),
       status: OrganizerStatus.APPROVED,
     });
+    // Keep Organizer.phone synchronized with User.phone
+    if (normalizedPhone) {
+      await this.organizersRepo.updateUserPhone(userId, normalizedPhone);
+    }
     return organizer;
   }
 
@@ -126,14 +133,20 @@ export class OrganizersService {
 
   async update(id: string, dto: UpdateOrganizerDto, requesterId: string, requesterRole: string) {
     if (requesterRole !== Role.ADMIN) throw new ForbiddenException('Only ADMIN can update organizers');
-    await this.getOrganizerOrFail(id);
+    const org = await this.getOrganizerOrFail(id);
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
     if (dto.description !== undefined) data.description = dto.description?.trim();
-    if (dto.phone !== undefined) data.phone = dto.phone?.trim();
+    if (dto.phone !== undefined) data.phone = dto.phone ? normalizePhone(dto.phone) : dto.phone;
     if (dto.email !== undefined) data.email = dto.email?.toLowerCase().trim();
     if (dto.upiId !== undefined) data.upiId = dto.upiId?.trim();
-    return this.organizersRepo.updateOrganizer(id, data);
+    const updated = await this.organizersRepo.updateOrganizer(id, data);
+    // Keep Organizer.phone synchronized with User.phone
+    if (dto.phone !== undefined && org.userId) {
+      const normalizedPhone = dto.phone ? normalizePhone(dto.phone) : null;
+      await this.organizersRepo.updateUserPhone(org.userId, normalizedPhone as string);
+    }
+    return updated;
   }
 
   async remove(id: string) {
