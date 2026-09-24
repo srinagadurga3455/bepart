@@ -58,6 +58,29 @@ describe('EventsService - Updated Schema Int ID', () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       await expect(service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 0 } as any, 'user1')).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    it('should default paymentRequired to false when not provided', async () => {
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
+      mockEventsRepo.createEvent.mockResolvedValue({ id: 2, status: EventStatus.DRAFT, eventName: 'E', paymentRequired: false });
+      await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10 } as any, 'user1');
+      expect(mockEventsRepo.createEvent).toHaveBeenCalledWith(expect.objectContaining({ paymentRequired: undefined }));
+    });
+
+    it('should create with paymentRequired true when provided', async () => {
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
+      mockEventsRepo.createEvent.mockResolvedValue({ id: 3, status: EventStatus.DRAFT, eventName: 'E', paymentRequired: true });
+      const res = await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10, paymentRequired: true } as any, 'user1');
+      expect(res.paymentRequired).toBe(true);
+      expect(mockEventsRepo.createEvent).toHaveBeenCalledWith(expect.objectContaining({ paymentRequired: true }));
+    });
+
+    it('should create with paymentRequired false explicitly', async () => {
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
+      mockEventsRepo.createEvent.mockResolvedValue({ id: 4, status: EventStatus.DRAFT, eventName: 'E', paymentRequired: false });
+      const res = await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10, paymentRequired: false } as any, 'user1');
+      expect(res.paymentRequired).toBe(false);
+      expect(mockEventsRepo.createEvent).toHaveBeenCalledWith(expect.objectContaining({ paymentRequired: false }));
+    });
   });
 
   describe('status transitions', () => {
@@ -93,6 +116,24 @@ describe('EventsService - Updated Schema Int ID', () => {
       mockEventsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1', status: EventStatus.PUBLISHED, date: new Date(), closingTime: new Date(Date.now() - 1000000) });
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
       await expect(service.update(1, { eventName: 'New' } as any, 'user1')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('should allow updating paymentRequired on DRAFT event', async () => {
+      mockEventsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1', status: EventStatus.DRAFT, date: new Date('2026-10-02T10:00:00Z'), closingTime: new Date('2026-10-01T10:00:00Z') });
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
+      mockEventsRepo.updateEvent.mockResolvedValue({ id: 1, paymentRequired: true });
+      const res = await service.update(1, { paymentRequired: true } as any, 'user1');
+      expect(res.paymentRequired).toBe(true);
+      expect(mockEventsRepo.updateEvent).toHaveBeenCalledWith(1, expect.objectContaining({ paymentRequired: true }));
+    });
+
+    it('should allow updating paymentRequired to false', async () => {
+      mockEventsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1', status: EventStatus.DRAFT, date: new Date('2026-10-02T10:00:00Z'), closingTime: new Date('2026-10-01T10:00:00Z') });
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
+      mockEventsRepo.updateEvent.mockResolvedValue({ id: 1, paymentRequired: false });
+      const res = await service.update(1, { paymentRequired: false } as any, 'user1');
+      expect(res.paymentRequired).toBe(false);
+      expect(mockEventsRepo.updateEvent).toHaveBeenCalledWith(1, expect.objectContaining({ paymentRequired: false }));
     });
   });
 

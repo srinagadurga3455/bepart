@@ -38,6 +38,7 @@ export class EventsService {
       formStructure: dto.formStructure as any,
       status: EventStatus.DRAFT,
       organizerId: organizer.id,
+      paymentRequired: dto.paymentRequired,
     });
     return event;
   }
@@ -111,6 +112,7 @@ export class EventsService {
       slots: dto.slots,
       closingTime: dto.closingTime ? new Date(dto.closingTime) : undefined,
       formStructure: dto.formStructure as any,
+      paymentRequired: dto.paymentRequired,
     });
   }
 

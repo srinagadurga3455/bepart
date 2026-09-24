@@ -130,10 +130,11 @@ model Event {
   date          DateTime
   slots         Int
   closingTime   DateTime
-  status        EventStatus @default(DRAFT)
-  formStructure Json?
-  posterUrl     String?
-  createdAt     DateTime    @default(now())
+  status         EventStatus @default(DRAFT)
+  formStructure  Json?
+  posterUrl      String?
+  paymentRequired Boolean @default(false)
+  createdAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   organizerId String

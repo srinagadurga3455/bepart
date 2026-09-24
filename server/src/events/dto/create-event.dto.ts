@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -70,4 +70,9 @@ export class CreateEventDto {
   })
   @IsOptional()
   formStructure?: any;
+
+  @ApiPropertyOptional({ example: false, description: 'Whether payment is required to register', default: false })
+  @IsOptional()
+  @IsBoolean()
+  paymentRequired?: boolean;
 }

@@ -10,7 +10,7 @@ export class EventsRepository {
     return this.prisma.organizer.findUnique({ where: { userId } });
   }
 
-  createEvent(data: { eventName: string; description?: string; date: Date; slots: number; closingTime: Date; formStructure?: any; status: EventStatus; organizerId: string }) {
+  createEvent(data: { eventName: string; description?: string; date: Date; slots: number; closingTime: Date; formStructure?: any; status: EventStatus; organizerId: string; paymentRequired?: boolean }) {
     return this.prisma.event.create({
       data: {
         eventName: data.eventName,
@@ -21,6 +21,7 @@ export class EventsRepository {
         formStructure: data.formStructure,
         status: data.status,
         organizerId: data.organizerId,
+        paymentRequired: data.paymentRequired,
       },
       include: { organizer: { include: { user: { select: { id: true, name: true, email: true } } } } },
     });
