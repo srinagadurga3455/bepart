@@ -1,7 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import type { BaseSyntheticEvent } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Box, Typography, Button, Card, CardContent, Divider, Alert, IconButton, Stack } from '@mui/material';
-import { KeyboardArrowLeft, KeyboardArrowRight, CheckCircle, Edit } from '@mui/icons-material';
+import type { FieldValues } from 'react-hook-form';
+import { Box, Typography, Button, Divider, Alert, Stack } from '@mui/material';
+import { KeyboardArrowLeft, KeyboardArrowRight } from '@mui/icons-material';
 import ProgressIndicator from './ProgressIndicator';
 import FormSection from './FormSection';
 import ReviewStep from './ReviewStep';
@@ -13,7 +15,25 @@ import {
   getVisibleFields,
   withDynamicRequired,
   stripHiddenMemberValues,
-} from './memberGroups';
+} from '../utils/memberGroups';
+import type { FormDataRecord, FormStructure } from '../../../app/types';
+
+/** Minimal event info the flow needs (full EventItem also satisfies this). */
+export interface FlowEventInfo {
+  eventName?: string;
+  paymentRequired?: boolean;
+  date?: string;
+  closingTime?: string;
+  formStructure?: FormStructure | null;
+}
+
+interface RegistrationFlowProps {
+  formStructure: FormStructure;
+  onSubmit: (formData: FormDataRecord) => void;
+  isSubmitting: boolean;
+  event?: FlowEventInfo;
+  onBackToEvent?: () => void;
+}
 
 export default function RegistrationFlow({
   formStructure,
@@ -21,17 +41,17 @@ export default function RegistrationFlow({
   isSubmitting,
   event,
   onBackToEvent,
-}) {
+}: RegistrationFlowProps) {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [showReview, setShowReview] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [sectionErrors, setSectionErrors] = useState({});
+  const [sectionErrors, setSectionErrors] = useState<Record<number, Record<string, string>>>({});
 
   // Paid events add a payment step after review. Amount lives on the event's
   // own formStructure (payment config), so no new model is involved.
   const isPaidEvent = !!event?.paymentRequired;
-  const feeAmount = isPaidEvent
+  const feeAmount: number | null = isPaidEvent
     ? (formStructure?.payment?.amount ?? event?.formStructure?.payment?.amount ?? null)
     : null;
 
@@ -43,9 +63,9 @@ export default function RegistrationFlow({
   // Team mode: a "number of members" dropdown drives which member groups show.
   const countFieldName = findCountFieldName(formStructure);
   const teamMode = !!countFieldName;
-  const countValue = teamMode ? methods.watch(countFieldName) : undefined;
-  const selectedCount = teamMode
-    ? getSelectedCount({ [countFieldName]: countValue }, countFieldName)
+  const countValue = countFieldName ? methods.watch(countFieldName) : undefined;
+  const selectedCount = countFieldName
+    ? getSelectedCount({ [countFieldName]: countValue } as FormDataRecord, countFieldName)
     : Number.POSITIVE_INFINITY;
 
   const validateCurrentSection = useCallback(async () => {
@@ -53,21 +73,21 @@ export default function RegistrationFlow({
     if (!section) return true;
 
     // Validate only the currently visible fields (hidden member groups excluded)
-    const values = methods.getValues();
-    const count = teamMode ? getSelectedCount(values, countFieldName) : Number.POSITIVE_INFINITY;
+    const values: FieldValues = methods.getValues();
+    const count = countFieldName ? getSelectedCount(values as FormDataRecord, countFieldName) : Number.POSITIVE_INFINITY;
     const visibleFields = getVisibleFields(section, count).map((f) => withDynamicRequired(f, count));
-    const errors = {};
+    const errors: Record<string, string> = {};
 
     for (const field of visibleFields) {
       const valid = await methods.trigger(field.name);
-      const value = methods.getValues(field.name);
+      const value: unknown = methods.getValues(field.name);
       const empty =
         value === undefined ||
         value === null ||
         (typeof value === 'string' && !value.trim()) ||
         (Array.isArray(value) && value.length === 0);
       if (!valid || (field.required && empty)) {
-        errors[field.name] = methods.formState.errors[field.name]?.message || `${field.label} is required`;
+        errors[field.name] = (methods.formState.errors[field.name]?.message as string | undefined) || `${field.label} is required`;
         // Mark invalid fields as touched so inline errors/highlights appear
         methods.setValue(field.name, value, { shouldTouch: true });
       }
@@ -75,7 +95,7 @@ export default function RegistrationFlow({
 
     setSectionErrors(prev => ({ ...prev, [currentSectionIndex]: errors }));
     return Object.keys(errors).length === 0;
-  }, [methods, sections, currentSectionIndex, teamMode, countFieldName]);
+  }, [methods, sections, currentSectionIndex, countFieldName]);
 
   const handleContinue = async () => {
     const isValid = await validateCurrentSection();
@@ -98,17 +118,17 @@ export default function RegistrationFlow({
     }
   };
 
-  const handleEditSection = (sectionIndex) => {
+  const handleEditSection = (sectionIndex: number) => {
     setShowReview(false);
     setCurrentSectionIndex(sectionIndex);
   };
 
-  const handleSubmit = (data) => {
+  const handleSubmit = (data: FieldValues) => {
     // Hidden member groups are never submitted, even if values were kept in form state
-    const scoped = teamMode ? stripHiddenMemberValues(data, getSelectedCount(data, countFieldName)) : { ...data };
-    const formData = { ...scoped };
+    const scoped = countFieldName ? stripHiddenMemberValues(data as FormDataRecord, getSelectedCount(data as FormDataRecord, countFieldName)) : { ...data };
+    const formData: FormDataRecord = { ...scoped };
     Object.keys(formData).forEach((key) => {
-      if (Array.isArray(formData[key]) && formData[key].length === 0) {
+      if (Array.isArray(formData[key]) && (formData[key] as unknown[]).length === 0) {
         delete formData[key];
       }
     });
@@ -120,14 +140,14 @@ export default function RegistrationFlow({
     setShowReview(false);
   };
 
-  const handleFormSubmit = (data) => {
+  const handleFormSubmit = (e?: BaseSyntheticEvent) => {
     // Paid events go to the payment step instead of submitting immediately.
     // The registration is created only after a successful payment.
     if (isPaidEvent) {
       setShowPayment(true);
       return;
     }
-    methods.handleSubmit(handleSubmit)(data);
+    methods.handleSubmit(handleSubmit)(e);
   };
 
   const isLastSection = currentSectionIndex === totalSections - 1;
@@ -136,7 +156,7 @@ export default function RegistrationFlow({
   const visibleCurrentFields = currentSection
     ? getVisibleFields(currentSection, selectedCount).map((f) => withDynamicRequired(f, selectedCount))
     : [];
-  const completedSections = new Set();
+  const completedSections = new Set<number>();
   for (let i = 0; i < currentSectionIndex; i++) {
     completedSections.add(i);
   }
@@ -176,7 +196,7 @@ export default function RegistrationFlow({
         ) : showReview ? (
           <ReviewStep
             formStructure={formStructure}
-            formData={methods.getValues()}
+            formData={methods.getValues() as FormDataRecord}
             onBack={handleBack}
             onEdit={handleEditSection}
             onConfirm={handleFormSubmit}
@@ -194,11 +214,11 @@ export default function RegistrationFlow({
               }}
             >
               <Box sx={{ mb: 3 }}>
-                <Typography variant="h6" fontWeight={600} color="text.primary" gutterBottom>
+                <Typography variant="h6" color="text.primary" gutterBottom sx={{ fontWeight: 600 }}>
                   {currentSection.title}
                 </Typography>
                 {currentSection.description && (
-                  <Typography variant="body1" color="text.secondary" paragraph>
+                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
                     {currentSection.description}
                   </Typography>
                 )}
@@ -225,7 +245,7 @@ export default function RegistrationFlow({
 
             <Divider sx={{ my: 4 }} />
 
-            <Stack direction="row" spacing={2} justifyContent="space-between">
+            <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between' }}>
               <Button
                 variant="outlined"
                 size="large"

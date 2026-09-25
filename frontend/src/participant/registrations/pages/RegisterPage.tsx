@@ -2,19 +2,27 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Container, Typography, Box, Button, Card, CardContent, Alert, Chip, Avatar, CircularProgress, Stack, Divider } from '@mui/material';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { eventsApi, registrationsApi } from '../../../shared/api';
+import { eventsApi } from '../../events/api/events';
+import { registrationsApi } from '../api/registrations';
+import { apiErrorMessage } from '../../../app/api/client';
+import type { FormDataRecord } from '../../../app/types';
 import RegistrationFlow from '../components/RegistrationFlow';
+
+interface RegisterVariables {
+  phone: string;
+  [field: string]: unknown;
+}
 
 export default function RegisterPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [ticketId, setTicketId] = useState(null);
+  const [ticketId, setTicketId] = useState<string | null>(null);
 
   const { data: eventResponse, isLoading: eventLoading, error: eventError } = useQuery({
     queryKey: ['event', eventId],
-    queryFn: () => eventsApi.getPublic(eventId),
+    queryFn: () => eventsApi.getPublic(eventId!),
     enabled: !!eventId,
   });
 
@@ -22,7 +30,7 @@ export default function RegisterPage() {
 
   const { data: formStructureResponse, isLoading: formLoading } = useQuery({
     queryKey: ['event', eventId, 'registration-form'],
-    queryFn: () => eventsApi.getRegistrationForm(eventId),
+    queryFn: () => eventsApi.getRegistrationForm(eventId!),
     enabled: !!eventId,
   });
 
@@ -31,14 +39,18 @@ export default function RegisterPage() {
   const createRegistration = useMutation({
     // Backend requires phone BOTH top-level and inside formData (validated against formStructure).
     // Keep the full dynamic formData intact; only add the top-level phone from it.
-    mutationFn: (values) => registrationsApi.create({ eventId: parseInt(eventId), phone: values.phone, formData: { ...values } }),
+    mutationFn: (values: RegisterVariables) => registrationsApi.create({
+      eventId: parseInt(eventId!),
+      phone: values.phone,
+      formData: { ...values } as FormDataRecord,
+    }),
     onSuccess: (res) => {
       setTicketId(res?.data?.registrationId || null);
       setSuccess(true);
       setError('');
     },
     onError: (err) => {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      setError(apiErrorMessage(err, 'Registration failed. Please try again.'));
     },
   });
 
@@ -62,8 +74,9 @@ export default function RegisterPage() {
     );
   }
 
-  const handleFormSubmit = (formData) => {
-    const phone = formData.phone?.trim();
+  const handleFormSubmit = (formData: FormDataRecord) => {
+    const phoneValue = formData.phone;
+    const phone = typeof phoneValue === 'string' ? phoneValue.trim() : '';
     if (!phone) {
       setError('Phone number is required');
       return;
@@ -84,7 +97,7 @@ export default function RegisterPage() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Stack direction="column" spacing={3} sx={{ maxWidth: 800, mx: 'auto', width: '100%' }}>
-        <Link to="/events" sx={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 1, color: 'primary.main', fontWeight: 500, '&:hover': { textDecoration: 'underline' } }}>
+        <Link to="/events">
           <Box component="span" sx={{ fontSize: 20 }}>←</Box>
           Back to Events
         </Link>
@@ -95,7 +108,7 @@ export default function RegisterPage() {
               <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
                 <Box>
                   <Chip label={event.status} color="success" variant="outlined" size="small" sx={{ mb: 1.5 }} />
-                  <Typography variant="h4" fontWeight={700} color="text.primary" sx={{ lineHeight: 1.2 }}>
+                  <Typography variant="h4" color="text.primary" sx={{ lineHeight: 1.2, fontWeight: 700 }}>
                     {event.eventName}
                   </Typography>
                 </Box>
@@ -110,7 +123,7 @@ export default function RegisterPage() {
               </Box>
 
               {event.description && (
-                <Typography variant="body1" color="text.secondary" paragraph>{event.description}</Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>{event.description}</Typography>
               )}
 
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 1, md: 3 }, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -118,21 +131,21 @@ export default function RegisterPage() {
                   <span style={{ fontSize: 18 }}>📅</span>
                   <Box>
                     <Typography variant="caption" color="text.secondary">Event Date</Typography>
-                    <Typography variant="body2" fontWeight={500}>{new Date(event.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{new Date(event.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Typography>
                   </Box>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
                   <span style={{ fontSize: 18 }}>⏰</span>
                   <Box>
                     <Typography variant="caption" color="text.secondary">Registration Closes</Typography>
-                    <Typography variant="body2" fontWeight={500}>{new Date(event.closingTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{new Date(event.closingTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Typography>
                   </Box>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
                   <span style={{ fontSize: 18 }}>🎟️</span>
                   <Box>
                     <Typography variant="caption" color="text.secondary">Available Slots</Typography>
-                    <Typography variant="body2" fontWeight={500}>{event.slots}</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{event.slots}</Typography>
                   </Box>
                 </Box>
               </Box>
@@ -164,7 +177,7 @@ export default function RegisterPage() {
               </Alert>
             )}
 
-            {!success && !isFormEmpty && (
+            {!success && !isFormEmpty && formStructure && (
               <RegistrationFlow
                 formStructure={formStructure}
                 onSubmit={handleFormSubmit}
@@ -181,7 +194,7 @@ export default function RegisterPage() {
                   variant="contained"
                   onClick={() => {
                     if (!event) return;
-                    createRegistration.mutate({ phone: '', eventId: parseInt(eventId), formData: {} });
+                    createRegistration.mutate({ phone: '', eventId: parseInt(eventId!), formData: {} });
                   }}
                   disabled={createRegistration.isPending}
                   sx={{ mt: 1.5 }}

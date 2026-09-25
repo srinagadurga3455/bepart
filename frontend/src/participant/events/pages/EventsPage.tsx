@@ -1,8 +1,10 @@
 import { Container, Typography, Box, Button, Grid, Card, CardContent, CardActions, CircularProgress, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { eventsApi } from '../../../shared/api';
+import { eventsApi } from '../api/events';
+import { unwrapList } from '../../../app/api/client';
+import type { EventItem } from '../../../app/types';
 
-function EventCard({ event }) {
+function EventCard({ event }: { event: EventItem }) {
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {event.posterUrl && (
@@ -15,7 +17,7 @@ function EventCard({ event }) {
       )}
       <CardContent>
         <Typography variant="h6" gutterBottom>{event.eventName}</Typography>
-        <Typography color="text.secondary" paragraph>{event.description}</Typography>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>{event.description}</Typography>
         <Typography variant="body2" color="text.secondary">
           Date: {new Date(event.date).toLocaleDateString()}
         </Typography>
@@ -25,7 +27,7 @@ function EventCard({ event }) {
         <Typography variant="body2" color="text.secondary">
           Status: {event.status}
         </Typography>
-        <Typography variant="body2" color={event.paymentRequired ? 'secondary.main' : 'success.main'} fontWeight={600}>
+        <Typography variant="body2" color={event.paymentRequired ? 'secondary.main' : 'success.main'} sx={{ fontWeight: 600 }}>
           {event.paymentRequired ? `Paid${event.formStructure?.payment?.amount ? ` · ₹${event.formStructure.payment.amount}` : ''}` : 'Free entry'}
         </Typography>
       </CardContent>
@@ -69,8 +71,7 @@ export default function EventsPage() {
   }
 
   // axios response -> body { data: [...], meta: {...} } -> events array
-  const body = data?.data;
-  const events = Array.isArray(body) ? body : body?.data || [];
+  const events: EventItem[] = data ? unwrapList<EventItem>(data) : [];
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
@@ -82,7 +83,7 @@ export default function EventsPage() {
       ) : (
         <Grid container spacing={3}>
           {events.map((event) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={event.id}>
+            <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={event.id}>
               <EventCard event={event} />
             </Grid>
           ))}

@@ -7,29 +7,30 @@ import {
 import { CheckCircle, ConfirmationNumber, Event as EventIcon, AccessTime } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
 import { useQuery } from '@tanstack/react-query';
-import { registrationsApi } from '../../../shared/api';
+import { ticketsApi } from '../api/tickets';
 import {
   findCountFieldName, getSelectedCount, getVisibleFields,
   withDynamicRequired, getMemberGroupIndex,
-} from '../../registrations/components/memberGroups';
+} from '../../registrations/utils/memberGroups';
+import type { FormDataRecord, FormDataValue } from '../../../app/types';
 
-function formatDate(d) {
-  const dt = new Date(d);
+function formatDate(d: string | undefined): string {
+  const dt = new Date(d ?? '');
   if (isNaN(dt.getTime())) return '—';
   return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function formatTime(d) {
-  const dt = new Date(d);
+function formatTime(d: string | undefined): string {
+  const dt = new Date(d ?? '');
   if (isNaN(dt.getTime())) return '—';
   return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-function isEmpty(v) {
+function isEmpty(v: unknown): boolean {
   return v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
 }
 
-function formatValue(v) {
+function formatValue(v: FormDataValue | undefined): string {
   if (Array.isArray(v)) return v.join(', ');
   return String(v ?? '—');
 }
@@ -38,7 +39,7 @@ export default function TicketPage() {
   const { ticketId } = useParams();
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['ticket', ticketId],
-    queryFn: () => registrationsApi.getTicket(ticketId),
+    queryFn: () => ticketsApi.getTicket(ticketId!),
     enabled: !!ticketId,
     retry: false,
   });
@@ -58,8 +59,8 @@ export default function TicketPage() {
         <Card elevation={0} variant="outlined" sx={{ borderRadius: 3, textAlign: 'center', p: 2 }}>
           <CardContent sx={{ py: 5 }}>
             <ConfirmationNumber sx={{ fontSize: 56, color: 'text.disabled', mb: 2 }} />
-            <Typography variant="h4" fontWeight={700} gutterBottom>Ticket Not Found</Typography>
-            <Typography color="text.secondary" paragraph>
+            <Typography variant="h4" gutterBottom sx={{ fontWeight: 700 }}>Ticket Not Found</Typography>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
               This ticket does not exist or is no longer available.
             </Typography>
             <Button variant="contained" component={Link} to="/events" sx={{ mt: 1 }}>
@@ -75,10 +76,10 @@ export default function TicketPage() {
   // QR encodes the canonical public ticket URL (backend-provided), so a scan
   // always resolves to this ticket. The raw registration ID is never displayed.
   const ticketUrl = ticket.ticketUrl || `${window.location.origin}/ticket/${ticket.registrationId}`;
-  const event = ticket.event || {};
-  const formData = ticket.formData || {};
-  const formStructure = event.formStructure || {};
-  const sections = formStructure.sections || [];
+  const event = ticket.event;
+  const formData: FormDataRecord = ticket.formData || {};
+  const formStructure = event?.formStructure;
+  const sections = formStructure?.sections || [];
   const selectedCount = getSelectedCount(formData, findCountFieldName(formStructure));
   const registrant = formData.teamName || formData.member1Name || formData.fullName || '—';
 
@@ -89,7 +90,7 @@ export default function TicketPage() {
           {/* Header */}
           <Box sx={{ bgcolor: 'success.main', color: 'white', px: 3, py: 4, textAlign: 'center' }}>
             <CheckCircle sx={{ fontSize: 48, mb: 1 }} />
-            <Typography variant="h5" fontWeight={700}>Registration Confirmed</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 700 }}>Registration Confirmed</Typography>
             <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
               Your registration has been successfully confirmed.
             </Typography>
@@ -98,15 +99,15 @@ export default function TicketPage() {
           <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
             {/* Event title block */}
             <Box sx={{ textAlign: 'center', mb: 3 }}>
-              <Typography variant="h4" fontWeight={800} color="text.primary" gutterBottom>
-                {event.eventName || 'Event Ticket'}
+              <Typography variant="h4" color="text.primary" gutterBottom sx={{ fontWeight: 800 }}>
+                {event?.eventName || 'Event Ticket'}
               </Typography>
               <Typography variant="body1" color="text.secondary">
                 {registrant}
-                {event.organizer?.name ? `  ·  by ${event.organizer.name}` : ''}
+                {event?.organizer?.name ? `  ·  by ${event.organizer.name}` : ''}
               </Typography>
               <Chip
-                label={event.status || 'CONFIRMED'}
+                label={event?.status || 'CONFIRMED'}
                 color="success"
                 size="small"
                 variant="outlined"
@@ -122,14 +123,14 @@ export default function TicketPage() {
                 <EventIcon color="action" />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Date</Typography>
-                  <Typography variant="body2" fontWeight={600}>{formatDate(event.date)}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatDate(event?.date)}</Typography>
                 </Box>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 140, flex: 1 }}>
                 <AccessTime color="action" />
                 <Box>
                   <Typography variant="caption" color="text.secondary">Time</Typography>
-                  <Typography variant="body2" fontWeight={600}>{formatTime(event.date)}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatTime(event?.date)}</Typography>
                 </Box>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 140, flex: 1 }}>
@@ -156,7 +157,7 @@ export default function TicketPage() {
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="caption" color="text.secondary">Scan to verify</Typography>
-                  <Typography variant="body2" fontWeight={600}>Entry QR</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>Entry QR</Typography>
                 </Box>
               </Box>
             </Stack>
@@ -164,7 +165,7 @@ export default function TicketPage() {
             <Divider sx={{ mb: 3 }} />
 
             {/* Dynamic submitted details */}
-            <Typography variant="h6" fontWeight={700} gutterBottom>Registration Details</Typography>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Registration Details</Typography>
             {sections.length === 0 && (
               <Alert severity="info" sx={{ mb: 2 }}>No additional details were collected for this event.</Alert>
             )}
@@ -176,14 +177,14 @@ export default function TicketPage() {
               let lastGroup = 0;
               return (
                 <Box key={section.id} sx={{ mb: 3 }}>
-                  <Typography variant="subtitle1" fontWeight={600} color="primary.main" gutterBottom>
+                  <Typography variant="subtitle1" color="primary.main" gutterBottom sx={{ fontWeight: 600 }}>
                     {section.title}
                   </Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
                     {fields.map((field, i) => {
                       const group = getMemberGroupIndex(field.name);
                       const header = group > 0 && group !== lastGroup ? (
-                        <Typography variant="subtitle2" fontWeight={700} sx={{ mt: i === 0 ? 0 : 1 }}>
+                        <Typography variant="subtitle2" sx={{ mt: i === 0 ? 0 : 1, fontWeight: 700 }}>
                           Member {group}
                         </Typography>
                       ) : null;
@@ -193,7 +194,7 @@ export default function TicketPage() {
                           {header}
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                             <Typography variant="body2" color="text.secondary">{field.label}</Typography>
-                            <Typography variant="body2" fontWeight={600} textAlign="right">
+                            <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>
                               {formatValue(formData[field.name])}
                             </Typography>
                           </Box>

@@ -1,18 +1,26 @@
 import { Alert, Box, Button, Card, CardContent, Divider, Typography } from '@mui/material';
 import { ArrowBack, Lock } from '@mui/icons-material';
+import type { FlowEventInfo } from './RegistrationFlow';
+
+interface PaymentStepProps {
+  event?: FlowEventInfo;
+  amount: number | null;
+  onBack: () => void;
+  onPaid?: () => void;
+}
 
 // Payment step shown after review for PAID events.
 // There is currently no online-payment backend, so this step NEVER creates a
 // registration or pretends payment succeeded. When a payment provider is
 // wired up, pass onPaid(paymentResult) and a Pay button will appear.
-export default function PaymentStep({ event, amount, onBack, onPaid }) {
+export default function PaymentStep({ event, amount, onBack, onPaid }: PaymentStepProps) {
   return (
     <Box sx={{ width: '100%' }}>
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={600} color="text.primary" gutterBottom>
+        <Typography variant="h5" color="text.primary" gutterBottom sx={{ fontWeight: 600 }}>
           Complete Payment
         </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
           This is a paid event. Your registration is confirmed only after payment.
         </Typography>
       </Box>
@@ -23,7 +31,7 @@ export default function PaymentStep({ event, amount, onBack, onPaid }) {
         <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Box>
             <Typography variant="body2" color="text.secondary">Registration Fee</Typography>
-            <Typography variant="h4" fontWeight={800}>₹{amount}</Typography>
+            <Typography variant="h4" sx={{ fontWeight: 800 }}>₹{amount}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {event?.eventName}
             </Typography>

@@ -1,6 +1,13 @@
 import { Box, Typography } from '@mui/material';
+import type { FormSectionDef } from '../../../app/types';
 
-export default function ProgressIndicator({ sections, currentIndex, completedSections }) {
+interface ProgressIndicatorProps {
+  sections: FormSectionDef[];
+  currentIndex: number;
+  completedSections: Set<number>;
+}
+
+export default function ProgressIndicator({ sections, currentIndex }: ProgressIndicatorProps) {
   return (
     <Box sx={{ mb: 4 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -37,10 +44,8 @@ export default function ProgressIndicator({ sections, currentIndex, completedSec
               </Box>
               <Typography
                 variant="caption"
-                fontWeight={index === currentIndex ? 600 : 500}
                 color={index <= currentIndex ? 'text.primary' : 'text.secondary'}
-                textAlign="center"
-                sx={{ maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                sx={{ maxWidth: 100, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center', fontWeight: index === currentIndex ? 600 : 500 }}
               >
                 {section.title}
               </Typography>

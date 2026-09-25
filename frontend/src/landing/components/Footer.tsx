@@ -14,9 +14,8 @@ function Footer() {
       <Container maxWidth="lg" sx={{ py: { xs: 4, md: 5 } }}>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
-          alignItems="center"
-          justifyContent="space-between"
           spacing={{ xs: 3, md: 0 }}
+          sx={{ alignItems: 'center', justifyContent: 'space-between' }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
             <Box
@@ -54,7 +53,7 @@ function Footer() {
             </Typography>
           </Box>
 
-          <Stack direction="row" alignItems="center" spacing={{ xs: 3, md: 4 }}>
+          <Stack direction="row" spacing={{ xs: 3, md: 4 }} sx={{ alignItems: 'center' }}>
             <Stack direction="row" spacing={{ xs: 2.5, md: 3.5 }}>
               {links.map((link) => (
                 <Typography

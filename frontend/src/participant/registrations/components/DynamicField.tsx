@@ -1,8 +1,13 @@
 import { useController, useFormContext } from 'react-hook-form';
+import type { UseFormRegister, FieldValues } from 'react-hook-form';
 import { TextField, MenuItem, FormControl, InputLabel, Select, RadioGroup, FormControlLabel, Radio, Checkbox, FormHelperText, Box, Typography } from '@mui/material';
+import type { SvgIconProps } from '@mui/material';
 import ArrowDropDown from '@mui/icons-material/ArrowDropDown';
+import type { FormFieldDef } from '../../../app/types';
 
-const typeIcons = {
+type DynamicFieldDef = FormFieldDef & { description?: string };
+
+const typeIcons: Record<string, string> = {
   text: 'text_fields',
   email: 'email',
   tel: 'phone',
@@ -11,11 +16,16 @@ const typeIcons = {
   checkbox: 'check_box',
 };
 
-function DropdownArrowIcon(props) {
+function DropdownArrowIcon(props: SvgIconProps) {
   return <ArrowDropDown {...props} />;
 }
 
-export default function DynamicField({ field, register }) {
+interface DynamicFieldProps {
+  field: DynamicFieldDef;
+  register?: UseFormRegister<FieldValues>;
+}
+
+export default function DynamicField({ field }: DynamicFieldProps) {
   const { control, formState: { errors, touchedFields } } = useFormContext();
   const { field: controllerField, fieldState: { error } } = useController({
     name: field.name,
@@ -25,7 +35,8 @@ export default function DynamicField({ field, register }) {
   });
 
   const isTouched = touchedFields[field.name];
-  const showError = isTouched && error;
+  const fieldError = isTouched ? error : undefined;
+  const showError = !!fieldError;
 
   const renderInput = () => {
     switch (field.type) {
@@ -37,15 +48,17 @@ export default function DynamicField({ field, register }) {
             type="text"
             fullWidth
             error={showError}
-            helperText={showError ? error.message : field.description}
+            helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            InputProps={{
-              startAdornment: (
-                <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
-                  <span>{typeIcons.text}</span>
-                </Box>
-              ),
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
+                    <span>{typeIcons.text}</span>
+                  </Box>
+                ),
+              },
             }}
           />
         );
@@ -58,15 +71,17 @@ export default function DynamicField({ field, register }) {
             type="email"
             fullWidth
             error={showError}
-            helperText={showError ? error.message : field.description}
+            helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            InputProps={{
-              startAdornment: (
-                <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
-                  <span>{typeIcons.email}</span>
-                </Box>
-              ),
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
+                    <span>{typeIcons.email}</span>
+                  </Box>
+                ),
+              },
             }}
           />
         );
@@ -79,15 +94,17 @@ export default function DynamicField({ field, register }) {
             type="tel"
             fullWidth
             error={showError}
-            helperText={showError ? error.message : field.description}
+            helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            InputProps={{
-              startAdornment: (
-                <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
-                  <span>{typeIcons.tel}</span>
-                </Box>
-              ),
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
+                    <span>{typeIcons.tel}</span>
+                  </Box>
+                ),
+              },
             }}
           />
         );
@@ -101,15 +118,17 @@ export default function DynamicField({ field, register }) {
             rows={3}
             fullWidth
             error={showError}
-            helperText={showError ? error.message : field.description}
+            helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            InputProps={{
-              startAdornment: (
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', mr: 1, color: 'text.secondary', mt: 1 }}>
-                  <span>{typeIcons.textarea}</span>
-                </Box>
-              ),
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mr: 1, color: 'text.secondary', mt: 1 }}>
+                    <span>{typeIcons.textarea}</span>
+                  </Box>
+                ),
+              },
             }}
           />
         );
@@ -124,9 +143,9 @@ export default function DynamicField({ field, register }) {
               label={field.label}
               displayEmpty
               IconComponent={DropdownArrowIcon}
-              renderValue={(selected) =>
+              renderValue={(selected: unknown) =>
                 selected ? (
-                  selected
+                  String(selected)
                 ) : (
                   <Typography component="span" color="text.secondary">
                     Select {field.label}
@@ -143,7 +162,7 @@ export default function DynamicField({ field, register }) {
                 <MenuItem key={option} value={option}>{option}</MenuItem>
               ))}
             </Select>
-            {showError && <FormHelperText>{error?.message || `${field.label} is required`}</FormHelperText>}
+            {showError && <FormHelperText>{fieldError?.message || `${field.label} is required`}</FormHelperText>}
             {!showError && field.description && <FormHelperText>{field.description}</FormHelperText>}
           </FormControl>
         );
@@ -173,7 +192,7 @@ export default function DynamicField({ field, register }) {
                 ))}
               </RadioGroup>
             </FormControl>
-            {showError && <FormHelperText>{error.message}</FormHelperText>}
+            {showError && <FormHelperText>{fieldError?.message}</FormHelperText>}
             {!showError && field.description && <FormHelperText>{field.description}</FormHelperText>}
           </Box>
         );
@@ -181,7 +200,7 @@ export default function DynamicField({ field, register }) {
       case 'checkbox': {
         return (
           <Box>
-            <Typography variant="body2" fontWeight={500} color="text.primary" gutterBottom>
+            <Typography variant="body2" color="text.primary" gutterBottom sx={{ fontWeight: 500 }}>
               {field.label}
               {field.required && <Typography component="span" variant="caption" color="error" sx={{ ml: 0.5 }}>*</Typography>}
             </Typography>
@@ -198,7 +217,7 @@ export default function DynamicField({ field, register }) {
                         const current = controllerField.value || [];
                         const newValue = e.target.checked
                           ? [...current, option]
-                          : current.filter((v) => v !== option);
+                          : current.filter((v: unknown) => v !== option);
                         controllerField.onChange(newValue);
                       }}
                       checked={(controllerField.value || []).includes(option)}
@@ -210,7 +229,7 @@ export default function DynamicField({ field, register }) {
                 />
               ))}
             </Box>
-            {showError && <FormHelperText>{error.message}</FormHelperText>}
+            {showError && <FormHelperText>{fieldError?.message}</FormHelperText>}
             {!showError && field.description && <FormHelperText>{field.description}</FormHelperText>}
           </Box>
         );
@@ -222,7 +241,7 @@ export default function DynamicField({ field, register }) {
             label={field.label}
             fullWidth
             error={showError}
-            helperText={showError ? error.message : field.description}
+            helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
           />

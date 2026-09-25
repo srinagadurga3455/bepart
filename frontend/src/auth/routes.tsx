@@ -1,6 +1,7 @@
-import LoginPage from './pages/LoginPage.jsx';
+import type { RouteObject } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
 
-const routes = [
+const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
 ];
 

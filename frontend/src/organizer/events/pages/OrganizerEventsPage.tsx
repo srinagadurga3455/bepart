@@ -3,18 +3,25 @@ import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Typography } from '@mui/material';
 import { Add } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { eventsApi, organizersApi, registrationsApi, withdrawalsApi } from '../../../shared/api';
-import { unwrapList, formatEventDate, financeByEvent, withdrawalsByEvent, formatINR } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import WithdrawDialog from '../components/WithdrawDialog';
-import WithdrawalStatusChip from '../components/WithdrawalStatus';
+import { eventsApi } from '../api/events';
+import { organizersApi } from '../../account/api/organizers';
+import { registrationsApi } from '../api/registrations';
+import { withdrawalsApi } from '../../withdrawals/api/withdrawals';
+import { unwrapList } from '../../../app/api/client';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { financeByEvent, withdrawalsByEvent } from '../utils/eventData';
+import type { EventItem, RegistrationItem, WithdrawalItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import WithdrawDialog from '../../withdrawals/components/WithdrawDialog';
+import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
 import { organizerNav } from './EventWizard';
+import { apiErrorMessage } from '../../../app/api/client';
 
 function EventsContent() {
   const queryClient = useQueryClient();
-  const [busyId, setBusyId] = useState(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState('');
-  const [withdrawEvent, setWithdrawEvent] = useState(null);
+  const [withdrawEvent, setWithdrawEvent] = useState<EventItem | null>(null);
   const [requestedMsg, setRequestedMsg] = useState('');
 
   const { data: eventsRes, isLoading } = useQuery({
@@ -30,9 +37,9 @@ function EventsContent() {
     queryKey: ['withdrawals', 'mine'], queryFn: () => withdrawalsApi.mine(),
   });
 
-  const events = unwrapList(eventsRes);
-  const finance = financeByEvent(events, unwrapList(regsRes));
-  const byEvent = withdrawalsByEvent(unwrapList(wdsRes));
+  const events: EventItem[] = unwrapList<EventItem>(eventsRes);
+  const finance = financeByEvent(events, unwrapList<RegistrationItem>(regsRes));
+  const byEvent = withdrawalsByEvent(unwrapList<WithdrawalItem>(wdsRes));
   const upiId = orgRes?.data?.upiId;
 
   const refresh = () => {
@@ -41,14 +48,14 @@ function EventsContent() {
     queryClient.invalidateQueries({ queryKey: ['withdrawals', 'mine'] });
   };
 
-  const act = async (id, fn) => {
+  const act = async (id: number, fn: (eid: number) => Promise<unknown>) => {
     setError('');
     setBusyId(id);
     try {
       await fn(id);
       refresh();
     } catch (err) {
-      setError(err.response?.data?.message || 'Action failed.');
+      setError(apiErrorMessage(err, 'Action failed.'));
     } finally {
       setBusyId(null);
     }
@@ -97,7 +104,7 @@ function EventsContent() {
             <Card key={event.id} variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                 <Box sx={{ flex: '1 1 220px', minWidth: 0 }}>
-                  <Typography fontWeight={700} noWrap>{event.eventName}</Typography>
+                  <Typography noWrap sx={{ fontWeight: 700 }}>{event.eventName}</Typography>
                   <Typography variant="body2" color="text.secondary">
                     {formatEventDate(event.date)} · {fin.count} registrations
                     {event.paymentRequired ? ` · ${formatINR(fin.collected)} collected` : ' · Free'}

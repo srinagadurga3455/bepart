@@ -1,7 +1,13 @@
 import { Box, Typography, Button, Card, CardContent, Alert } from '@mui/material';
 import { CheckCircle } from '@mui/icons-material';
+import type { FlowEventInfo } from './RegistrationFlow';
 
-export default function SuccessState({ event, onDone }) {
+interface SuccessStateProps {
+  event?: FlowEventInfo;
+  onDone?: () => void;
+}
+
+export default function SuccessState({ event, onDone }: SuccessStateProps) {
   return (
     <Box sx={{ width: '100%', textAlign: 'center', py: 6 }}>
       <Box
@@ -22,11 +28,11 @@ export default function SuccessState({ event, onDone }) {
         <CheckCircle />
       </Box>
 
-      <Typography variant="h4" fontWeight={700} color="text.primary" gutterBottom>
+      <Typography variant="h4" color="text.primary" gutterBottom sx={{ fontWeight: 700 }}>
         Registration Confirmed!
       </Typography>
 
-      <Typography variant="body1" color="text.secondary" paragraph sx={{ maxWidth: 500, mx: 'auto' }}>
+      <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 500, mx: 'auto', mb: 2 }}>
         You are successfully registered for <strong>{event?.eventName || 'this event'}</strong>.
         A confirmation has been sent to your phone number.
       </Typography>
@@ -37,14 +43,14 @@ export default function SuccessState({ event, onDone }) {
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Event Date
             </Typography>
-            <Typography variant="body1" fontWeight={500} color="text.primary">
-              {new Date(event.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            <Typography variant="body1" color="text.primary" sx={{ fontWeight: 500 }}>
+              {new Date(event.date ?? '').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </Typography>
             <Typography variant="body2" color="text.secondary" gutterBottom sx={{ mt: 2 }}>
               Registration Closes
             </Typography>
-            <Typography variant="body1" fontWeight={500} color="text.primary">
-              {new Date(event.closingTime).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            <Typography variant="body1" color="text.primary" sx={{ fontWeight: 500 }}>
+              {new Date(event.closingTime ?? '').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </Typography>
           </CardContent>
         </Card>

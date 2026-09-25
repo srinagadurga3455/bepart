@@ -3,7 +3,44 @@
 // plus member groups expanded to member1..memberN fields. The builder only
 // changes how organizers SEE and EDIT that same structure.
 
-export const BUILDER_TYPES = [
+import type {
+  FormFieldDef,
+  FormFieldType,
+  FormSectionDef,
+  FormStructure,
+} from '../../../app/types';
+
+/** A stored/builder question with the builder's ephemeral React key. */
+export interface BuilderField extends FormFieldDef {
+  key: string;
+}
+
+export interface BuilderMemberGroup {
+  repeatFrom: string;
+  fields: BuilderField[];
+}
+
+export interface BuilderSection {
+  key: string;
+  id: string;
+  title: string;
+  description: string;
+  fields: BuilderField[];
+  memberGroup: BuilderMemberGroup | null;
+}
+
+export interface BuilderForm {
+  title: string;
+  description: string;
+  sections: BuilderSection[];
+}
+
+export interface RepeatCandidate {
+  sectionTitle: string;
+  field: BuilderField;
+}
+
+export const BUILDER_TYPES: { value: FormFieldType; label: string }[] = [
   { value: 'text', label: 'Short Answer' },
   { value: 'textarea', label: 'Long Answer' },
   { value: 'email', label: 'Email' },
@@ -13,67 +50,79 @@ export const BUILDER_TYPES = [
   { value: 'checkbox', label: 'Checkboxes' },
 ];
 
-export const OPTION_TYPES = ['dropdown', 'radio', 'checkbox'];
+export const OPTION_TYPES: string[] = ['dropdown', 'radio', 'checkbox'];
 export const MAX_MEMBER_GROUPS = 10;
 
-export function newKey() {
+export function newKey(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export function slugify(label, fallback = 'field') {
+export function slugify(label: string | null | undefined, fallback = 'field'): string {
   const words = String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return fallback;
   return words[0] + words.slice(1).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');
 }
 
-function lowerFirst(s) {
+function lowerFirst(s: string): string {
   const t = String(s || '');
   return t.charAt(0).toLowerCase() + t.slice(1);
 }
 
-function upperFirst(s) {
+function upperFirst(s: string): string {
   const t = String(s || '');
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-function stripMemberLabel(label, n) {
+function stripMemberLabel(label: string | null | undefined, n: number): string {
   return String(label || '').replace(new RegExp(`^member\\s*${n}\\s*`, 'i'), '').trim();
 }
 
-function isNumericOptions(field) {
+interface NumericOptionsField {
+  type?: string;
+  options?: unknown;
+}
+
+function isNumericOptions(field: NumericOptionsField | null | undefined): boolean {
   return (
     field?.type === 'dropdown' &&
     Array.isArray(field.options) &&
     field.options.length > 0 &&
-    field.options.every((o) => /^\d+$/.test(String(o).trim()))
+    field.options.every((o: unknown) => /^\d+$/.test(String(o).trim()))
   );
 }
 
-function groupCountFromField(field) {
+function groupCountFromField(field: NumericOptionsField): number {
   if (!isNumericOptions(field)) return 0;
-  const nums = field.options.map((o) => parseInt(String(o).trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
+  const options = Array.isArray(field?.options) ? field.options : [];
+  const nums = options
+    .map((o: unknown) => parseInt(String(o).trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
   if (nums.length === 0) return 0;
   return Math.min(MAX_MEMBER_GROUPS, Math.max(...nums));
 }
 
-export function emptyField() {
+export function emptyField(): BuilderField {
   return { key: newKey(), name: '', label: '', type: 'text', required: true, options: [] };
 }
 
-export function emptySection(index = 0) {
+export function emptySection(index = 0): BuilderSection {
   return {
     key: newKey(), id: `section_${Date.now().toString(36)}_${index}`, title: '', description: '', fields: [], memberGroup: null,
   };
 }
 
-export function emptyMemberGroup() {
+export function emptyMemberGroup(): BuilderMemberGroup {
   return { repeatFrom: '', fields: [{ ...emptyField(), label: 'Name' }, { ...emptyField(), label: 'Registration Number' }, { ...emptyField(), label: 'Branch', type: 'dropdown', options: [] }, { ...emptyField(), label: 'Section', type: 'dropdown', options: [] }] };
 }
 
 // Dropdown questions usable as a repeat source: dropdowns in earlier sections
 // (or earlier in the same section).
-export function findRepeatCandidates(builderSections, sectionIndex, fieldIndex = Infinity) {
-  const out = [];
+export function findRepeatCandidates(
+  builderSections: BuilderSection[],
+  sectionIndex: number,
+  fieldIndex = Infinity
+): RepeatCandidate[] {
+  const out: RepeatCandidate[] = [];
   builderSections.forEach((section, si) => {
     (section.fields || []).forEach((field, fi) => {
       if (field.type !== 'dropdown') return;
@@ -87,31 +136,40 @@ export function findRepeatCandidates(builderSections, sectionIndex, fieldIndex =
 
 // ---- collapse: stored formStructure -> builder model ----
 
-function detectMemberGroups(storedFields) {
-  const byN = new Map();
+interface DetectedGroups {
+  byN: Map<number, { field: FormFieldDef; suffix: string }[]>;
+  maxN: number;
+}
+
+function detectMemberGroups(storedFields: FormFieldDef[] | undefined): DetectedGroups | null {
+  const byN = new Map<number, { field: FormFieldDef; suffix: string }[]>();
   for (const f of storedFields || []) {
     const m = /^member(\d+)(.+)$/i.exec(String(f?.name || ''));
     if (!m) continue;
     const n = parseInt(m[1], 10);
-    if (!byN.has(n)) byN.set(n, []);
-    byN.get(n).push({ field: f, suffix: m[2] });
+    let list = byN.get(n);
+    if (!list) {
+      list = [];
+      byN.set(n, list);
+    }
+    list.push({ field: f, suffix: m[2] });
   }
   if (!byN.has(1)) return null;
   const maxN = Math.max(...byN.keys());
   for (let n = 1; n <= maxN; n++) {
     if (!byN.has(n)) return null; // must be consecutive from 1
   }
-  const sig = (list) => list.map((x) => x.suffix.toLowerCase()).join('|');
-  const first = sig(byN.get(1));
+  const sig = (list: { suffix: string }[]): string => list.map((x) => x.suffix.toLowerCase()).join('|');
+  const first = sig(byN.get(1) || []);
   for (let n = 2; n <= maxN; n++) {
-    if (sig(byN.get(n)) !== first) return null;
+    if (sig(byN.get(n) || []) !== first) return null;
   }
   return { byN, maxN };
 }
 
-export function toBuilderForm(formStructure) {
-  const storedSections = formStructure?.sections || [];
-  const builderSections = storedSections.map((s) => ({
+export function toBuilderForm(formStructure: FormStructure | null | undefined): BuilderForm {
+  const storedSections: FormSectionDef[] = formStructure?.sections || [];
+  const builderSections: BuilderSection[] = storedSections.map((s) => ({
     key: newKey(),
     id: s.id,
     title: s.title || '',
@@ -123,13 +181,14 @@ export function toBuilderForm(formStructure) {
   storedSections.forEach((s, si) => {
     const detected = detectMemberGroups(s.fields);
     // regular fields = stored fields not part of the collapsed groups
-    const memberNames = new Set();
+    const memberNames = new Set<string>();
     if (detected) {
       for (const [, list] of detected.byN) list.forEach(({ field }) => memberNames.add(field.name));
     }
     const regularStored = (s.fields || []).filter((f) => !memberNames.has(f.name));
     if (detected) {
-      const baseFields = detected.byN.get(1).map(({ field, suffix }) => ({
+      const groupOne = detected.byN.get(1) || [];
+      const baseFields: BuilderField[] = groupOne.map(({ field, suffix }) => ({
         key: newKey(),
         name: lowerFirst(suffix),
         label: stripMemberLabel(field.label, 1) || suffix,
@@ -141,7 +200,7 @@ export function toBuilderForm(formStructure) {
       // then in the same section (groups are stored after their section's
       // regular fields, so same-section sources are valid too)
       let repeatFrom = '';
-      const pools = [];
+      const pools: FormFieldDef[][] = [];
       for (let pi = 0; pi < si; pi++) pools.push(builderSections[pi].fields || []);
       pools.push(regularStored);
       for (const pool of pools) {
@@ -171,19 +230,20 @@ export function toBuilderForm(formStructure) {
 
 // ---- expand: builder model -> stored formStructure ----
 
-function cleanOptions(field) {
-  return (field.options || []).map((o) => String(o || '').trim()).filter(Boolean);
+function cleanOptions(field: NumericOptionsField): string[] {
+  const options = Array.isArray(field?.options) ? field.options : [];
+  return options.map((o: unknown) => String(o || '').trim()).filter(Boolean);
 }
 
-function storedField(name, def, required) {
-  const out = { name, label: def.label.trim(), type: def.type, required: !!required };
+function storedField(name: string, def: BuilderField, required: boolean | undefined): FormFieldDef {
+  const out: FormFieldDef = { name, label: def.label.trim(), type: def.type, required: !!required };
   if (OPTION_TYPES.includes(def.type)) out.options = cleanOptions(def);
   return out;
 }
 
-export function toFormStructure(builder) {
-  const usedNames = new Set();
-  const takeName = (base) => {
+export function toFormStructure(builder: BuilderForm): FormStructure {
+  const usedNames = new Set<string>();
+  const takeName = (base: string): string => {
     let name = slugify(base, 'field');
     let i = 2;
     while (usedNames.has(name)) {
@@ -196,7 +256,7 @@ export function toFormStructure(builder) {
 
   // Pass 1: resolve stable stored names for every regular field first, so a
   // repeat source resolves even for freshly created (unnamed) questions.
-  const resolvedNames = builder.sections.map((section) =>
+  const resolvedNames: string[][] = builder.sections.map((section) =>
     (section.fields || []).map((f) => {
       const name = f.name?.trim() || takeName(f.label);
       usedNames.add(name);
@@ -204,8 +264,8 @@ export function toFormStructure(builder) {
     }),
   );
 
-  const sections = builder.sections.map((section, si) => {
-    const fields = [];
+  const sections: FormSectionDef[] = builder.sections.map((section, si) => {
+    const fields: FormFieldDef[] = [];
     // regular fields first (repeat sources must exist before member groups)
     (section.fields || []).forEach((f, fi) => {
       fields.push(storedField(resolvedNames[si][fi], f, f.required));
@@ -213,7 +273,7 @@ export function toFormStructure(builder) {
     // expand member group into member1..memberN
     if (section.memberGroup) {
       const g = section.memberGroup;
-      const lookup = [];
+      const lookup: { def: BuilderField; storedName: string }[] = [];
       builder.sections.forEach((s, idx) => {
         if (idx > si) return;
         (s.fields || []).forEach((f, fi) => {
@@ -257,17 +317,17 @@ export function toFormStructure(builder) {
   };
 }
 
-export function validateBuilder(builder) {
-  const errors = [];
+export function validateBuilder(builder: BuilderForm): string[] {
+  const errors: string[] = [];
   if (!builder.title.trim()) errors.push('Form title is required.');
   if (builder.sections.length === 0) errors.push('Add at least one section.');
   builder.sections.forEach((section, si) => {
     const label = section.title.trim() || `Section ${si + 1}`;
     if (!section.title.trim()) errors.push(`Section ${si + 1}: title is required.`);
     const hasFields = (section.fields || []).length > 0;
-    const hasGroup = section.memberGroup && section.memberGroup.fields.length > 0;
+    const hasGroup = !!section.memberGroup && section.memberGroup.fields.length > 0;
     if (!hasFields && !hasGroup) errors.push(`${label}: add at least one question or a team member group.`);
-    const checkField = (f, prefix) => {
+    const checkField = (f: BuilderField, prefix: string): void => {
       if (!f.label.trim()) errors.push(`${label}: ${prefix} question label is required.`);
       if (OPTION_TYPES.includes(f.type) && cleanOptions(f).length === 0) {
         errors.push(`${label}: "${f.label.trim() || 'untitled question'}" needs at least one option.`);
@@ -275,17 +335,18 @@ export function validateBuilder(builder) {
     };
     (section.fields || []).forEach((f) => checkField(f, ''));
     if (section.memberGroup) {
-      if (!section.memberGroup.repeatFrom) errors.push(`${label}: team member group needs a "repeat based on" question.`);
-      (section.memberGroup.fields || []).forEach((f) => checkField(f, 'member'));
+      const group = section.memberGroup;
+      if (!group.repeatFrom) errors.push(`${label}: team member group needs a "repeat based on" question.`);
+      (group.fields || []).forEach((f) => checkField(f, 'member'));
       // repeat source must resolve to a numeric dropdown
-      const lookup = [];
+      const lookup: BuilderField[] = [];
       builder.sections.forEach((s, idx) => {
         if (idx > si) return;
         (s.fields || []).forEach((f) => lookup.push(f));
       });
-      const src = lookup.find((f) => f.name === section.memberGroup.repeatFrom)
-        || lookup.find((f) => slugify(f.label) === section.memberGroup.repeatFrom);
-      if (section.memberGroup.repeatFrom && !src) {
+      const src = lookup.find((f) => f.name === group.repeatFrom)
+        || lookup.find((f) => slugify(f.label) === group.repeatFrom);
+      if (group.repeatFrom && !src) {
         errors.push(`${label}: repeat source not found. Pick a dropdown question from an earlier section.`);
       } else if (src && !isNumericOptions({ ...src, options: cleanOptions(src) })) {
         errors.push(`${label}: repeat source must be a dropdown with numeric options (e.g. 1, 2, 3, 4, 5).`);

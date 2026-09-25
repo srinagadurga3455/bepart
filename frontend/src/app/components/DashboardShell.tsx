@@ -1,8 +1,13 @@
 import { AppBar, Box, Button, Container, Toolbar, Typography } from '@mui/material';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { logout } from './RequireRole';
+import type { ReactNode } from 'react';
+import { logout } from '../../auth/components/RequireRole';
 
-function Logo({ onClick }) {
+// Application shell (logo, nav, logout). Generic chrome shared by the admin
+// and organizer dashboards — navigation is injected via navItems, so this
+// file contains no feature-specific logic and is owned by the app layer.
+
+function Logo({ onClick }: { onClick?: () => void }) {
   return (
     <Box onClick={onClick} sx={{ display: 'flex', alignItems: 'center', gap: 1.25, cursor: 'pointer' }}>
       <Box
@@ -26,7 +31,13 @@ export function BrandLogo() {
   return <Logo />;
 }
 
-export default function DashboardShell({ title, navItems, children }) {
+interface DashboardShellProps {
+  title?: string;
+  navItems: { label: string; to: string; end?: boolean }[];
+  children: ReactNode;
+}
+
+export default function DashboardShell({ title, navItems, children }: DashboardShellProps) {
   const navigate = useNavigate();
 
   return (

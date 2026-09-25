@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';
-import { withdrawalsApi } from '../api';
+import client, { apiErrorMessage } from '../api/client';
 
-// Authenticated payment-proof viewer. The image is fetched with the user's
+interface ProofButtonProps {
+  withdrawalId: string;
+  label?: string;
+}
+
+// Authenticated payment-proof viewer shared by the admin and organizer
+// withdrawal features. The image is fetched with the user's
 // JWT (never a public URL) and shown from a revocable object URL.
-export default function ProofButton({ withdrawalId, label = 'View Payment Proof' }) {
+export default function ProofButton({ withdrawalId, label = 'View Payment Proof' }: ProofButtonProps) {
   const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState(null);
+  const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -14,11 +20,12 @@ export default function ProofButton({ withdrawalId, label = 'View Payment Proof'
     setError('');
     setLoading(true);
     try {
-      const objectUrl = await withdrawalsApi.proofUrl(withdrawalId);
+      const res = await client.get<Blob>(`/withdrawals/${withdrawalId}/proof`, { responseType: 'blob' });
+      const objectUrl = URL.createObjectURL(res.data);
       setUrl(objectUrl);
       setOpen(true);
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not load payment proof.');
+      setError(apiErrorMessage(err, 'Could not load payment proof.'));
     } finally {
       setLoading(false);
     }

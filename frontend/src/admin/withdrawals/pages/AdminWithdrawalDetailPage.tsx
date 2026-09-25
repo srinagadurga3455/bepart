@@ -5,26 +5,28 @@ import {
   TextField, Typography,
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { withdrawalsApi } from '../../../shared/api';
-import { formatEventDate, formatINR } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import ProofButton from '../../../shared/components/ProofButton';
-import WithdrawalStatusChip from '../../organizer/components/WithdrawalStatus';
-import { adminNav } from '../routes';
+import { withdrawalsApi } from '../api/withdrawals';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { apiErrorMessage } from '../../../app/api/client';
+import type { WithdrawalStatus } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import ProofButton from '../../../app/components/ProofButton';
+import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import { adminNav } from '../../routes';
 
-const OPEN = ['REQUESTED', 'PROCESSING'];
+const OPEN: WithdrawalStatus[] = ['REQUESTED', 'PROCESSING'];
 
-function DetailContent({ id }) {
+function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmReject, setConfirmReject] = useState(false);
   const [transactionId, setTransactionId] = useState('');
-  const [screenshot, setScreenshot] = useState(null);
+  const [screenshot, setScreenshot] = useState<File | null>(null);
 
   const { data, isLoading, error: loadError } = useQuery({
-    queryKey: ['admin', 'withdrawal', id], queryFn: () => withdrawalsApi.get(id),
+    queryKey: ['admin', 'withdrawal', id], queryFn: () => withdrawalsApi.get(id!),
   });
   const w = data?.data;
 
@@ -33,7 +35,7 @@ function DetailContent({ id }) {
     queryClient.invalidateQueries({ queryKey: ['admin', 'withdrawals'] });
   };
 
-  const run = async (fn, okMsg, failMsg) => {
+  const run = async (fn: () => Promise<unknown>, okMsg: string, failMsg: string) => {
     setError('');
     setSuccess('');
     setBusy(true);
@@ -42,7 +44,7 @@ function DetailContent({ id }) {
       refresh();
       setSuccess(okMsg);
     } catch (err) {
-      setError(err.response?.data?.message || failMsg);
+      setError(apiErrorMessage(err, failMsg));
     } finally {
       setBusy(false);
     }
@@ -59,7 +61,7 @@ function DetailContent({ id }) {
       return;
     }
     run(
-      () => withdrawalsApi.confirmPaid(id, { transactionId: transactionId.trim(), screenshot }),
+      () => withdrawalsApi.confirmPaid(id!, { transactionId: transactionId.trim(), screenshot }),
       'Withdrawal marked as PAID.',
       'Could not confirm payment.',
     );
@@ -96,23 +98,23 @@ function DetailContent({ id }) {
             <WithdrawalStatusChip status={w.status} />
           </Box>
 
-          <Typography variant="subtitle1" fontWeight={700} gutterBottom>Organizer</Typography>
+          <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Organizer</Typography>
           <Typography variant="body2" color="text.secondary">{w.organizer?.name || '—'}</Typography>
           <Typography variant="body2" color="text.secondary">Organizer Phone: {w.organizer?.phone || '—'}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Organizer UPI ID: {w.organizer?.upiId || '—'}</Typography>
 
-          <Typography variant="subtitle1" fontWeight={700} gutterBottom>Event</Typography>
+          <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Event</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             {w.event?.eventName || `Event ${w.eventId}`}
             {w.event?.date ? ` · ${formatEventDate(w.event.date)}` : ''}
           </Typography>
 
-          <Typography variant="subtitle1" fontWeight={700} gutterBottom>Amount</Typography>
-          <Typography variant="body1" fontWeight={700} sx={{ mb: 2 }}>{formatINR(w.amount)}</Typography>
+          <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Amount</Typography>
+          <Typography variant="body1" sx={{ mb: 2, fontWeight: 700 }}>{formatINR(w.amount)}</Typography>
 
           {w.status === 'PAID' && (
             <>
-              <Typography variant="subtitle1" fontWeight={700} gutterBottom>Payment Record</Typography>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Payment Record</Typography>
               <Typography variant="body2" color="text.secondary">Transaction ID: {w.transactionId || '—'}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Paid On: {w.paidAt ? formatEventDate(w.paidAt) : '—'}
@@ -127,7 +129,7 @@ function DetailContent({ id }) {
       {isOpen && (
         <Card variant="outlined" sx={{ borderRadius: 3 }}>
           <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
-            <Typography variant="h6" fontWeight={700} gutterBottom>Payment Confirmation</Typography>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Payment Confirmation</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Transfer {formatINR(w.amount)} manually to UPI ID <strong>{w.organizer?.upiId || '—'}</strong>, then record the payment below.
             </Typography>
@@ -152,7 +154,7 @@ function DetailContent({ id }) {
                 {busy ? 'Working…' : 'Mark as Paid'}
               </Button>
               {w.status === 'REQUESTED' && (
-                <Button variant="outlined" disabled={busy} onClick={() => run(() => withdrawalsApi.process(id), 'Marked as processing.', 'Could not update.')}>
+                <Button variant="outlined" disabled={busy} onClick={() => run(() => withdrawalsApi.process(id!), 'Marked as processing.', 'Could not update.')}>
                   Mark Processing
                 </Button>
               )}
@@ -163,7 +165,7 @@ function DetailContent({ id }) {
                 onClick={() => {
                   if (!confirmReject) { setConfirmReject(true); return; }
                   setConfirmReject(false);
-                  run(() => withdrawalsApi.reject(id), 'Withdrawal rejected.', 'Could not reject.');
+                  run(() => withdrawalsApi.reject(id!), 'Withdrawal rejected.', 'Could not reject.');
                 }}
               >
                 {confirmReject ? 'Click again to confirm reject' : 'Reject'}

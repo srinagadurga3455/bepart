@@ -1,11 +1,11 @@
 import { Box } from '@mui/material';
 
-import Navbar from '../components/Navbar.jsx';
-import HeroSection from '../components/HeroSection.jsx';
-import TicketRecovery from '../components/TicketRecovery.jsx';
-import HowItWorks from '../components/HowItWorks.jsx';
-import WhyBePart from '../components/WhyBePart.jsx';
-import Footer from '../components/Footer.jsx';
+import Navbar from '../components/Navbar';
+import HeroSection from '../components/HeroSection';
+import TicketRecovery from '../components/TicketRecovery';
+import HowItWorks from '../components/HowItWorks';
+import WhyBePart from '../components/WhyBePart';
+import Footer from '../components/Footer';
 
 function LandingPage() {
   return (

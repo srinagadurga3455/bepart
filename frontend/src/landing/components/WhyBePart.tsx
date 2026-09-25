@@ -175,9 +175,8 @@ function WhyBePart() {
 
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
-            alignItems={{ xs: 'flex-start', sm: 'center' }}
             spacing={3}
-            sx={{ position: 'relative', zIndex: 1 }}
+            sx={{ position: 'relative', zIndex: 1, alignItems: { xs: 'flex-start', sm: 'center' } }}
           >
             <Box
               sx={{

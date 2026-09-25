@@ -8,8 +8,9 @@ import {
 } from '@mui/icons-material';
 import { Box, Button, Container, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import type { ElementType } from 'react';
 
-const sidebarItems = [
+const sidebarItems: { label: string; icon: ElementType; active?: boolean }[] = [
   { label: 'Dashboard', icon: DashboardIcon, active: true },
   { label: 'Events', icon: CalendarMonth },
   { label: 'My Tickets', icon: ConfirmationNumber },

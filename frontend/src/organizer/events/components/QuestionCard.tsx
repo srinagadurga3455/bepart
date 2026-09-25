@@ -1,13 +1,19 @@
 import { useState } from 'react';
+import type { ComponentType } from 'react';
 import { Box, Button, Divider, FormControl, IconButton, InputLabel, MenuItem, Select, Switch, TextField, Tooltip, Typography } from '@mui/material';
+import type { SvgIconProps } from '@mui/material';
 import {
   Add, ArrowDownward, ArrowUpward, ArrowDropDownCircle, CheckBox, CheckBoxOutlineBlank,
   ContentCopy, Delete, Email, Phone, RadioButtonChecked, RadioButtonUnchecked,
   ShortText, Subject,
 } from '@mui/icons-material';
-import { BUILDER_TYPES, OPTION_TYPES } from './formBuilderUtils';
+import { BUILDER_TYPES, OPTION_TYPES } from '../utils/formBuilderUtils';
+import type { BuilderField } from '../utils/formBuilderUtils';
+import type { FormFieldType } from '../../../app/types';
 
-export const TYPE_META = {
+type FieldIcon = ComponentType<SvgIconProps>;
+
+export const TYPE_META: Record<FormFieldType, { label: string; icon: FieldIcon; placeholder: string | null }> = {
   text: { label: 'Short answer', icon: ShortText, placeholder: 'Short-answer text' },
   textarea: { label: 'Long answer', icon: Subject, placeholder: 'Long-answer text' },
   email: { label: 'Email', icon: Email, placeholder: 'Email address' },
@@ -17,11 +23,11 @@ export const TYPE_META = {
   checkbox: { label: 'Checkboxes', icon: CheckBox, placeholder: null },
 };
 
-function typeLabel(type) {
+function typeLabel(type: FormFieldType): string {
   return TYPE_META[type]?.label || BUILDER_TYPES.find((t) => t.value === type)?.label || type;
 }
 
-function AnswerPreview({ field }) {
+function AnswerPreview({ field }: { field: BuilderField }) {
   const meta = TYPE_META[field.type];
   if (field.type === 'textarea') {
     return (
@@ -38,7 +44,7 @@ function AnswerPreview({ field }) {
   );
 }
 
-function OptionBullet({ type, index }) {
+function OptionBullet({ type, index }: { type: FormFieldType; index: number }) {
   if (type === 'radio') return <RadioButtonUnchecked sx={{ fontSize: 20, color: 'text.disabled' }} />;
   if (type === 'checkbox') return <CheckBoxOutlineBlank sx={{ fontSize: 20, color: 'text.disabled' }} />;
   return (
@@ -48,16 +54,31 @@ function OptionBullet({ type, index }) {
   );
 }
 
+export interface QuestionCardProps {
+  field: BuilderField;
+  selected: boolean;
+  autoFocusLabel: boolean;
+  error?: string | null;
+  onSelect: () => void;
+  onChange: (updated: BuilderField) => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}
+
 export default function QuestionCard({
   field, selected, autoFocusLabel, error,
   onSelect, onChange, onDelete, onDuplicate,
   onMoveUp, onMoveDown, canMoveUp, canMoveDown,
-}) {
-  const set = (patch) => onChange({ ...field, ...patch });
+}: QuestionCardProps) {
+  const set = (patch: Partial<BuilderField>) => onChange({ ...field, ...patch });
 
   const [freshOptIdx, setFreshOptIdx] = useState(-1);
 
-  const setOption = (idx, value) => {
+  const setOption = (idx: number, value: string) => {
     const options = [...(field.options || [])];
     options[idx] = value;
     set({ options });
@@ -69,10 +90,10 @@ export default function QuestionCard({
     set({ options: [...(field.options || []), `Option ${next + 1}`] });
   };
 
-  const removeOption = (idx) => set({ options: (field.options || []).filter((_, i) => i !== idx) });
+  const removeOption = (idx: number) => set({ options: (field.options || []).filter((_, i) => i !== idx) });
 
-  const handleTypeChange = (type) => {
-    const patch = { type };
+  const handleTypeChange = (type: FormFieldType) => {
+    const patch: Partial<BuilderField> = { type };
     if (!OPTION_TYPES.includes(type)) patch.options = [];
     else if (!field.options || field.options.length === 0) patch.options = ['Option 1'];
     set(patch);
@@ -143,7 +164,7 @@ export default function QuestionCard({
           variant="standard"
           fullWidth
           error={!!error}
-          InputProps={{ sx: { fontSize: 17, py: 0.5 } }}
+          slotProps={{ input: { sx: { fontSize: 17, py: 0.5 } } }}
           sx={{ flex: 1, minWidth: 200 }}
         />
         <FormControl size="small" sx={{ minWidth: 170, flexShrink: 0 }}>
@@ -152,7 +173,7 @@ export default function QuestionCard({
             labelId={`${field.key}-type-label`}
             value={field.type}
             label="Type"
-            onChange={(e) => handleTypeChange(e.target.value)}
+            onChange={(e) => handleTypeChange(e.target.value as FormFieldType)}
           >
             {BUILDER_TYPES.map((t) => {
               const Icon = TYPE_META[t.value]?.icon || ShortText;
@@ -193,7 +214,7 @@ export default function QuestionCard({
                 onFocus={() => setFreshOptIdx(-1)}
                 variant="standard"
                 fullWidth
-                InputProps={{ disableUnderline: false, sx: { fontSize: 14 } }}
+                slotProps={{ input: { sx: { fontSize: 14 } } }}
                 sx={{
                   '& .MuiInput-underline:before': { borderBottomColor: 'transparent' },
                   '&:hover .MuiInput-underline:before': { borderBottomColor: 'divider' },
@@ -235,7 +256,7 @@ export default function QuestionCard({
         </Tooltip>
         <Divider orientation="vertical" flexItem sx={{ mx: 1, my: 0.5 }} />
         <Typography sx={{ fontSize: 13 }}>Required</Typography>
-        <Switch size="small" checked={!!field.required} onChange={(e) => set({ required: e.target.checked })} inputProps={{ 'aria-label': 'Required' }} />
+        <Switch size="small" checked={!!field.required} onChange={(e) => set({ required: e.target.checked })} slotProps={{ input: { 'aria-label': 'Required' } }} />
         <Box sx={{ flexGrow: 1 }} />
         <Tooltip title="Move up">
           <span>

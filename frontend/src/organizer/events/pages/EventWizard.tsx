@@ -6,52 +6,66 @@ import {
   Step, StepLabel, Stepper, TextField, Typography,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { eventsApi } from '../../../shared/api';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import RequireRole from '../../../shared/components/RequireRole';
+import axios from 'axios';
+import { eventsApi } from '../api/events';
+import DashboardShell from '../../../app/components/DashboardShell';
+import RequireRole from '../../../auth/components/RequireRole';
 import FormBuilder from '../components/FormBuilder';
-import { toBuilderForm } from '../components/formBuilderUtils';
-import RegistrationFlow from '../../registrations/components/RegistrationFlow';
+import { toBuilderForm } from '../utils/formBuilderUtils';
+import type { BuilderForm } from '../utils/formBuilderUtils';
+import RegistrationFlow from '../../../participant/registrations/components/RegistrationFlow';
+import type { EventItem, EventPayload, FormStructure } from '../../../app/types';
 
 const STEPS = ['Event Details', 'Registration Form', 'Preview & Publish'];
 
-function toDateInput(iso) {
+function toDateInput(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function toTimeInput(iso) {
+function toTimeInput(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function toDeadlineInput(iso) {
+function toDeadlineInput(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso);
-  const p = (n) => String(n).padStart(2, '0');
+  const p = (n: number): string => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function EventWizardInner({ editId }) {
+interface WizardDetails {
+  eventName: string;
+  description: string;
+  date: string;
+  time: string;
+  deadline: string;
+  slots: number | string;
+  paymentType: string;
+  feeAmount: string;
+}
+
+export function EventWizardInner({ editId }: { editId?: string }) {
   const isEdit = !!editId;
   const [step, setStep] = useState(0);
-  const [event, setEvent] = useState(null);
-  const [structure, setStructure] = useState(null);
-  const [builderInitial, setBuilderInitial] = useState(null);
+  const [event, setEvent] = useState<EventItem | null>(null);
+  const [structure, setStructure] = useState<FormStructure | null>(null);
+  const [builderInitial, setBuilderInitial] = useState<BuilderForm | null>(null);
   const [previewSubmitted, setPreviewSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
 
-  const [details, setDetails] = useState({ eventName: '', description: '', date: '', time: '', deadline: '', slots: 100, paymentType: 'free', feeAmount: '' });
-  const [posterFile, setPosterFile] = useState(null);
+  const [details, setDetails] = useState<WizardDetails>({ eventName: '', description: '', date: '', time: '', deadline: '', slots: 100, paymentType: 'free', feeAmount: '' });
+  const [posterFile, setPosterFile] = useState<File | null>(null);
   const [posterBusy, setPosterBusy] = useState(false);
 
   const { data: loaded, isLoading: loadingEvent } = useQuery({
     queryKey: ['organizer-event', editId],
-    queryFn: () => eventsApi.get(editId),
+    queryFn: () => eventsApi.get(editId!),
     enabled: isEdit,
   });
 
@@ -78,22 +92,30 @@ export function EventWizardInner({ editId }) {
   // Development diagnosis: never swallow the real failure. The complete error
   // (status, URL, backend body) goes to the console; the user sees the most
   // specific safe message available instead of the generic fallback.
-  const fail = (err, fallback, context) => {
+  const fail = (err: unknown, fallback: string, context?: string) => {
+    const axiosErr = axios.isAxiosError(err) ? err : null;
     console.error('BEPART REQUEST FAILED', {
       context,
-      message: err?.message,
-      code: err?.code,
-      status: err?.response?.status,
-      data: err?.response?.data,
-      url: err?.config?.url,
-      method: err?.config?.method,
-      requestData: err?.config?.data,
+      message: err instanceof Error ? err.message : undefined,
+      code: axiosErr?.code,
+      status: axiosErr?.response?.status,
+      data: axiosErr?.response?.data,
+      url: axiosErr?.config?.url,
+      method: axiosErr?.config?.method,
+      requestData: axiosErr?.config?.data,
       error: err,
     });
-    setError(err.response?.data?.message || err?.message || fallback);
+    const backendMessage: unknown = axiosErr?.response?.data && typeof axiosErr.response.data === 'object'
+      ? (axiosErr.response.data as { message?: unknown }).message
+      : undefined;
+    setError(
+      (typeof backendMessage === 'string' && backendMessage) ||
+      (err instanceof Error ? err.message : '') ||
+      fallback
+    );
   };
 
-  const parseFeeAmount = () => {
+  const parseFeeAmount = (): number | null => {
     if (details.paymentType !== 'paid') return null;
     if (details.feeAmount === '' || details.feeAmount == null) throw new Error('Registration fee is required for paid events.');
     const amount = Number(details.feeAmount);
@@ -105,18 +127,20 @@ export function EventWizardInner({ editId }) {
   // Payment config lives on the event (paymentRequired) + inside the single
   // formStructure (payment.amount) — the same representation the participant
   // RegistrationFlow already reads. No second model involved.
-  const withPaymentConfig = (baseStructure) => {
+  function withPaymentConfig(baseStructure: FormStructure): FormStructure;
+  function withPaymentConfig(baseStructure: null): null;
+  function withPaymentConfig(baseStructure: FormStructure | null): FormStructure | null {
     if (!baseStructure) return baseStructure;
-    const merged = { ...baseStructure };
+    const merged: FormStructure = { ...baseStructure };
     if (details.paymentType === 'paid') {
-      merged.payment = { amount: parseFeeAmount() };
+      merged.payment = { amount: parseFeeAmount() ?? 0 };
     } else {
       delete merged.payment;
     }
     return merged;
-  };
+  }
 
-  const buildDetailsPayload = () => {
+  const buildDetailsPayload = (): EventPayload => {
     if (!details.eventName.trim()) throw new Error('Event name is required.');
     if (!details.date || !details.time) throw new Error('Event date and time are required.');
     if (!details.deadline) throw new Error('Registration deadline is required.');
@@ -124,7 +148,7 @@ export function EventWizardInner({ editId }) {
     const closingTime = new Date(details.deadline);
     if (isNaN(date.getTime()) || isNaN(closingTime.getTime())) throw new Error('Invalid date or time.');
     if (closingTime >= date) throw new Error('Registration deadline must be before the event date.');
-    const slots = parseInt(details.slots, 10);
+    const slots = parseInt(String(details.slots), 10);
     if (!Number.isFinite(slots) || slots < 1) throw new Error('Capacity must be at least 1.');
     if (details.paymentType === 'paid') parseFeeAmount();
     return {
@@ -148,7 +172,7 @@ export function EventWizardInner({ editId }) {
         payload.formStructure = withPaymentConfig(structure);
       }
       console.log('SAVE EVENT DETAILS REQUEST', payload);
-      const res = isEdit ? await eventsApi.update(editId, payload) : await eventsApi.create(payload);
+      const res = isEdit ? await eventsApi.update(editId!, payload) : await eventsApi.create(payload);
       console.log('SAVE EVENT DETAILS RESPONSE', res.data);
       const saved = res.data;
       setEvent(saved);
@@ -184,7 +208,7 @@ export function EventWizardInner({ editId }) {
     }
   };
 
-  const saveForm = async (formStructure) => {
+  const saveForm = async (formStructure: FormStructure) => {
     if (!event) return;
     setError('');
     setBusy(true);
@@ -204,7 +228,7 @@ export function EventWizardInner({ editId }) {
     }
   };
 
-  const doTransition = async (fn, okMsg) => {
+  const doTransition = async (fn: (id: number) => Promise<{ data: EventItem }>, okMsg?: string) => {
     if (!event) return;
     setError('');
     setBusy(true);
@@ -262,25 +286,25 @@ export function EventWizardInner({ editId }) {
       {step === 0 && (
         <Card variant="outlined" sx={{ borderRadius: 3, maxWidth: 720 }}>
           <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
-            <Typography variant="h6" fontWeight={700} gutterBottom>Event Details</Typography>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Event Details</Typography>
             <TextField label="Event Name" placeholder="e.g. Udbhav Hackathon 2026" value={details.eventName}
               onChange={(e) => setDetails({ ...details, eventName: e.target.value })} fullWidth size="small" sx={{ mb: 2 }} />
             <TextField label="Description" placeholder="What is this event about?" value={details.description}
               onChange={(e) => setDetails({ ...details, description: e.target.value })} fullWidth size="small" multiline rows={3} sx={{ mb: 2 }} />
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
               <TextField label="Date" type="date" value={details.date} onChange={(e) => setDetails({ ...details, date: e.target.value })}
-                size="small" InputLabelProps={{ shrink: true }} sx={{ flex: '1 1 160px' }} />
+                size="small" slotProps={{ inputLabel: { shrink: true } }} sx={{ flex: '1 1 160px' }} />
               <TextField label="Time" type="time" value={details.time} onChange={(e) => setDetails({ ...details, time: e.target.value })}
-                size="small" InputLabelProps={{ shrink: true }} sx={{ flex: '1 1 160px' }} />
+                size="small" slotProps={{ inputLabel: { shrink: true } }} sx={{ flex: '1 1 160px' }} />
             </Box>
             <TextField label="Registration Deadline" type="datetime-local" value={details.deadline}
               onChange={(e) => setDetails({ ...details, deadline: e.target.value })}
-              fullWidth size="small" InputLabelProps={{ shrink: true }} sx={{ mb: 2 }} />
+              fullWidth size="small" slotProps={{ inputLabel: { shrink: true } }} sx={{ mb: 2 }} />
             <TextField label="Capacity (slots)" type="number" value={details.slots}
               onChange={(e) => setDetails({ ...details, slots: e.target.value })}
-              size="small" slotProps={{ input: { min: 1 } }} sx={{ mb: 2, width: 220 }} />
+              size="small" slotProps={{ htmlInput: { min: 1 } }} sx={{ mb: 2, width: 220 }} />
 
-            <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Registration Type</Typography>
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>Registration Type</Typography>
             <RadioGroup
               row
               value={details.paymentType}
@@ -294,13 +318,13 @@ export function EventWizardInner({ editId }) {
               <TextField label="Registration Fee" type="number" placeholder="300" value={details.feeAmount}
                 onChange={(e) => setDetails({ ...details, feeAmount: e.target.value })}
                 size="small"
-                slotProps={{ input: { min: 0.01, step: 'any', startAdornment: <InputAdornment position="start">₹</InputAdornment> } }}
+                slotProps={{ input: { startAdornment: <InputAdornment position="start">₹</InputAdornment> }, htmlInput: { min: 0.01, step: 'any' } }}
                 sx={{ mb: 2, width: 220 }}
               />
             )}
 
             <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle1" fontWeight={600} gutterBottom>Event Poster (optional)</Typography>
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>Event Poster (optional)</Typography>
             {event?.posterUrl && (
               <Box sx={{ mb: 2 }}>
                 <Box component="img" src={event.posterUrl} alt="Event poster"
@@ -370,7 +394,7 @@ export function EventWizardInner({ editId }) {
           <Card variant="outlined" sx={{ borderRadius: 3 }}>
             <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-                <Typography variant="h6" fontWeight={700}>Publish</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>Publish</Typography>
                 <Chip label={event?.status || 'DRAFT'} color={event?.status === 'PUBLISHED' ? 'success' : 'default'} variant="outlined" />
               </Box>
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -409,7 +433,7 @@ export function EventWizardInner({ editId }) {
   );
 }
 
-export const organizerNav = [
+export const organizerNav: { label: string; to: string; end?: boolean }[] = [
   { label: 'Dashboard', to: '/organizer', end: true },
   { label: 'My Events', to: '/organizer/events' },
   { label: 'Withdrawals', to: '/organizer/withdrawals' },

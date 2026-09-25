@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { Alert, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { authApi } from '../../../shared/api';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import { logout } from '../../../shared/components/RequireRole';
-import { adminNav } from '../routes';
+import { authApi } from '../../../auth/api/auth';
+import DashboardShell from '../../../app/components/DashboardShell';
+import { logout } from '../../../auth/components/RequireRole';
+import { adminNav } from '../../routes';
 
 export default function AdminAccountPage() {
   const navigate = useNavigate();
@@ -43,7 +43,7 @@ export default function AdminAccountPage() {
             </>
           )}
           <Divider sx={{ my: 2.5 }} />
-          <Typography variant="h6" fontWeight={700} gutterBottom>About</Typography>
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>About</Typography>
           <Typography variant="body2" color="text.secondary">
             BePart admin panel. Organizers and events are managed through this dashboard using the platform APIs.
           </Typography>

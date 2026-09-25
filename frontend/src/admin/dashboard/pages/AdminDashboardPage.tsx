@@ -1,11 +1,14 @@
 import { Box, Card, CardContent, CircularProgress, Grid, Typography, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { adminApi, organizersApi } from '../../../shared/api';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import OrganizerTable from '../components/OrganizerTable';
-import { adminNav } from '../routes';
+import { adminApi } from '../api/admin';
+import { organizersApi } from '../../organizers/api/organizers';
+import { unwrapList } from '../../../app/api/client';
+import type { EventItem, OrganizerItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import OrganizerTable from '../../organizers/components/OrganizerTable';
+import { adminNav } from '../../routes';
 
-function StatCard({ label, value }) {
+function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
       <CardContent>
@@ -31,8 +34,8 @@ function DashboardContent() {
     return <Alert severity="error">Could not load admin data.</Alert>;
   }
 
-  const organizers = Array.isArray(orgsRes?.data) ? orgsRes.data : [];
-  const events = Array.isArray(eventsRes?.data) ? eventsRes.data : [];
+  const organizers: OrganizerItem[] = orgsRes ? unwrapList<OrganizerItem>(orgsRes) : [];
+  const events: EventItem[] = eventsRes ? unwrapList<EventItem>(eventsRes) : [];
 
   return (
     <Box>
@@ -42,11 +45,11 @@ function DashboardContent() {
       <Typography color="text.secondary" sx={{ mb: 3 }}>Platform overview from live data.</Typography>
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={4}><StatCard label="Total Organizers" value={organizers.length} /></Grid>
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Organizers" value={organizers.length} /></Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <StatCard label="Active Organizers" value={organizers.filter((o) => o.status === 'APPROVED').length} />
         </Grid>
-        <Grid item xs={12} sm={4}><StatCard label="Total Events" value={events.length} /></Grid>
+        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Events" value={events.length} /></Grid>
       </Grid>
 
       <Card variant="outlined" sx={{ borderRadius: 3 }}>

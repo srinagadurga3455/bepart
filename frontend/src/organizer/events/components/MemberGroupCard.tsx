@@ -1,13 +1,40 @@
 import { Box, Button, Divider, FormControl, IconButton, InputLabel, MenuItem, Select, Tooltip, Typography } from '@mui/material';
 import { Add, Delete, GroupAdd } from '@mui/icons-material';
 import QuestionCard from './QuestionCard';
+import type {
+  BuilderField,
+  BuilderMemberGroup,
+  RepeatCandidate,
+} from '../utils/formBuilderUtils';
+
+export interface RepeatOption extends RepeatCandidate {
+  value: string;
+}
+
+export interface MemberGroupCardProps {
+  group: BuilderMemberGroup;
+  candidates: RepeatOption[];
+  selected: boolean;
+  selectedMemberKey: string | null;
+  focusKey: string | null;
+  error: string | null;
+  onSelect: () => void;
+  onSelectMember: (key: string) => void;
+  onChange: (group: BuilderMemberGroup) => void;
+  onRemove: () => void;
+  onAddField: () => void;
+  onFieldChange: (fi: number, updated: BuilderField) => void;
+  onFieldDuplicate: (fi: number) => void;
+  onFieldDelete: (fi: number) => void;
+  onFieldMove: (fi: number, dir: number) => void;
+}
 
 export default function MemberGroupCard({
   group, candidates, selected, selectedMemberKey, focusKey, error,
   onSelect, onSelectMember, onChange, onRemove,
   onAddField, onFieldChange, onFieldDuplicate, onFieldDelete, onFieldMove,
-}) {
-  const set = (patch) => onChange({ ...group, ...patch });
+}: MemberGroupCardProps) {
+  const set = (patch: Partial<BuilderMemberGroup>) => onChange({ ...group, ...patch });
   const repeatLabel = candidates.find((c) => c.value === group.repeatFrom)?.field.label;
 
   if (!selected) {

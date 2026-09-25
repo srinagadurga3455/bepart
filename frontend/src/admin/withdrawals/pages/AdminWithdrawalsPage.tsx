@@ -1,17 +1,19 @@
 import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { withdrawalsApi } from '../../../shared/api';
-import { unwrapList, formatEventDate, formatINR } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import WithdrawalStatusChip from '../../organizer/components/WithdrawalStatus';
-import { adminNav } from '../routes';
+import { withdrawalsApi } from '../api/withdrawals';
+import { unwrapList } from '../../../app/api/client';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
+import type { WithdrawalItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import { adminNav } from '../../routes';
 
 export default function AdminWithdrawalsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin', 'withdrawals'], queryFn: () => withdrawalsApi.list(),
   });
-  const withdrawals = unwrapList(data);
+  const withdrawals: WithdrawalItem[] = data ? unwrapList<WithdrawalItem>(data) : [];
 
   return (
     <DashboardShell title="Withdrawal Requests" navItems={adminNav}>

@@ -1,14 +1,16 @@
-import RequireRole from '../../shared/components/RequireRole';
-import DashboardPage from './pages/DashboardPage.jsx';
-import OrganizerEventsPage from './pages/OrganizerEventsPage.jsx';
-import OrganizerEventDetailPage from './pages/OrganizerEventDetailPage.jsx';
-import OrganizerWithdrawalsPage from './pages/OrganizerWithdrawalsPage.jsx';
-import OrganizerAccountPage from './pages/OrganizerAccountPage.jsx';
-import { EventCreatePage, EventEditPage } from './pages/EventWizard.jsx';
+import type { RouteObject } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import RequireRole from '../auth/components/RequireRole';
+import DashboardPage from './dashboard/pages/DashboardPage';
+import OrganizerEventsPage from './events/pages/OrganizerEventsPage';
+import OrganizerEventDetailPage from './events/pages/OrganizerEventDetailPage';
+import OrganizerWithdrawalsPage from './withdrawals/pages/OrganizerWithdrawalsPage';
+import OrganizerAccountPage from './account/pages/OrganizerAccountPage';
+import { EventCreatePage, EventEditPage } from './events/pages/EventWizard';
 
-const org = (element) => <RequireRole roles={['ORGANIZER']}>{element}</RequireRole>;
+const org = (element: ReactNode) => <RequireRole roles={['ORGANIZER']}>{element}</RequireRole>;
 
-const routes = [
+const routes: RouteObject[] = [
   { path: '/organizer', element: org(<DashboardPage />) },
   { path: '/organizer/dashboard', element: org(<DashboardPage />) },
   { path: '/organizer/events', element: org(<OrganizerEventsPage />) },

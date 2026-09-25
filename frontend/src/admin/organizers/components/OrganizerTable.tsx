@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ChangeEvent } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
@@ -6,13 +7,15 @@ import {
 } from '@mui/material';
 import { Add } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { organizersApi } from '../../../shared/api';
+import { organizersApi } from '../api/organizers';
+import { apiErrorMessage, unwrapList } from '../../../app/api/client';
+import type { OrganizerItem, OrganizerPayload } from '../../../app/types';
 
-export function isOrganizerActive(o) {
+export function isOrganizerActive(o: OrganizerItem | null | undefined): boolean {
   return o?.status === 'APPROVED';
 }
 
-export function OrganizerStatusChip({ organizer }) {
+export function OrganizerStatusChip({ organizer }: { organizer: OrganizerItem }) {
   const active = isOrganizerActive(organizer);
   return (
     <Chip
@@ -24,9 +27,24 @@ export function OrganizerStatusChip({ organizer }) {
   );
 }
 
-function OrganizerFormDialog({ open, initial, onClose, onSaved }) {
+interface OrganizerFormState {
+  name: string;
+  email: string;
+  phone: string;
+  upiId: string;
+  description: string;
+}
+
+interface OrganizerFormDialogProps {
+  open: boolean;
+  initial?: OrganizerItem;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+}
+
+function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormDialogProps) {
   const isEdit = !!initial;
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<OrganizerFormState>({
     name: initial?.name || '',
     email: initial?.email || initial?.user?.email || '',
     phone: initial?.phone || '',
@@ -36,7 +54,8 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const set = (k: keyof OrganizerFormState) => (e: ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [k]: e.target.value }));
 
   const submit = async () => {
     setError('');
@@ -45,19 +64,19 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }) {
     if (!form.upiId.trim()) { setError('UPI ID is required.'); return; }
     setBusy(true);
     try {
-      const payload = {
+      const payload: OrganizerPayload = {
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim() || undefined,
         upiId: form.upiId.trim(),
         description: form.description.trim() || undefined,
       };
-      if (isEdit) await organizersApi.update(initial.id, payload);
+      if (isEdit && initial) await organizersApi.update(initial.id, payload);
       else await organizersApi.create(payload);
       onSaved(isEdit ? 'Organizer updated successfully.' : 'Organizer created successfully.');
       onClose();
     } catch (err) {
-      setError(err.response?.data?.message || `Could not ${isEdit ? 'update' : 'create'} organizer.`);
+      setError(apiErrorMessage(err, `Could not ${isEdit ? 'update' : 'create'} organizer.`));
     } finally {
       setBusy(false);
     }
@@ -98,16 +117,16 @@ export default function OrganizerTable() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [confirmDeactId, setConfirmDeactId] = useState(null);
-  const [busyId, setBusyId] = useState(null);
+  const [editTarget, setEditTarget] = useState<OrganizerItem | null>(null);
+  const [confirmDeactId, setConfirmDeactId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const { data, isLoading, error: loadError, refetch } = useQuery({
     queryKey: ['admin', 'organizers'], queryFn: () => organizersApi.list(),
   });
-  const all = Array.isArray(data?.data) ? data.data : [];
+  const all: OrganizerItem[] = data ? unwrapList<OrganizerItem>(data) : [];
   const q = search.trim().toLowerCase();
   const organizers = q
     ? all.filter((o) => (o.name || '').toLowerCase().includes(q) || (o.email || o.user?.email || '').toLowerCase().includes(q))
@@ -119,12 +138,17 @@ export default function OrganizerTable() {
     refetch();
   };
 
-  const saved = (msg) => {
+  const saved = (msg: string) => {
     refresh();
     setSuccess(msg);
   };
 
-  const runStatusChange = async (id, fn, okMsg, failMsg) => {
+  const runStatusChange = async (
+    id: string,
+    fn: (oid: string) => Promise<unknown>,
+    okMsg: string,
+    failMsg: string
+  ) => {
     setError('');
     setBusyId(id);
     try {
@@ -132,7 +156,7 @@ export default function OrganizerTable() {
       refresh();
       setSuccess(okMsg);
     } catch (err) {
-      setError(err.response?.data?.message || failMsg);
+      setError(apiErrorMessage(err, failMsg));
     } finally {
       setBusyId(null);
     }
@@ -141,7 +165,7 @@ export default function OrganizerTable() {
   return (
     <Box>
       <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Typography variant="h6" fontWeight={700} sx={{ mr: 'auto' }}>Organizers</Typography>
+        <Typography variant="h6" sx={{ mr: 'auto', fontWeight: 700 }}>Organizers</Typography>
         <TextField
           size="small"
           placeholder="Search organizers"
@@ -186,7 +210,7 @@ export default function OrganizerTable() {
             onClick={() => {
               const id = confirmDeactId;
               setConfirmDeactId(null);
-              runStatusChange(id, (oid) => organizersApi.deactivate(oid), 'Organizer deactivated.', 'Deactivation failed.');
+              if (id) runStatusChange(id, (oid) => organizersApi.deactivate(oid), 'Organizer deactivated.', 'Deactivation failed.');
             }}
           >
             {busyId ? 'Working…' : 'Deactivate'}

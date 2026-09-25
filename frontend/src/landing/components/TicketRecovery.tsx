@@ -21,9 +21,8 @@ function TicketRecovery() {
         >
           <Stack
             direction={{ xs: 'column', md: 'row' }}
-            alignItems={{ xs: 'center', md: 'center' }}
             spacing={{ xs: 3, md: 4 }}
-            sx={{ textAlign: { xs: 'center', md: 'left' } }}
+            sx={{ textAlign: { xs: 'center', md: 'left' }, alignItems: { xs: 'center', md: 'center' } }}
           >
             <Box
               sx={{

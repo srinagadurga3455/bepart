@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@mui/material';
-import DashboardShell from '../../../shared/components/DashboardShell';
+import DashboardShell from '../../../app/components/DashboardShell';
 import OrganizerTable from '../components/OrganizerTable';
-import { adminNav } from '../routes';
+import { adminNav } from '../../routes';
 
 export default function AdminOrganizersPage() {
   return (

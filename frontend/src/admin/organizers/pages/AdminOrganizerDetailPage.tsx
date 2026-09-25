@@ -4,28 +4,29 @@ import {
   Alert, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, Typography,
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { organizersApi } from '../../../shared/api';
-import { formatEventDate } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
+import { organizersApi } from '../api/organizers';
+import { formatEventDate } from '../../../app/utils/format';
+import { apiErrorMessage, unwrapList } from '../../../app/api/client';
+import type { EventItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
 import { isOrganizerActive, OrganizerStatusChip } from '../components/OrganizerTable';
-import { adminNav } from '../routes';
+import { adminNav } from '../../routes';
 
-function DetailContent({ id }) {
+function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDeact, setConfirmDeact] = useState(false);
 
   const { data: orgRes, isLoading: orgLoading, error: orgError } = useQuery({
-    queryKey: ['admin', 'organizer', id], queryFn: () => organizersApi.get(id),
+    queryKey: ['admin', 'organizer', id], queryFn: () => organizersApi.get(id!),
   });
   const { data: eventsRes, isLoading: eventsLoading } = useQuery({
-    queryKey: ['admin', 'organizer', id, 'events'], queryFn: () => organizersApi.events(id, { page: 1, limit: 50 }),
+    queryKey: ['admin', 'organizer', id, 'events'], queryFn: () => organizersApi.events(id!, { page: 1, limit: 50 }),
   });
 
   const organizer = orgRes?.data;
-  const body = eventsRes?.data;
-  const events = Array.isArray(body) ? body : body?.data || [];
+  const events: EventItem[] = eventsRes ? unwrapList<EventItem>(eventsRes) : [];
   const conducted = events.filter((e) => e.status === 'COMPLETED' || e.status === 'CANCELLED').length;
   const upcoming = events.filter((e) => e.status === 'PUBLISHED' || e.status === 'PREVIEW').length;
 
@@ -44,10 +45,10 @@ function DetailContent({ id }) {
     setError('');
     setBusy(true);
     try {
-      await organizersApi.deactivate(id);
+      await organizersApi.deactivate(id!);
       refresh();
     } catch (err) {
-      setError(err.response?.data?.message || 'Deactivation failed.');
+      setError(apiErrorMessage(err, 'Deactivation failed.'));
     } finally {
       setBusy(false);
     }
@@ -57,10 +58,10 @@ function DetailContent({ id }) {
     setError('');
     setBusy(true);
     try {
-      await organizersApi.approve(id);
+      await organizersApi.approve(id!);
       refresh();
     } catch (err) {
-      setError(err.response?.data?.message || 'Activation failed.');
+      setError(apiErrorMessage(err, 'Activation failed.'));
     } finally {
       setBusy(false);
     }
@@ -106,7 +107,7 @@ function DetailContent({ id }) {
             Status: {organizer.status}
           </Typography>
           {organizer.description && (
-            <Typography color="text.secondary" paragraph>{organizer.description}</Typography>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>{organizer.description}</Typography>
           )}
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Total Events: {events.length} · Conducted Events: {conducted} · Upcoming Events: {upcoming}
@@ -125,7 +126,7 @@ function DetailContent({ id }) {
 
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Typography variant="h6" fontWeight={700} gutterBottom>
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
             Events by this organizer ({events.length})
           </Typography>
           {events.length === 0 ? (
@@ -135,7 +136,7 @@ function DetailContent({ id }) {
               <Box key={event.id} sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' } }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                   <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                    <Typography fontWeight={600} noWrap>{event.eventName}</Typography>
+                    <Typography noWrap sx={{ fontWeight: 600 }}>{event.eventName}</Typography>
                     <Typography variant="body2" color="text.secondary">
                       {formatEventDate(event.date)}
                     </Typography>

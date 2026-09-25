@@ -2,12 +2,21 @@ import { useState } from 'react';
 import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import { Box, Card, CardContent, TextField, Button, Typography, Alert, Step, StepLabel, Stepper } from '@mui/material';
 import { useForm } from 'react-hook-form';
-import { authApi, isEmailIdentifier } from '../../../shared/api';
+import { authApi, isEmailIdentifier } from '../api/auth';
+import { apiErrorMessage } from '../../app/api/client';
 
-function roleHome(role) {
+function roleHome(role: string | undefined): string {
   if (role === 'ADMIN') return '/admin';
   if (role === 'ORGANIZER') return '/organizer';
   return '/events';
+}
+
+interface IdentifierForm {
+  identifier: string;
+}
+
+interface OtpForm {
+  otp: string;
 }
 
 export default function LoginPage() {
@@ -20,13 +29,13 @@ export default function LoginPage() {
   const [info, setInfo] = useState('');
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const { register, handleSubmit, formState: { errors } } = useForm();
-  const { register: registerOtp, handleSubmit: handleOtpSubmit, formState: { errors: otpErrors } } = useForm();
+  const { register, handleSubmit, formState: { errors } } = useForm<IdentifierForm>();
+  const { register: registerOtp, handleSubmit: handleOtpSubmit, formState: { errors: otpErrors } } = useForm<OtpForm>();
 
-  const from = location.state?.from?.pathname;
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
 
-  const validateIdentifier = (value) => {
-    const clean = String(value || '').trim();
+  const validateIdentifier = (value: string): string | true => {
+    const clean = value.trim();
     if (!clean) return 'Email or phone number is required';
     if (clean.includes('@')) {
       if (!/^\S+@\S+\.\S+$/.test(clean)) return 'Enter a valid email';
@@ -36,7 +45,7 @@ export default function LoginPage() {
     return true;
   };
 
-  const onRequestOtp = async (data) => {
+  const onRequestOtp = async (data: IdentifierForm) => {
     setError('');
     setInfo('');
     setSending(true);
@@ -48,13 +57,13 @@ export default function LoginPage() {
       setStep(1);
       setInfo('OTP sent. In development, find it in the backend server console.');
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not send OTP. Check the details and try again.');
+      setError(apiErrorMessage(err, 'Could not send OTP. Check the details and try again.'));
     } finally {
       setSending(false);
     }
   };
 
-  const onVerifyOtp = async (data) => {
+  const onVerifyOtp = async (data: OtpForm) => {
     setError('');
     setVerifying(true);
     try {
@@ -63,7 +72,7 @@ export default function LoginPage() {
       const role = res.data.user?.role;
       navigate(from || roleHome(role), { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid or expired OTP. Try again.');
+      setError(apiErrorMessage(err, 'Invalid or expired OTP. Try again.'));
     } finally {
       setVerifying(false);
     }

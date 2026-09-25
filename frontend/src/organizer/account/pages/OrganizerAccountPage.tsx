@@ -1,8 +1,8 @@
 import { Alert, Avatar, Box, Card, CardContent, Chip, CircularProgress, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { organizersApi } from '../../../shared/api';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import { organizerNav } from './EventWizard';
+import { organizersApi } from '../api/organizers';
+import DashboardShell from '../../../app/components/DashboardShell';
+import { organizerNav } from '../../events/pages/EventWizard';
 
 export default function OrganizerAccountPage() {
   const { data, isLoading, error } = useQuery({ queryKey: ['organizer', 'me'], queryFn: () => organizersApi.getMe() });

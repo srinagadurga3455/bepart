@@ -3,18 +3,20 @@ import {
   Alert, Box, Button, Card, CardContent, CircularProgress, Typography,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { withdrawalsApi } from '../../../shared/api';
-import { unwrapList, formatEventDate, formatINR } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import ProofButton from '../../../shared/components/ProofButton';
-import WithdrawalStatusChip from '../components/WithdrawalStatus';
-import { organizerNav } from './EventWizard';
+import { withdrawalsApi } from '../api/withdrawals';
+import { unwrapList } from '../../../app/api/client';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
+import type { WithdrawalItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import ProofButton from '../../../app/components/ProofButton';
+import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import { organizerNav } from '../../events/pages/EventWizard';
 
 function WithdrawalsContent() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['withdrawals', 'mine'], queryFn: () => withdrawalsApi.mine(),
   });
-  const withdrawals = unwrapList(data);
+  const withdrawals: WithdrawalItem[] = unwrapList<WithdrawalItem>(data);
 
   if (isLoading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
@@ -37,8 +39,8 @@ function WithdrawalsContent() {
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 1 }}>
                 <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                  <Typography fontWeight={700} noWrap>{w.event?.eventName || `Event ${w.eventId}`}</Typography>
-                  <Typography variant="h6" fontWeight={800}>{formatINR(w.amount)}</Typography>
+                  <Typography noWrap sx={{ fontWeight: 700 }}>{w.event?.eventName || `Event ${w.eventId}`}</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatINR(w.amount)}</Typography>
                 </Box>
                 <WithdrawalStatusChip status={w.status} />
               </Box>

@@ -1,13 +1,13 @@
 import { useParams, Link } from 'react-router-dom';
 import { Container, Typography, Box, Button, Card, CardContent, Chip, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { eventsApi } from '../../../shared/api';
+import { eventsApi } from '../api/events';
 
 export default function EventDetailPage() {
   const { id } = useParams();
   const { data: eventResponse, isLoading, error } = useQuery({
     queryKey: ['event', id],
-    queryFn: () => eventsApi.getPublic(id),
+    queryFn: () => eventsApi.getPublic(id!),
     enabled: !!id,
   });
 
@@ -15,11 +15,11 @@ export default function EventDetailPage() {
   const event = eventResponse?.data;
 
   if (isLoading) return <Typography>Loading event...</Typography>;
-  if (error) return <Alert severity="error">Event not found</Alert>;
+  if (error || !event) return <Alert severity="error">Event not found</Alert>;
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Link to="/events" sx={{ display: 'inline-block', mb: 2 }}>
+      <Link to="/events">
         <Button variant="text" startIcon={<span>←</span>}>Back to Events</Button>
       </Link>
       <Card>
@@ -41,7 +41,7 @@ export default function EventDetailPage() {
               variant="outlined"
             />
           </Box>
-          <Typography paragraph>{event.description}</Typography>
+          <Typography sx={{ mb: 2 }}>{event.description}</Typography>
           <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 3 }}>
             <Box>
               <Typography variant="body2" color="text.secondary">Date</Typography>

@@ -3,12 +3,24 @@ import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
   TextField, Typography,
 } from '@mui/material';
-import { withdrawalsApi } from '../../../shared/api';
-import { formatINR } from '../../../shared/api/helpers';
+import { withdrawalsApi } from '../api/withdrawals';
+import { formatINR } from '../../../app/utils/format';
+import { apiErrorMessage } from '../../../app/api/client';
+import type { EventItem, WithdrawalItem } from '../../../app/types';
+
+interface WithdrawDialogProps {
+  open: boolean;
+  event: EventItem | null | undefined;
+  finance: { collected: number } | null | undefined;
+  withdrawals: WithdrawalItem[] | null | undefined;
+  upiId: string | null | undefined;
+  onClose: () => void;
+  onRequested: () => void;
+}
 
 // Withdrawal request dialog. UPI comes from the organizer profile (read-only);
 // amount is validated against the available balance. Never marks paid.
-export default function WithdrawDialog({ open, event, finance, withdrawals, upiId, onClose, onRequested }) {
+export default function WithdrawDialog({ open, event, finance, withdrawals, upiId, onClose, onRequested }: WithdrawDialogProps) {
   const collected = finance?.collected || 0;
   const reserved = (withdrawals || [])
     .filter((w) => ['REQUESTED', 'PROCESSING'].includes(w.status))
@@ -40,11 +52,11 @@ export default function WithdrawDialog({ open, event, finance, withdrawals, upiI
     }
     setBusy(true);
     try {
-      await withdrawalsApi.create({ eventId: event.id, amount: value });
+      await withdrawalsApi.create({ eventId: event!.id, amount: value });
       onRequested();
       onClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not submit the withdrawal request.');
+      setError(apiErrorMessage(err, 'Could not submit the withdrawal request.'));
     } finally {
       setBusy(false);
     }
@@ -60,11 +72,11 @@ export default function WithdrawDialog({ open, event, finance, withdrawals, upiI
         <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 2 }}>
           <Box>
             <Typography variant="caption" color="text.secondary">Available Amount</Typography>
-            <Typography variant="h5" fontWeight={800}>{formatINR(available)}</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>{formatINR(available)}</Typography>
           </Box>
           <Box>
             <Typography variant="caption" color="text.secondary">Organizer UPI ID</Typography>
-            <Typography variant="body1" fontWeight={600}>{upiId || '—'}</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>{upiId || '—'}</Typography>
           </Box>
         </Box>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -80,7 +92,7 @@ export default function WithdrawDialog({ open, event, finance, withdrawals, upiI
           onChange={(e) => setAmount(e.target.value)}
           fullWidth
           size="small"
-          inputProps={{ min: 1, step: 'any', max: available }}
+          slotProps={{ htmlInput: { min: 1, step: 'any', max: available } }}
           disabled={!upiId}
         />
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>

@@ -6,24 +6,36 @@ import {
 } from '@mui/material';
 import { ExpandMore } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { eventsApi, organizersApi, registrationsApi, withdrawalsApi } from '../../../shared/api';
-import { unwrapList, formatEventDate, registrantName, eventFee, formatINR } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import WithdrawDialog from '../components/WithdrawDialog';
-import WithdrawalStatusChip from '../components/WithdrawalStatus';
+import { eventsApi } from '../api/events';
+import { organizersApi } from '../../account/api/organizers';
+import { registrationsApi } from '../api/registrations';
+import { withdrawalsApi } from '../../withdrawals/api/withdrawals';
+import { unwrapList, apiErrorMessage } from '../../../app/api/client';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { registrantName, eventFee } from '../utils/eventData';
+import type { FormDataRecord, FormStructure, RegistrationItem, WithdrawalItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import WithdrawDialog from '../../withdrawals/components/WithdrawDialog';
+import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
 import { organizerNav } from './EventWizard';
 
-function isEmptyValue(v) {
+function isEmptyValue(v: unknown): boolean {
   return v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
 }
 
-function formatValue(v) {
+function formatValue(v: FormDataRecord[string]): string {
   if (Array.isArray(v)) return v.join(', ');
   return String(v ?? '—');
 }
 
 // Renders one registration's submitted values using the event's own form structure.
-function RegistrationFormData({ formStructure, formData }) {
+function RegistrationFormData({
+  formStructure,
+  formData,
+}: {
+  formStructure: FormStructure | null | undefined;
+  formData: FormDataRecord | null | undefined;
+}) {
   const sections = formStructure?.sections || [];
   if (sections.length === 0) {
     return (
@@ -31,7 +43,7 @@ function RegistrationFormData({ formStructure, formData }) {
         {Object.entries(formData || {}).map(([k, v]) => (
           <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
             <Typography variant="body2" color="text.secondary">{k}</Typography>
-            <Typography variant="body2" fontWeight={600} textAlign="right">{formatValue(v)}</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>{formatValue(v)}</Typography>
           </Box>
         ))}
       </Box>
@@ -44,12 +56,12 @@ function RegistrationFormData({ formStructure, formData }) {
         if (fields.length === 0) return null;
         return (
           <Box key={section.id}>
-            <Typography variant="subtitle2" fontWeight={700} gutterBottom>{section.title}</Typography>
+            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 700 }}>{section.title}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
               {fields.map((f) => (
                 <Box key={f.name} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                   <Typography variant="body2" color="text.secondary">{f.label}</Typography>
-                  <Typography variant="body2" fontWeight={600} textAlign="right">{formatValue(formData[f.name])}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>{formatValue(formData?.[f.name])}</Typography>
                 </Box>
               ))}
             </Box>
@@ -60,14 +72,14 @@ function RegistrationFormData({ formStructure, formData }) {
   );
 }
 
-function DetailContent({ id }) {
+function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   const { data: eventRes, isLoading } = useQuery({
-    queryKey: ['organizer-event', id], queryFn: () => eventsApi.get(id),
+    queryKey: ['organizer-event', id], queryFn: () => eventsApi.get(id!),
   });
   const { data: regsRes } = useQuery({
     queryKey: ['registrations', 'mine'], queryFn: () => registrationsApi.list(),
@@ -82,8 +94,13 @@ function DetailContent({ id }) {
   const [requestedMsg, setRequestedMsg] = useState('');
 
   const event = eventRes?.data;
-  const registrations = unwrapList(regsRes).filter((r) => r.eventId === parseInt(id, 10));
-  const myWithdrawals = unwrapList(wdsRes).filter((w) => w.eventId === parseInt(id, 10));
+  const eventId = parseInt(id ?? '', 10);
+  const registrations: RegistrationItem[] = unwrapList<RegistrationItem>(regsRes).filter(
+    (r) => r.eventId === eventId
+  );
+  const myWithdrawals: WithdrawalItem[] = unwrapList<WithdrawalItem>(wdsRes).filter(
+    (w) => w.eventId === eventId
+  );
   const fee = event ? eventFee(event) : 0;
   const collected = registrations.length * fee;
   const openWd = myWithdrawals.find((w) => ['REQUESTED', 'PROCESSING'].includes(w.status)) || null;
@@ -97,14 +114,14 @@ function DetailContent({ id }) {
     queryClient.invalidateQueries({ queryKey: ['withdrawals', 'mine'] });
   };
 
-  const act = async (fn) => {
+  const act = async (fn: (eid: number) => Promise<unknown>) => {
     setError('');
     setBusy(true);
     try {
-      await fn(event.id);
+      await fn(event!.id);
       refresh();
     } catch (err) {
-      setError(err.response?.data?.message || 'Action failed.');
+      setError(apiErrorMessage(err, 'Action failed.'));
     } finally {
       setBusy(false);
     }
@@ -135,23 +152,23 @@ function DetailContent({ id }) {
           <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.04em' }} gutterBottom>
             {event.eventName}
           </Typography>
-          <Typography color="text.secondary" paragraph>{event.description || 'No description.'}</Typography>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>{event.description || 'No description.'}</Typography>
           <Typography variant="body2" color="text.secondary">
             Date: {formatEventDate(event.date)} · Deadline: {formatEventDate(event.closingTime)} · Capacity: {event.slots} · Registrations: {registrations.length}
           </Typography>
 
           <Divider sx={{ my: 2.5 }} />
 
-          <Typography variant="h6" fontWeight={700} gutterBottom>Payments</Typography>
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Payments</Typography>
           {requestedMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setRequestedMsg('')}>{requestedMsg}</Alert>}
           <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 2 }}>
             <Box>
               <Typography variant="caption" color="text.secondary">Registrations</Typography>
-              <Typography variant="h6" fontWeight={800}>{registrations.length}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>{registrations.length}</Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Total Amount Collected</Typography>
-              <Typography variant="h6" fontWeight={800}>{formatINR(collected)}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatINR(collected)}</Typography>
             </Box>
             <Box>
               <Typography variant="caption" color="text.secondary">Payment Status</Typography>
@@ -234,7 +251,7 @@ function DetailContent({ id }) {
 
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Typography variant="h6" fontWeight={700} gutterBottom>
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
             Registrations ({registrations.length})
           </Typography>
           {registrations.length === 0 ? (
@@ -261,7 +278,7 @@ function DetailContent({ id }) {
                         <TableCell colSpan={3} sx={{ bgcolor: 'grey.50', borderBottom: '1px solid', borderColor: 'divider' }}>
                           <Accordion elevation={0} sx={{ bgcolor: 'transparent' }}>
                             <AccordionSummary expandIcon={<ExpandMore />}>
-                              <Typography variant="body2" fontWeight={600} color="primary.main">
+                              <Typography variant="body2" color="primary.main" sx={{ fontWeight: 600 }}>
                                 View submitted details
                               </Typography>
                             </AccordionSummary>

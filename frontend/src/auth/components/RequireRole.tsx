@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import type { NavigateFunction } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
-import { authApi } from '../api';
+import { authApi } from '../api/auth';
+import type { Role, UserItem } from '../../app/types';
 
-export function useAuth() {
-  const [state, setState] = useState({ loading: true, user: null });
+interface AuthState {
+  loading: boolean;
+  user: UserItem | null;
+}
+
+export function useAuth(): AuthState {
+  const [state, setState] = useState<AuthState>({ loading: true, user: null });
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -29,14 +37,19 @@ export function useAuth() {
   return state;
 }
 
-export function logout(navigate) {
+export function logout(navigate?: NavigateFunction): void {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
   if (navigate) navigate('/login', { replace: true });
   else window.location.href = '/login';
 }
 
-export default function RequireRole({ roles, children }) {
+interface RequireRoleProps {
+  roles?: Role[];
+  children: ReactNode;
+}
+
+export default function RequireRole({ roles, children }: RequireRoleProps): ReactNode {
   const location = useLocation();
   const { loading, user } = useAuth();
 

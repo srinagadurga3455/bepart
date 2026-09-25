@@ -1,37 +1,28 @@
 import { BrowserRouter, useRoutes } from 'react-router-dom';
+import type { RouteObject } from 'react-router-dom';
 
-import landingRoutes from './features/landing/routes.jsx';
-import eventsRoutes from './features/events/routes.jsx';
-import registrationsRoutes from './features/registrations/routes.jsx';
-import authRoutes from './features/auth/routes.jsx';
-import paymentsRoutes from './features/payments/routes.jsx';
-import ticketsRoutes from './features/tickets/routes.jsx';
-import organizerRoutes from './features/organizer/routes.jsx';
-import adminRoutes from './features/admin/routes.jsx';
-import checkinRoutes from './features/checkin/routes.jsx';
+import LandingPage from '../landing/pages/LandingPage';
+import participantRoutes from '../participant/routes';
+import authRoutes from '../auth/routes';
+import organizerRoutes from '../organizer/routes';
+import adminRoutes from '../admin/routes';
 
-const routes = [
-  ...landingRoutes,
-  ...eventsRoutes,
-  ...registrationsRoutes,
+const routes: RouteObject[] = [
+  { path: '/', element: <LandingPage /> },
+  ...participantRoutes,
   ...authRoutes,
-  ...paymentsRoutes,
-  ...ticketsRoutes,
   ...organizerRoutes,
   ...adminRoutes,
-  ...checkinRoutes,
 ];
 
 function AppRoutes() {
   return useRoutes(routes);
 }
 
-function App() {
+export default function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
     </BrowserRouter>
   );
 }
-
-export default App;

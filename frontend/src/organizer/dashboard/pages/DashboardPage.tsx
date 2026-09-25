@@ -2,12 +2,17 @@ import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
 import { Add } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import { organizersApi, eventsApi, registrationsApi } from '../../../shared/api';
-import { unwrapList, formatEventDate, financeByEvent, formatINR } from '../../../shared/api/helpers';
-import DashboardShell from '../../../shared/components/DashboardShell';
-import { organizerNav } from './EventWizard';
+import { organizersApi } from '../../account/api/organizers';
+import { eventsApi } from '../../events/api/events';
+import { registrationsApi } from '../../events/api/registrations';
+import { unwrapList } from '../../../app/api/client';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { financeByEvent } from '../../events/utils/eventData';
+import type { EventItem, RegistrationItem } from '../../../app/types';
+import DashboardShell from '../../../app/components/DashboardShell';
+import { organizerNav } from '../../events/pages/EventWizard';
 
-function StatCard({ label, value }) {
+function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
     <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
       <CardContent>
@@ -28,15 +33,15 @@ function DashboardContent() {
   });
 
   const organizer = orgRes?.data;
-  const events = unwrapList(eventsRes);
-  const registrations = unwrapList(regsRes);
-  const regCountByEvent = {};
+  const events: EventItem[] = unwrapList<EventItem>(eventsRes);
+  const registrations: RegistrationItem[] = unwrapList<RegistrationItem>(regsRes);
+  const regCountByEvent: Record<number, number> = {};
   registrations.forEach((r) => {
     regCountByEvent[r.eventId] = (regCountByEvent[r.eventId] || 0) + 1;
   });
   const finance = financeByEvent(events, registrations);
   const totalAmount = Object.values(finance).reduce((s, f) => s + f.collected, 0);
-  const recent = [...events].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+  const recent = [...events].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
 
   if (eventsLoading || regsLoading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
@@ -57,14 +62,14 @@ function DashboardContent() {
       </Box>
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={4}><StatCard label="Total Events" value={events.length} /></Grid>
-        <Grid item xs={12} sm={4}><StatCard label="Total Registrations" value={registrations.length} /></Grid>
-        <Grid item xs={12} sm={4}><StatCard label="Total Amount" value={formatINR(totalAmount)} /></Grid>
+        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Events" value={events.length} /></Grid>
+        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Registrations" value={registrations.length} /></Grid>
+        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Amount" value={formatINR(totalAmount)} /></Grid>
       </Grid>
 
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Typography variant="h6" fontWeight={700} gutterBottom>Recent Events</Typography>
+          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Recent Events</Typography>
           {recent.length === 0 ? (
             <Alert severity="info">No events yet. Create your first event!</Alert>
           ) : (
@@ -74,7 +79,7 @@ function DashboardContent() {
                 sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', flexWrap: 'wrap', '&:last-child': { borderBottom: 'none' } }}
               >
                 <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                  <Typography fontWeight={600} noWrap>{event.eventName}</Typography>
+                  <Typography noWrap sx={{ fontWeight: 600 }}>{event.eventName}</Typography>
                   <Typography variant="body2" color="text.secondary">
                     {formatEventDate(event.date)} · {regCountByEvent[event.id] || 0} registrations
                   </Typography>

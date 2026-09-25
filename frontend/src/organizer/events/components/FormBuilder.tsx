@@ -1,16 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Alert, Box, Button, Divider, IconButton, Menu, MenuItem, TextField, Tooltip, Typography } from '@mui/material';
+import type { SxProps } from '@mui/material';
 import { Add, ArrowDownward, ArrowUpward, Delete, GroupAdd, ViewAgenda } from '@mui/icons-material';
 import QuestionCard from './QuestionCard';
 import MemberGroupCard from './MemberGroupCard';
 import {
   emptyField, emptySection, emptyMemberGroup, newKey, slugify,
   findRepeatCandidates, toFormStructure, validateBuilder,
-} from './formBuilderUtils';
+} from '../utils/formBuilderUtils';
+import type {
+  BuilderField,
+  BuilderForm,
+  BuilderSection,
+} from '../utils/formBuilderUtils';
+import type { FormStructure } from '../../../app/types';
 
-function buildErrorMap(errors, builder) {
-  const map = { title: null, sections: {}, questions: {}, groups: {} };
-  const allFields = [];
+type Selection =
+  | { kind: 'title' }
+  | { kind: 'section' | 'group' | 'question' | 'member'; key: string };
+
+interface ErrorMap {
+  title: string | null;
+  sections: Record<number, string>;
+  questions: Record<string, string>;
+  groups: Record<number, string>;
+}
+
+interface FieldRef {
+  si: number;
+  kind: 'q' | 'm';
+  key: string;
+  label: string;
+}
+
+function buildErrorMap(errors: string[], builder: BuilderForm): ErrorMap {
+  const map: ErrorMap = { title: null, sections: {}, questions: {}, groups: {} };
+  const allFields: FieldRef[] = [];
   builder.sections.forEach((s, si) => {
     (s.fields || []).forEach((f) => allFields.push({ si, kind: 'q', key: f.key, label: (f.label || '').trim() }));
     (s.memberGroup?.fields || []).forEach((f) => allFields.push({ si, kind: 'm', key: f.key, label: (f.label || '').trim() }));
@@ -51,13 +77,13 @@ function buildErrorMap(errors, builder) {
   return map;
 }
 
-const ghostInputSx = {
+const ghostInputSx: SxProps = {
   '& .MuiInput-underline:before': { borderBottomColor: 'transparent' },
   '&:hover .MuiInput-underline:before': { borderBottomColor: 'divider' },
 };
 
-function normalizeInitial(initial) {
-  const base = {
+function normalizeInitial(initial: BuilderForm | null | undefined): BuilderForm {
+  const base: BuilderForm = {
     title: initial?.title?.trim() ? initial.title : 'Untitled form',
     description: initial?.description || '',
     sections: initial?.sections?.length ? initial.sections : [],
@@ -77,14 +103,27 @@ function normalizeInitial(initial) {
   return base;
 }
 
-export default function FormBuilder({ initial, onSave, onPreview, saving }) {
-  const [builder, setBuilder] = useState(() => normalizeInitial(initial));
-  const [errors, setErrors] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [focusKey, setFocusKey] = useState(null);
-  const [menuAnchor, setMenuAnchor] = useState(null);
+interface FormBuilderProps {
+  initial: BuilderForm | null | undefined;
+  onSave: (structure: FormStructure) => void;
+  onPreview: (structure: FormStructure) => void;
+  saving: boolean;
+}
+
+interface FoundField {
+  si: number;
+  fi: number;
+  field: BuilderField;
+}
+
+export default function FormBuilder({ initial, onSave, onPreview, saving }: FormBuilderProps) {
+  const [builder, setBuilder] = useState<BuilderForm>(() => normalizeInitial(initial));
+  const [errors, setErrors] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Selection | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [toolbarTop, setToolbarTop] = useState(0);
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const errorMap = buildErrorMap(errors, builder);
 
@@ -101,7 +140,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     const update = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const el = canvas.querySelector(`[data-card-key="${selectionKey}"]`);
+      const el = canvas.querySelector<HTMLElement>(`[data-card-key="${selectionKey}"]`);
       if (el) {
         setToolbarTop(Math.max(0, el.offsetTop - canvas.offsetTop));
       }
@@ -111,15 +150,15 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     return () => window.removeEventListener('resize', update);
   });
 
-  const findSectionIdx = (key) => builder.sections.findIndex((s) => s.key === key);
-  const findQuestion = (key) => {
+  const findSectionIdx = (key: string): number => builder.sections.findIndex((s) => s.key === key);
+  const findQuestion = (key: string): FoundField | null => {
     for (let si = 0; si < builder.sections.length; si++) {
       const fi = (builder.sections[si].fields || []).findIndex((f) => f.key === key);
       if (fi >= 0) return { si, fi, field: builder.sections[si].fields[fi] };
     }
     return null;
   };
-  const findMember = (key) => {
+  const findMember = (key: string): FoundField | null => {
     for (let si = 0; si < builder.sections.length; si++) {
       const fields = builder.sections[si].memberGroup?.fields || [];
       const fi = fields.findIndex((f) => f.key === key);
@@ -145,13 +184,13 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     return builder.sections.length - 1;
   })();
 
-  const updateSection = (idx, patch) => {
+  const updateSection = (idx: number, patch: Partial<BuilderSection>) => {
     const sections = [...builder.sections];
     sections[idx] = { ...sections[idx], ...patch };
     setBuilder({ ...builder, sections });
   };
 
-  const moveSection = (idx, dir) => {
+  const moveSection = (idx: number, dir: number) => {
     const sections = [...builder.sections];
     const j = idx + dir;
     if (j < 0 || j >= sections.length) return;
@@ -159,12 +198,12 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     setBuilder({ ...builder, sections });
   };
 
-  const removeSection = (idx) => {
+  const removeSection = (idx: number) => {
     setBuilder({ ...builder, sections: builder.sections.filter((_, i) => i !== idx) });
     setSelected(null);
   };
 
-  const updateField = (si, fi, updated) => {
+  const updateField = (si: number, fi: number, updated: BuilderField) => {
     const sections = [...builder.sections];
     const fields = [...sections[si].fields];
     fields[fi] = updated;
@@ -172,7 +211,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     setBuilder({ ...builder, sections });
   };
 
-  const insertField = (si, fi, field) => {
+  const insertField = (si: number, fi: number, field: BuilderField) => {
     const sections = [...builder.sections];
     const fields = [...sections[si].fields];
     fields.splice(fi, 0, field);
@@ -180,7 +219,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     setBuilder({ ...builder, sections });
   };
 
-  const moveField = (si, fi, dir) => {
+  const moveField = (si: number, fi: number, dir: number) => {
     const sections = [...builder.sections];
     const fields = [...sections[si].fields];
     const j = fi + dir;
@@ -190,24 +229,24 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     setBuilder({ ...builder, sections });
   };
 
-  const removeField = (si, fi) => {
+  const removeField = (si: number, fi: number) => {
     const sections = [...builder.sections];
     sections[si] = { ...sections[si], fields: sections[si].fields.filter((_, i) => i !== fi) };
     setBuilder({ ...builder, sections });
     setSelected(null);
   };
 
-  const duplicateField = (si, fi) => {
+  const duplicateField = (si: number, fi: number) => {
     const src = builder.sections[si].fields[fi];
-    const copy = { ...src, key: newKey(), options: [...(src.options || [])] };
+    const copy: BuilderField = { ...src, key: newKey(), options: [...(src.options || [])] };
     insertField(si, fi + 1, copy);
     setSelected({ kind: 'question', key: copy.key });
     setFocusKey(copy.key);
   };
 
-  const addQuestion = (si = targetSi) => {
+  const addQuestion = (si: number = targetSi) => {
     if (si < 0 || si >= builder.sections.length) return;
-    const field = { ...emptyField(), key: newKey() };
+    const field: BuilderField = { ...emptyField(), key: newKey() };
     const sections = [...builder.sections];
     sections[si] = { ...sections[si], fields: [...(sections[si].fields || []), field] };
     setBuilder({ ...builder, sections });
@@ -215,58 +254,58 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     setFocusKey(field.key);
   };
 
-  const addGroup = (si = targetSi) => {
+  const addGroup = (si: number = targetSi) => {
     if (si < 0 || si >= builder.sections.length) return;
     if (builder.sections[si].memberGroup) return;
     updateSection(si, { memberGroup: emptyMemberGroup() });
     setSelected({ kind: 'group', key: builder.sections[si].key });
   };
 
-  const removeGroup = (si) => {
+  const removeGroup = (si: number) => {
     updateSection(si, { memberGroup: null });
     setSelected(null);
   };
 
-  const updateMemberField = (si, fi, updated) => {
+  const updateMemberField = (si: number, fi: number, updated: BuilderField) => {
     const sections = [...builder.sections];
     const fields = [...(sections[si].memberGroup?.fields || [])];
     fields[fi] = updated;
-    sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup, fields } };
+    sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup!, fields } };
     setBuilder({ ...builder, sections });
   };
 
-  const duplicateMemberField = (si, fi) => {
-    const src = builder.sections[si].memberGroup.fields[fi];
-    const copy = { ...src, key: newKey(), options: [...(src.options || [])] };
+  const duplicateMemberField = (si: number, fi: number) => {
+    const src = builder.sections[si].memberGroup!.fields[fi];
+    const copy: BuilderField = { ...src, key: newKey(), options: [...(src.options || [])] };
     const sections = [...builder.sections];
-    const fields = [...sections[si].memberGroup.fields];
+    const fields = [...sections[si].memberGroup!.fields];
     fields.splice(fi + 1, 0, copy);
-    sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup, fields } };
+    sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup!, fields } };
     setBuilder({ ...builder, sections });
     setSelected({ kind: 'member', key: copy.key });
     setFocusKey(copy.key);
   };
 
-  const removeMemberField = (si, fi) => {
+  const removeMemberField = (si: number, fi: number) => {
     const sections = [...builder.sections];
     sections[si] = {
       ...sections[si],
       memberGroup: {
-        ...sections[si].memberGroup,
-        fields: sections[si].memberGroup.fields.filter((_, i) => i !== fi),
+        ...sections[si].memberGroup!,
+        fields: sections[si].memberGroup!.fields.filter((_, i) => i !== fi),
       },
     };
     setBuilder({ ...builder, sections });
     setSelected({ kind: 'group', key: sections[si].key });
   };
 
-  const moveMemberField = (si, fi, dir) => {
+  const moveMemberField = (si: number, fi: number, dir: number) => {
     const sections = [...builder.sections];
-    const fields = [...sections[si].memberGroup.fields];
+    const fields = [...sections[si].memberGroup!.fields];
     const j = fi + dir;
     if (j < 0 || j >= fields.length) return;
     [fields[fi], fields[j]] = [fields[j], fields[fi]];
-    sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup, fields } };
+    sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup!, fields } };
     setBuilder({ ...builder, sections });
   };
 
@@ -277,7 +316,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
     setFocusKey(section.key);
   };
 
-  const build = () => {
+  const build = (): FormStructure | null => {
     const errs = validateBuilder(builder);
     setErrors(errs);
     if (errs.length > 0) return null;
@@ -297,7 +336,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
   const hasSection = builder.sections.length > 0;
   const targetSection = targetSi >= 0 ? builder.sections[targetSi] : null;
   const groupDisabled = !targetSection || !!targetSection.memberGroup;
-  const openPlusMenu = (e) => setMenuAnchor(e.currentTarget);
+  const openPlusMenu = (e: ReactMouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget);
   const closePlusMenu = () => setMenuAnchor(null);
   const menuAddQuestion = () => { closePlusMenu(); addQuestion(); };
   const menuAddGroup = () => { closePlusMenu(); addGroup(); };
@@ -307,7 +346,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
   return (
     <Box sx={{ bgcolor: '#f1f3f4', borderRadius: 3, p: { xs: 1.5, sm: 3 } }}>
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={closePlusMenu}>
-        <MenuItem onClick={menuAddQuestion} autoFocusItem={!groupDisabled || true}>
+        <MenuItem onClick={menuAddQuestion} autoFocus>
           <Add fontSize="small" sx={{ mr: 1.5, color: 'text.secondary' }} />
           Add question
         </MenuItem>
@@ -372,7 +411,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
                   variant="standard"
                   fullWidth
                   error={!!errorMap.title}
-                  InputProps={{ sx: { fontSize: 28, fontWeight: 700 } }}
+                  slotProps={{ input: { sx: { fontSize: 28, fontWeight: 700 } } }}
                   sx={ghostInputSx}
                 />
                 <TextField
@@ -382,7 +421,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
                   variant="standard"
                   fullWidth
                   multiline
-                  InputProps={{ sx: { fontSize: 14 } }}
+                  slotProps={{ input: { sx: { fontSize: 14 } } }}
                   sx={{ ...ghostInputSx, mt: 1 }}
                 />
                 {errorMap.title && (
@@ -405,7 +444,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
 
           {errors.length > 0 && (
             <Alert severity="error" sx={{ mb: 2, bgcolor: '#fff' }} onClose={() => setErrors([])}>
-              <Typography fontWeight={600} gutterBottom>Fix the following before continuing:</Typography>
+              <Typography gutterBottom sx={{ fontWeight: 600 }}>Fix the following before continuing:</Typography>
               <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
                 {errors.map((e, i) => <li key={i}>{e}</li>)}
               </Box>
@@ -452,7 +491,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
                             variant="standard"
                             fullWidth
                             error={!!errorMap.sections[si]}
-                            InputProps={{ sx: { fontSize: 19, fontWeight: 600 } }}
+                            slotProps={{ input: { sx: { fontSize: 19, fontWeight: 600 } } }}
                             sx={ghostInputSx}
                           />
                           <TextField
@@ -462,7 +501,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
                             variant="standard"
                             fullWidth
                             multiline
-                            InputProps={{ sx: { fontSize: 13.5 } }}
+                            slotProps={{ input: { sx: { fontSize: 13.5 } } }}
                             sx={{ ...ghostInputSx, mt: 0.5 }}
                           />
                         </>
@@ -548,7 +587,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
                         onRemove={() => removeGroup(si)}
                         onAddField={() => {
                           const f = { ...emptyField(), key: newKey() };
-                          updateSection(si, { memberGroup: { ...section.memberGroup, fields: [...section.memberGroup.fields, f] } });
+                          updateSection(si, { memberGroup: { ...section.memberGroup!, fields: [...section.memberGroup!.fields, f] } });
                           setSelected({ kind: 'member', key: f.key });
                           setFocusKey(f.key);
                         }}
@@ -578,7 +617,14 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }) {
   );
 }
 
-function ToolbarButtons({ onPlus, onAddSection, hasSection, horizontal }) {
+interface ToolbarButtonsProps {
+  onPlus: (e: ReactMouseEvent<HTMLElement>) => void;
+  onAddSection: () => void;
+  hasSection: boolean;
+  horizontal?: boolean;
+}
+
+function ToolbarButtons({ onPlus, onAddSection, hasSection, horizontal }: ToolbarButtonsProps) {
   const btn = { width: 40, height: 40 };
   const placement = horizontal ? 'bottom' : 'left';
   return (
