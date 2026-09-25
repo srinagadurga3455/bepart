@@ -2,7 +2,7 @@ import {
   BadRequestException,
   Controller,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -31,39 +31,21 @@ const fileInterceptorOptions = {
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}
 
-  @Post('events/:eventId/poster')
-  @Roles(Role.ORGANIZER, Role.ADMIN)
-  @ApiBearerAuth('JWT-auth')
-  @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload event poster (R2)', description: 'Stores at R2 events/{eventId}/poster.<ext>, replaces previous. ORGANIZER owner or ADMIN.' })
-  @ApiParam({ name: 'eventId', type: Number })
-  @ApiBody({
-    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
-  })
-  @ApiResponse({ status: 201, description: 'Poster uploaded {posterUrl}' })
-  async uploadEventPoster(
-    @Param('eventId', ParseIntPipe) eventId: number,
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: RequestUser,
-  ) {
-    return this.storageService.handleEventPosterUpload(file, eventId, user);
-  }
-
   @Post('events/:eventId/poster-square')
-  @Roles(Role.ORGANIZER, Role.ADMIN)
+  @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
   @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload event square poster (R2)', description: 'Stores at R2 events/{eventId}/poster-square.<ext>, validates 1:1 aspect ratio, replaces previous. ORGANIZER owner or ADMIN.' })
-  @ApiParam({ name: 'eventId', type: Number })
+  @ApiOperation({ summary: 'Upload event square poster (R2)', description: 'Stores at R2 events/{eventId}/poster-square.<ext>, validates 1:1 aspect ratio, replaces previous. Only owner ORGANIZER.' })
+  @ApiParam({ name: 'eventId', type: String, description: 'Event UUID' })
   @ApiBody({
     schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
   })
   @ApiResponse({ status: 201, description: 'Square poster uploaded {posterSquareUrl}' })
   @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
+  @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
   async uploadEventPosterSquare(
-    @Param('eventId', ParseIntPipe) eventId: number,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {
@@ -71,19 +53,20 @@ export class StorageController {
   }
 
   @Post('events/:eventId/poster-rectangle')
-  @Roles(Role.ORGANIZER, Role.ADMIN)
+  @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
   @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload event rectangle poster (R2)', description: 'Stores at R2 events/{eventId}/poster-rectangle.<ext>, validates landscape 16:9, replaces previous. ORGANIZER owner or ADMIN.' })
-  @ApiParam({ name: 'eventId', type: Number })
+  @ApiOperation({ summary: 'Upload event rectangle poster (R2)', description: 'Stores at R2 events/{eventId}/poster-rectangle.<ext>, validates landscape 16:9, replaces previous. Only owner ORGANIZER.' })
+  @ApiParam({ name: 'eventId', type: String, description: 'Event UUID' })
   @ApiBody({
     schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
   })
   @ApiResponse({ status: 201, description: 'Rectangle poster uploaded {posterRectangleUrl}' })
   @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
+  @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
   async uploadEventPosterRectangle(
-    @Param('eventId', ParseIntPipe) eventId: number,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {

@@ -78,102 +78,119 @@ describe('StorageService - Local + R2', () => {
   const withInvalidSquare = () => mockedSizeOf.mockReturnValue({ width: 1600, height: 900 });
   const withInvalidRectangle = () => mockedSizeOf.mockReturnValue({ width: 800, height: 800 });
 
+  const eventId1 = '550e8400-e29b-41d4-a716-446655440000';
+  const eventId2 = '550e8400-e29b-41d4-a716-446655440001';
+  const eventId99 = '550e8400-e29b-41d4-a716-446655440099';
+
   describe('square poster uploads successfully', () => {
     it('should upload square poster to R2 with correct key', async () => {
       withSquareDimensions();
-      const res = await service.saveEventPosterSquare(fakeFile(), 1);
-      expect(res.key).toBe('events/1/poster-square.png');
-      expect(res.url).toBe('https://cdn.example.com/events/1/poster-square.png');
+      const res = await service.saveEventPosterSquare(fakeFile(), eventId1);
+      expect(res.key).toBe(`events/${eventId1}/poster-square.png`);
+      expect(res.url).toBe(`https://cdn.example.com/events/${eventId1}/poster-square.png`);
       expect(mockSend).toHaveBeenCalled();
       const putArgs = mockSend.mock.calls[mockSend.mock.calls.length - 1][0];
       expect(putArgs.Bucket).toBe('test-bucket');
-      expect(putArgs.Key).toBe('events/1/poster-square.png');
+      expect(putArgs.Key).toBe(`events/${eventId1}/poster-square.png`);
     });
   });
 
   describe('rectangle poster uploads successfully', () => {
     it('should upload rectangle poster to R2 with correct key', async () => {
       withRectangleDimensions();
-      const res = await service.saveEventPosterRectangle(fakeFile(), 2);
-      expect(res.key).toBe('events/2/poster-rectangle.png');
-      expect(res.url).toBe('https://cdn.example.com/events/2/poster-rectangle.png');
+      const res = await service.saveEventPosterRectangle(fakeFile(), eventId2);
+      expect(res.key).toBe(`events/${eventId2}/poster-rectangle.png`);
+      expect(res.url).toBe(`https://cdn.example.com/events/${eventId2}/poster-rectangle.png`);
     });
   });
 
   describe('invalid aspect ratio is rejected', () => {
     it('should reject square with landscape dimensions', async () => {
       withInvalidSquare();
-      await expect(service.saveEventPosterSquare(fakeFile(), 1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.saveEventPosterSquare(fakeFile(), eventId1)).rejects.toBeInstanceOf(BadRequestException);
     });
     it('should reject rectangle with square dimensions', async () => {
       withInvalidRectangle();
-      await expect(service.saveEventPosterRectangle(fakeFile(), 1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.saveEventPosterRectangle(fakeFile(), eventId1)).rejects.toBeInstanceOf(BadRequestException);
     });
     it('should reject rectangle that is portrait', async () => {
       mockedSizeOf.mockReturnValue({ width: 800, height: 1600 });
-      await expect(service.saveEventPosterRectangle(fakeFile(), 1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.saveEventPosterRectangle(fakeFile(), eventId1)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
   describe('unsupported file type', () => {
     it('should reject pdf', async () => {
-      await expect(service.saveEventPosterSquare(fakeFile({ mimetype: 'application/pdf' }), 1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.saveEventPosterSquare(fakeFile({ mimetype: 'application/pdf' }), eventId1)).rejects.toBeInstanceOf(BadRequestException);
     });
     it('should reject svg', async () => {
-      await expect(service.saveEventPosterRectangle(fakeFile({ mimetype: 'image/svg+xml' }), 1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.saveEventPosterRectangle(fakeFile({ mimetype: 'image/svg+xml' }), eventId1)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
   describe('file larger than limit', () => {
     it('should reject >5MB', async () => {
       withSquareDimensions();
-      await expect(service.saveEventPosterSquare(fakeFile({ size: 6 * 1024 * 1024 }), 1)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.saveEventPosterSquare(fakeFile({ size: 6 * 1024 * 1024 }), eventId1)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
   describe('organizer can upload for their own event', () => {
     it('should allow owner organizer', async () => {
       withSquareDimensions();
-      mockStorageRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1' });
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1' });
       mockStorageRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
-      mockStorageRepo.updateEventPosterSquare.mockResolvedValue({ id: 1, posterSquareUrl: 'https://cdn.example.com/events/1/poster-square.png' });
+      mockStorageRepo.updateEventPosterSquare.mockResolvedValue({ id: eventId1, posterSquareUrl: `https://cdn.example.com/events/${eventId1}/poster-square.png` });
       const user = { userId: 'user1', id: 'user1', role: Role.ORGANIZER } as any;
-      const res = await service.handleEventPosterSquareUpload(fakeFile(), 1, user);
+      const res = await service.handleEventPosterSquareUpload(fakeFile(), eventId1, user);
       expect(res.posterSquareUrl).toContain('poster-square');
     });
   });
 
   describe('another organizer cannot upload', () => {
     it('should reject if not owner and not admin', async () => {
-      mockStorageRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1' });
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1' });
       mockStorageRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org2' });
       const user = { userId: 'user2', id: 'user2', role: Role.ORGANIZER } as any;
       withSquareDimensions();
-      await expect(service.handleEventPosterSquareUpload(fakeFile(), 1, user)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.handleEventPosterSquareUpload(fakeFile(), eventId1, user)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
-  describe('ADMIN can upload', () => {
-    it('should allow admin for any event', async () => {
+  describe('ADMIN cannot upload', () => {
+    it('should reject admin even for own event', async () => {
       withRectangleDimensions();
-      mockStorageRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1' });
-      mockStorageRepo.updateEventPosterRectangle.mockResolvedValue({ id: 1, posterRectangleUrl: 'https://cdn.example.com/events/1/poster-rectangle.png' });
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1' });
       const admin = { userId: 'admin1', id: 'admin1', role: Role.ADMIN } as any;
-      const res = await service.handleEventPosterRectangleUpload(fakeFile(), 1, admin);
-      expect(res.posterRectangleUrl).toContain('poster-rectangle');
+      await expect(service.handleEventPosterRectangleUpload(fakeFile(), eventId1, admin)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+    it('should reject admin for square', async () => {
+      withSquareDimensions();
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1' });
+      const admin = { userId: 'admin1', id: 'admin1', role: Role.ADMIN } as any;
+      await expect(service.handleEventPosterSquareUpload(fakeFile(), eventId1, admin)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('STUDENT cannot upload', () => {
+    it('should reject student', async () => {
+      withSquareDimensions();
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1' });
+      const student = { userId: 'student1', id: 'student1', role: Role.STUDENT } as any;
+      await expect(service.handleEventPosterSquareUpload(fakeFile(), eventId1, student)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
   describe('replacing an existing poster works', () => {
     it('should overwrite R2 key and delete old variants', async () => {
       withSquareDimensions();
-      await service.saveEventPosterSquare(fakeFile({ mimetype: 'image/jpeg' }), 1);
-      const hasFirstPut = mockSend.mock.calls.some((c: any) => c[0]?.Key === 'events/1/poster-square.jpg' && c[0]?.Bucket === 'test-bucket');
+      await service.saveEventPosterSquare(fakeFile({ mimetype: 'image/jpeg' }), eventId1);
+      const hasFirstPut = mockSend.mock.calls.some((c: any) => c[0]?.Key === `events/${eventId1}/poster-square.jpg` && c[0]?.Bucket === 'test-bucket');
       expect(hasFirstPut).toBe(true);
       mockSend.mockClear();
       withSquareDimensions();
-      await service.saveEventPosterSquare(fakeFile({ mimetype: 'image/png' }), 1);
-      const hasSecondPut = mockSend.mock.calls.some((c: any) => c[0]?.Key === 'events/1/poster-square.png');
+      await service.saveEventPosterSquare(fakeFile({ mimetype: 'image/png' }), eventId1);
+      const hasSecondPut = mockSend.mock.calls.some((c: any) => c[0]?.Key === `events/${eventId1}/poster-square.png`);
       expect(hasSecondPut).toBe(true);
       const deleteCalls = mockSend.mock.calls.filter((c: any) => c[0]?.Key?.includes('poster-square'));
       expect(deleteCalls.length).toBeGreaterThan(0);
@@ -183,29 +200,30 @@ describe('StorageService - Local + R2', () => {
   describe('Event database contains both URLs', () => {
     it('should store both square and rectangle URLs separately', async () => {
       withSquareDimensions();
-      mockStorageRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1', posterSquareUrl: null, posterRectangleUrl: null });
-      mockStorageRepo.updateEventPosterSquare.mockResolvedValue({ id: 1, posterSquareUrl: 'https://cdn.example.com/events/1/poster-square.jpg' });
-      mockStorageRepo.updateEventPosterRectangle.mockResolvedValue({ id: 1, posterRectangleUrl: 'https://cdn.example.com/events/1/poster-rectangle.jpg' });
-      const user = { userId: 'admin1', id: 'admin1', role: Role.ADMIN } as any;
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1', posterSquareUrl: null, posterRectangleUrl: null });
+      mockStorageRepo.updateEventPosterSquare.mockResolvedValue({ id: eventId1, posterSquareUrl: `https://cdn.example.com/events/${eventId1}/poster-square.jpg` });
+      mockStorageRepo.updateEventPosterRectangle.mockResolvedValue({ id: eventId1, posterRectangleUrl: `https://cdn.example.com/events/${eventId1}/poster-rectangle.jpg` });
+      const user = { userId: 'user1', id: 'user1', role: Role.ORGANIZER } as any;
+      mockStorageRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
       withSquareDimensions();
-      const sq = await service.handleEventPosterSquareUpload(fakeFile({ mimetype: 'image/jpeg' }), 1, user);
+      const sq = await service.handleEventPosterSquareUpload(fakeFile({ mimetype: 'image/jpeg' }), eventId1, user);
       expect(sq.posterSquareUrl).toContain('poster-square');
       withRectangleDimensions();
-      const rect = await service.handleEventPosterRectangleUpload(fakeFile({ mimetype: 'image/jpeg' }), 1, user);
+      const rect = await service.handleEventPosterRectangleUpload(fakeFile({ mimetype: 'image/jpeg' }), eventId1, user);
       expect(rect.posterRectangleUrl).toContain('poster-rectangle');
-      expect(mockStorageRepo.updateEventPosterSquare).toHaveBeenCalledWith(1, expect.stringContaining('poster-square'));
-      expect(mockStorageRepo.updateEventPosterRectangle).toHaveBeenCalledWith(1, expect.stringContaining('poster-rectangle'));
+      expect(mockStorageRepo.updateEventPosterSquare).toHaveBeenCalledWith(eventId1, expect.stringContaining('poster-square'));
+      expect(mockStorageRepo.updateEventPosterRectangle).toHaveBeenCalledWith(eventId1, expect.stringContaining('poster-rectangle'));
     });
   });
 
   describe('actual objects exist in R2', () => {
     it('should call S3 PutObject for R2', async () => {
       withSquareDimensions();
-      await service.saveEventPosterSquare(fakeFile(), 99);
+      await service.saveEventPosterSquare(fakeFile(), eventId99);
       expect(mockSend).toHaveBeenCalled();
       const args = mockSend.mock.calls[mockSend.mock.calls.length - 1];
       expect(args[0].Bucket).toBe('test-bucket');
-      expect(args[0].Key).toBe('events/99/poster-square.png');
+      expect(args[0].Key).toBe(`events/${eventId99}/poster-square.png`);
       expect(args[0].ContentType).toBe('image/png');
     });
   });
@@ -213,15 +231,16 @@ describe('StorageService - Local + R2', () => {
   describe('no image binary is stored in PostgreSQL', () => {
     it('should store only URL string, not binary', async () => {
       withSquareDimensions();
-      mockStorageRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1' });
-      mockStorageRepo.updateEventPosterSquare.mockImplementation(async (id: number, url: string) => {
+      mockStorageRepo.findEventById.mockResolvedValue({ id: eventId1, organizerId: 'org1' });
+      mockStorageRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
+      mockStorageRepo.updateEventPosterSquare.mockImplementation(async (id: string, url: string) => {
         expect(typeof url).toBe('string');
         expect(url.startsWith('https://')).toBe(true);
         expect(Buffer.isBuffer(url as any)).toBe(false);
         return { id, posterSquareUrl: url };
       });
-      const user = { userId: 'admin1', id: 'admin1', role: Role.ADMIN } as any;
-      const res = await service.handleEventPosterSquareUpload(fakeFile(), 1, user);
+      const user = { userId: 'user1', id: 'user1', role: Role.ORGANIZER } as any;
+      const res = await service.handleEventPosterSquareUpload(fakeFile(), eventId1, user);
       expect(typeof res.posterSquareUrl).toBe('string');
     });
   });
@@ -231,15 +250,15 @@ describe('StorageService - Local + R2', () => {
       mockStorageRepo.findEventById.mockResolvedValue(null);
       const user = { userId: 'user1', id: 'user1', role: Role.ORGANIZER } as any;
       withSquareDimensions();
-      await expect(service.handleEventPosterSquareUpload(fakeFile(), 9999, user)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.handleEventPosterSquareUpload(fakeFile(), '00000000-0000-4000-a000-000000000000', user)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
   describe('static image URL - R2 for events', () => {
     it('should generate correct R2 URL for events', async () => {
       withSquareDimensions();
-      const res = await service.saveEventPosterSquare(fakeFile(), 1);
-      expect(res.url).toBe('https://cdn.example.com/events/1/poster-square.png');
+      const res = await service.saveEventPosterSquare(fakeFile(), eventId1);
+      expect(res.url).toBe(`https://cdn.example.com/events/${eventId1}/poster-square.png`);
     });
   });
 
@@ -251,8 +270,8 @@ describe('StorageService - Local + R2', () => {
     it('should not trust original filename', async () => {
       withSquareDimensions();
       const file = fakeFile({ originalname: '../../../evil.exe', mimetype: 'image/png' });
-      const res = await service.saveEventPosterSquare(file, 1);
-      expect(res.key).toBe('events/1/poster-square.png');
+      const res = await service.saveEventPosterSquare(file, eventId1);
+      expect(res.key).toBe(`events/${eventId1}/poster-square.png`);
     });
   });
 });

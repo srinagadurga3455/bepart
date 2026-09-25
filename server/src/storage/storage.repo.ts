@@ -5,8 +5,8 @@ import { PrismaService } from '../database/prisma.service';
 export class StorageRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Event — R2 posters (generic + square/rectangle)
-  findEventById(id: number) {
+  // Event — R2 square/rectangle only
+  findEventById(id: string) {
     return this.prisma.event.findUnique({ where: { id } });
   }
 
@@ -14,15 +14,11 @@ export class StorageRepository {
     return this.prisma.organizer.findUnique({ where: { userId } });
   }
 
-  updateEventPoster(id: number, posterUrl: string) {
-    return this.prisma.event.update({ where: { id }, data: { posterUrl } });
-  }
-
-  updateEventPosterSquare(id: number, posterSquareUrl: string) {
+  updateEventPosterSquare(id: string, posterSquareUrl: string) {
     return this.prisma.event.update({ where: { id }, data: { posterSquareUrl } });
   }
 
-  updateEventPosterRectangle(id: number, posterRectangleUrl: string) {
+  updateEventPosterRectangle(id: string, posterRectangleUrl: string) {
     return this.prisma.event.update({ where: { id }, data: { posterRectangleUrl } });
   }
 }
