@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import * as express from 'express';
+import * as path from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { appValidationPipe } from './common/pipes/validation.pipe';
@@ -12,7 +13,10 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // Security: Helmet headers
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: false }));
+
+  // Serve local uploads as static files: http://localhost:3000/uploads/...
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));

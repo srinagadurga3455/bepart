@@ -41,11 +41,18 @@ enum EventStatus {
   COMPLETED
 }
 
+<<<<<<< HEAD
 enum WithdrawalStatus {
   REQUESTED
   PROCESSING
   PAID
   REJECTED
+=======
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+>>>>>>> 5a81ff9 (feat: complete event registration payment and R2 storage flow)
 }
 
 // ─────────────────────────────────────
@@ -142,6 +149,8 @@ model Event {
   status         EventStatus @default(DRAFT)
   formStructure  Json?
   posterUrl      String?
+  posterSquareUrl String?
+  posterRectangleUrl String?
   paymentRequired Boolean @default(false)
   createdAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -160,20 +169,24 @@ model Event {
 }
 
 model Registration {
-  registrationId String   @id @default(cuid())
+  registrationId String        @id @default(cuid())
   phone          String
   formData       Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  paymentStatus  PaymentStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   eventId Int
   event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  payment Payment?
 
   @@index([eventId])
   @@index([phone])
   @@map("registrations")
 }
 
+<<<<<<< HEAD
 // Organizer fund settlement: organizer requests withdrawal of collected
 // registration fees per event; admin pays manually and uploads proof.
 // Amounts are snapshots in rupees at request/confirmation time.
@@ -199,4 +212,24 @@ model Withdrawal {
   @@index([eventId])
   @@index([status])
   @@map("withdrawals")
+=======
+model Payment {
+  id              String        @id @default(cuid())
+  registrationId  String?       @unique
+  registration    Registration? @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
+  amount          Int           @default(0)
+  status          PaymentStatus @default(PENDING)
+  // Pending payment holding form data for paid events (before Registration is created)
+  phone           String?
+  eventId         Int?
+  pendingFormData Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([registrationId])
+  @@index([status])
+  @@index([eventId])
+  @@index([phone])
+  @@map("payments")
+>>>>>>> 5a81ff9 (feat: complete event registration payment and R2 storage flow)
 }

@@ -34,6 +34,9 @@ logs/
 # Coverage
 coverage/
 
+# Uploads - local filesystem storage (do not commit images)
+uploads/
+
 # Misc
 .tmp/
 temp/
