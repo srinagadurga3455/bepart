@@ -6,18 +6,18 @@ export class CreateAdminDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  name!: string;
 
   @ApiProperty({ example: 'admin2@pravesh.local', description: 'Login email for new admin' })
   @IsEmail()
   @MaxLength(255)
-  email: string;
+  email!: string;
 
   @ApiProperty({ example: 'Admin@123', description: 'Password min 8 chars (hashed via bcrypt)' })
   @IsString()
   @MinLength(8)
   @MaxLength(128)
-  password: string;
+  password!: string;
 
   @ApiPropertyOptional({ example: '+91 9876543210' })
   @IsOptional()
@@ -29,7 +29,7 @@ export class CreateAdminDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
-  companyName: string;
+  companyName!: string;
 
   @ApiPropertyOptional({ example: 'Platform admin team' })
   @IsOptional()

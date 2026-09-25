@@ -18,7 +18,7 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('30d'),
   FRONTEND_URL: Joi.string().uri().allow('').optional().description('Frontend/mobile app URL for CORS'),
   STORAGE_PROVIDER: Joi.string().valid('local', 's3').default('local'),
-  ADMIN_EMAIL: Joi.string().email().optional(),
+  ADMIN_EMAIL: Joi.string().email({ tlds: { allow: ['local', 'com', 'org', 'net', 'io'] } }).allow('').optional(),
   ADMIN_PASSWORD: Joi.string().allow('').optional(),
   AZURE_STORAGE_CONNECTION_STRING: Joi.string().allow('').optional(),
   AZURE_STORAGE_CONTAINER: Joi.string().default('event-posters'),

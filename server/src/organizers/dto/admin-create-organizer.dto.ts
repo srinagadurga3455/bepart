@@ -25,9 +25,9 @@ export class AdminCreateOrganizerDto {
   @MaxLength(20)
   phone?: string;
 
-  @ApiPropertyOptional({ example: 'techclub@upi' })
-  @IsOptional()
+  @ApiProperty({ example: 'techclub@upi', description: 'UPI ID for settlements (required)' })
   @IsString()
+  @IsNotEmpty()
   @MaxLength(100)
-  upiId?: string;
+  upiId: string;
 }

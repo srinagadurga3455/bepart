@@ -25,6 +25,7 @@ const mockOrganizersRepo: any = {
   createOrganizerWithUser: jest.fn(),
   deactivateTransaction: jest.fn(),
   updateUserPhone: jest.fn().mockResolvedValue({}),
+  updateUserActive: jest.fn().mockResolvedValue({}),
 };
 
 describe('OrganizersService - Phase 2', () => {
@@ -67,6 +68,14 @@ describe('OrganizersService - Phase 2', () => {
     mockOrganizersRepo.updateOrganizerStatus.mockResolvedValue({ id: 'o1', status: OrganizerStatus.APPROVED });
     const res = await service.approve('o1');
     expect(res.status).toBe(OrganizerStatus.APPROVED);
+  });
+
+  it('should reactivate the linked user on approve', async () => {
+    mockOrganizersRepo.findOrganizerById.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.REJECTED });
+    mockOrganizersRepo.updateOrganizerStatus.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.APPROVED });
+    const res = await service.approve('o1');
+    expect(res.status).toBe(OrganizerStatus.APPROVED);
+    expect(mockOrganizersRepo.updateUserActive).toHaveBeenCalledWith('u1', true);
   });
 
   it('should allow ADMIN reject', async () => {

@@ -41,6 +41,13 @@ enum EventStatus {
   COMPLETED
 }
 
+enum WithdrawalStatus {
+  REQUESTED
+  PROCESSING
+  PAID
+  REJECTED
+}
+
 // ─────────────────────────────────────
 // Core Models — Preserved User for Auth/RBAC
 // ─────────────────────────────────────
@@ -116,6 +123,8 @@ model Organizer {
 
   events Event[]
 
+  withdrawals Withdrawal[]
+
   @@index([status])
   @@index([userId])
   @@index([adminId])
@@ -142,6 +151,8 @@ model Event {
 
   registrations Registration[]
 
+  withdrawals Withdrawal[]
+
   @@index([organizerId])
   @@index([status])
   @@index([date])
@@ -161,4 +172,31 @@ model Registration {
   @@index([eventId])
   @@index([phone])
   @@map("registrations")
+}
+
+// Organizer fund settlement: organizer requests withdrawal of collected
+// registration fees per event; admin pays manually and uploads proof.
+// Amounts are snapshots in rupees at request/confirmation time.
+model Withdrawal {
+  id            String           @id @default(cuid())
+  amount        Float
+  upiId         String
+  status        WithdrawalStatus @default(REQUESTED)
+  transactionId String?
+  proofUrl      String?
+  requestedAt   DateTime         @default(now())
+  paidAt        DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  organizerId String
+  organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  eventId Int
+  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([organizerId])
+  @@index([eventId])
+  @@index([status])
+  @@map("withdrawals")
 }

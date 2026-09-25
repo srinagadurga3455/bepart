@@ -79,6 +79,13 @@ export class EventsService {
     return event;
   }
 
+  async getRegistrationForm(id: number) {
+    const event = await this.eventsRepo.findEventFormStructure(id);
+    if (!event) throw new NotFoundException('Event not found');
+    if (event.status !== EventStatus.PUBLISHED) throw new NotFoundException('Event not found');
+    return event.formStructure || { title: 'Registration', description: '', sections: [] };
+  }
+
   async findOneForOrganizer(id: number, userId: string) {
     const event = await this.eventsRepo.findEventById(id);
     if (!event) throw new NotFoundException('Event not found');

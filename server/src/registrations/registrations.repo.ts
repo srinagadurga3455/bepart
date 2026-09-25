@@ -30,6 +30,32 @@ export class RegistrationsRepository {
     return this.prisma.registration.findUnique({ where: { registrationId }, include: { event: true } });
   }
 
+  // Public ticket lookup: one registration + its event, without the top-level phone.
+  findTicketWithEvent(registrationId: string) {
+    return this.prisma.registration.findUnique({
+      where: { registrationId },
+      select: {
+        registrationId: true,
+        eventId: true,
+        formData: true,
+        createdAt: true,
+        event: {
+          select: {
+            id: true,
+            eventName: true,
+            description: true,
+            date: true,
+            slots: true,
+            closingTime: true,
+            status: true,
+            formStructure: true,
+            organizer: { select: { name: true } },
+          },
+        },
+      },
+    });
+  }
+
   findOrganizerByUserId(userId: string) {
     return this.prisma.organizer.findUnique({ where: { userId } });
   }

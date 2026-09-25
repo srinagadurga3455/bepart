@@ -53,6 +53,10 @@ export class EventsRepository {
     return this.prisma.event.findUnique({ where: { id }, include: { registrations: { take: 5 } } });
   }
 
+  findEventFormStructure(id: number) {
+    return this.prisma.event.findUnique({ where: { id }, select: { formStructure: true, eventName: true, status: true } });
+  }
+
   updateEvent(id: number, data: any) {
     return this.prisma.event.update({ where: { id }, data });
   }

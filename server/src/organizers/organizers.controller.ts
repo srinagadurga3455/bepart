@@ -103,4 +103,14 @@ export class OrganizersController {
   deactivate(@Param('id') id: string) {
     return this.organizersService.deactivate(id);
   }
+
+  @Patch(':id/approve')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Activate organizer (ADMIN only)', description: 'Sets APPROVED and reactivates linked user (isActive=true) so OTP login works again' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, description: 'Activated' })
+  @ApiResponse({ status: 404, description: 'Organizer not found' })
+  approve(@Param('id') id: string) {
+    return this.organizersService.approve(id);
+  }
 }

@@ -166,7 +166,11 @@ export class OrganizersService {
   async approve(id: string) {
     const org = await this.getOrganizerOrFail(id);
     if (org.status === OrganizerStatus.APPROVED) return org;
-    return this.organizersRepo.updateOrganizerStatus(id, OrganizerStatus.APPROVED, true);
+    const updated = await this.organizersRepo.updateOrganizerStatus(id, OrganizerStatus.APPROVED, true);
+    // Reactivate login: deactivation disables the linked user, so activation must restore it.
+    const userId = (updated as any)?.userId || (org as any)?.userId;
+    if (userId) await this.organizersRepo.updateUserActive(userId, true);
+    return updated;
   }
 
   async reject(id: string, reason?: string) {

@@ -30,6 +30,16 @@ export class RegistrationsController {
     return this.service.findAllForUser(user.userId || user.id, user.role);
   }
 
+  @Public()
+  @Get('ticket/:id')
+  @ApiOperation({ summary: 'Public ticket lookup (no auth)', description: 'Retrieve ONE registration by ID for the shareable /ticket/:id page. No listing or search.' })
+  @ApiParam({ name: 'id', description: 'registrationId (ticket ID)' })
+  @ApiResponse({ status: 200, description: 'Registration with event + ticketUrl' })
+  @ApiResponse({ status: 404, description: 'Ticket not found' })
+  findTicket(@Param('id') id: string) {
+    return this.service.findTicketById(id);
+  }
+
   @Get(':id')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get registration detail' })

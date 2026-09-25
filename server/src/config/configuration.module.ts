@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { envValidationSchema } from './env.validation';
+import * as path from 'path';
+
+const envPath = path.resolve(process.cwd(), '.env');
 
 @Module({
   imports: [
@@ -11,8 +14,8 @@ import { envValidationSchema } from './env.validation';
         allowUnknown: true,
         abortEarly: false,
       },
-      // Load .env file; never commit .env to git
-      envFilePath: ['.env'],
+      // Load .env file from server root; never commit .env to git
+      envFilePath: [envPath],
       expandVariables: true,
     }),
   ],

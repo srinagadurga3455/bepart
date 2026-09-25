@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 @Injectable()
 export class StorageService {
@@ -65,6 +67,49 @@ export class StorageService {
       blobHTTPHeaders: { blobContentType: file.mimetype },
     });
     return { url: blockBlobClient.url, key: blobName };
+  }
+
+  private localDir(subdir: string): string {
+    return path.join(process.cwd(), 'uploads', subdir);
+  }
+
+  /**
+   * Upload a withdrawal payment-proof screenshot.
+   * Uses Azure Blob when configured, otherwise a local-disk fallback under
+   * ./uploads/proofs (dev). Local files are served ONLY through the
+   * authenticated GET /api/withdrawals/:id/proof endpoint — never statically.
+   * Returns a storage URL: https://... for Azure, local://proofs/<file> for disk.
+   */
+  async uploadProof(file: Express.Multer.File, withdrawalId: string): Promise<{ url: string; key: string }> {
+    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = `${withdrawalId}-${randomUUID()}-${sanitized}`;
+    if (this.containerClient) {
+      const container = await this.ensureContainer();
+      const blobName = `proofs/${filename}`;
+      const blockBlobClient = container.getBlockBlobClient(blobName);
+      await blockBlobClient.uploadData(file.buffer, {
+        blobHTTPHeaders: { blobContentType: file.mimetype },
+      });
+      return { url: blockBlobClient.url, key: blobName };
+    }
+    const dir = this.localDir('proofs');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, filename), file.buffer);
+    return { url: `local://proofs/${filename}`, key: filename };
+  }
+
+  /**
+   * Read a local:// storage URL back from disk (with traversal guard).
+   */
+  async readLocalFile(url: string): Promise<{ buffer: Buffer; mimetype: string }> {
+    const prefix = 'local://proofs/';
+    if (!url.startsWith(prefix)) throw new Error('Not a local storage URL');
+    const filename = path.basename(url.slice(prefix.length));
+    if (!filename) throw new Error('Invalid storage URL');
+    const buffer = await fs.readFile(path.join(this.localDir('proofs'), filename));
+    const ext = path.extname(filename).toLowerCase();
+    const mimetype = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    return { buffer, mimetype };
   }
 
   async delete(key: string): Promise<void> {

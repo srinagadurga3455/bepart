@@ -10,6 +10,24 @@ export class AdminRepository {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  listUsers() {
+    return this.prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  countRegistrations() {
+    return this.prisma.registration.count();
+  }
+
+  listEvents() {
+    return this.prisma.event.findMany({
+      include: { organizer: { select: { id: true, name: true } }, _count: { select: { registrations: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   createAdminTransaction(data: { name: string; email: string; password: string; phone?: string; companyName: string; description?: string }) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({

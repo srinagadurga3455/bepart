@@ -13,7 +13,20 @@ export class AdminService {
   ) {}
 
   async dashboard() {
-    return { message: 'admin dashboard stub', stats: {} };
+    const [users, events, registrations] = await Promise.all([
+      this.adminRepo.listUsers(),
+      this.adminRepo.listEvents(),
+      this.adminRepo.countRegistrations(),
+    ]);
+    return {
+      users: users.length,
+      events: events.length,
+      registrations,
+    };
+  }
+
+  async listUsers() {
+    return this.adminRepo.listUsers();
   }
 
   async listOrganizers() {
@@ -25,7 +38,7 @@ export class AdminService {
   }
 
   async listEvents() {
-    return [];
+    return this.adminRepo.listEvents();
   }
 
   async createAdmin(dto: CreateAdminDto) {

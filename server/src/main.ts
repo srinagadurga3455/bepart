@@ -1,10 +1,11 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import * as express from 'express';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { appValidationPipe } from './common/pipes/validation.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,21 +17,16 @@ async function bootstrap() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Validation
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
+  // Global exception filter
+  app.useGlobalFilters(new HttpExceptionFilter());
 
-  // CORS - production safe: allow APP_URL + FRONTEND_URL + Render domains
-  const appUrl = configService.get<string>('APP_URL', 'http://localhost:3000');
+  // Global validation pipe
+  app.useGlobalPipes(appValidationPipe);
+
+  // CORS - production safe: allow APP_URL + FRONTEND_URL
   const frontendUrl = configService.get<string>('FRONTEND_URL');
   const allowedOrigins = [
-    appUrl,
+    configService.get<string>('APP_URL', 'http://localhost:3000'),
     frontendUrl,
     'http://localhost:3000',
     'http://localhost:5173',
@@ -38,14 +34,17 @@ async function bootstrap() {
   ].filter(Boolean) as string[];
 
   const corsOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow non-browser (no origin) and Razorpay webhook (no origin)
+    // Allow non-browser (no origin) and server-to-server requests
     if (!origin) return callback(null, true);
-    // Allow Render subdomains and listed origins
-    if (allowedOrigins.includes(origin) || origin.endsWith('.onrender.com') || origin.endsWith('.vercel.app')) {
+    // Allow only explicitly configured origins
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    // In production, log but allow if APP_URL is Render
-    callback(null, allowedOrigins.length === 0 ? true : false);
+    // In development, allow localhost variants
+    if (configService.get('NODE_ENV') === 'development' && origin.startsWith('http://localhost')) {
+      return callback(null, true);
+    }
+    callback(new Error('CORS: Origin not allowed'), false);
   };
 
   app.enableCors({
@@ -83,9 +82,5 @@ async function bootstrap() {
 
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port);
-  // eslint-disable-next-line no-console
-  console.log(`Pravesh server running on ${appUrl}/${apiPrefix}`);
-  // eslint-disable-next-line no-console
-  console.log(`Swagger docs at ${appUrl}/${apiPrefix}/docs`);
 }
 bootstrap();

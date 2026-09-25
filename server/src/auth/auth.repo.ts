@@ -14,6 +14,12 @@ export class AuthRepository {
     return this.prisma.user.findFirst({ where: { phone } });
   }
 
+  // Suffix lookup for equivalent phone formats (e.g. stored "+91..." vs entered "987...").
+  // Caller must require exactly one match to avoid ambiguous identity resolution.
+  findUsersByPhoneSuffix(suffix: string) {
+    return this.prisma.user.findMany({ where: { phone: { endsWith: suffix } } });
+  }
+
   findUserByEmailOrPhone(identifier: string) {
     return this.prisma.user.findFirst({
       where: { OR: [{ email: identifier }, { phone: identifier }] },

@@ -51,6 +51,19 @@ export class AuthService {
     throw new BadRequestException('Either email or phone is required');
   }
 
+  // Phone numbers may be stored/entered in equivalent formats ("+91 987..." vs
+  // "987..."). Exact match first; fall back to last-10-digits ONLY when it
+  // resolves to exactly one user, otherwise treat as not found.
+  private async findUserByPhoneFlexible(normalizedPhone: string): Promise<any> {
+    const exact = await this.authRepo.findUserByPhone(normalizedPhone);
+    if (exact) return exact;
+    const digits = normalizedPhone.replace(/\D/g, '');
+    if (digits.length < 10) return null;
+    const candidates = await this.authRepo.findUsersByPhoneSuffix(digits.slice(-10));
+    if (Array.isArray(candidates) && candidates.length === 1) return candidates[0];
+    return null;
+  }
+
   private generateOtp(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
@@ -66,7 +79,7 @@ export class AuthService {
     if (isEmail) {
       user = await this.authRepo.findUserByEmail(identifier);
     } else {
-      user = await this.authRepo.findUserByPhone(identifier);
+      user = await this.findUserByPhoneFlexible(identifier);
     }
 
     if (!user) {
@@ -133,11 +146,11 @@ export class AuthService {
     if (dto.email) {
       user = await this.authRepo.findUserByEmail(identifier);
     } else {
-      user = await this.authRepo.findUserByPhone(identifier);
+      user = await this.findUserByPhoneFlexible(identifier);
     }
     // fallback: if we stored phone but user email lookup needed, try phone
     if (!user && dto.phone) {
-      user = await this.authRepo.findUserByPhone(identifier);
+      user = await this.findUserByPhoneFlexible(identifier);
     }
     // last fallback: try email lookup for phone identifier? try both
     if (!user) {

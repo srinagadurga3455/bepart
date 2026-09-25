@@ -11,6 +11,7 @@ import { Role } from '../common/constants/roles';
 const mockAuthRepo: any = {
   findUserByEmail: jest.fn(),
   findUserByPhone: jest.fn(),
+  findUsersByPhoneSuffix: jest.fn().mockResolvedValue([]),
   findUserByEmailOrPhone: jest.fn(),
   findUserByIdWithProfile: jest.fn(),
   findUserByEmailNormalized: jest.fn(),
@@ -170,7 +171,26 @@ describe('AuthService OTP', () => {
 
     it('should reject nonexistent phone with 401', async () => {
       mockAuthRepo.findUserByPhone.mockResolvedValue(null);
+      mockAuthRepo.findUsersByPhoneSuffix.mockResolvedValue([]);
       await expect(service.requestOtp({ phone: '0000000000' } as any)).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('should resolve equivalent phone format via last-10-digits', async () => {
+      mockAuthRepo.findUserByPhone.mockResolvedValue(null);
+      mockAuthRepo.findUsersByPhoneSuffix.mockResolvedValue([{ id: '2', phone: '+919876543224', role: Role.ORGANIZER, isActive: true }]);
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp4' });
+      const result = await service.requestOtp({ phone: '9876543224' } as any);
+      expect(result).toHaveProperty('message');
+      expect(mockAuthRepo.findUsersByPhoneSuffix).toHaveBeenCalledWith('9876543224');
+    });
+
+    it('should reject ambiguous phone suffix matches', async () => {
+      mockAuthRepo.findUserByPhone.mockResolvedValue(null);
+      mockAuthRepo.findUsersByPhoneSuffix.mockResolvedValue([
+        { id: '2', phone: '+919876543224', role: Role.ORGANIZER, isActive: true },
+        { id: '3', phone: '+19876543224', role: Role.ORGANIZER, isActive: true },
+      ]);
+      await expect(service.requestOtp({ phone: '9876543224' } as any)).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
 

@@ -60,6 +60,16 @@ export class EventsController {
     return this.eventsService.findOnePublic(id);
   }
 
+  @Public()
+  @Get('public/:id/registration-form')
+  @ApiOperation({ summary: 'Get registration form structure for published event', description: 'Returns organiser-defined sections and fields' })
+  @ApiParam({ name: 'id', type: Number, description: 'Event integer ID' })
+  @ApiResponse({ status: 200, description: 'Form structure with sections and fields' })
+  @ApiResponse({ status: 404, description: 'Not found / unpublished' })
+  getRegistrationForm(@Param('id', ParseIntPipe) id: number) {
+    return this.eventsService.getRegistrationForm(id);
+  }
+
   @Get(':id')
   @Roles(Role.ORGANIZER, Role.ADMIN)
   @ApiBearerAuth('JWT-auth')
