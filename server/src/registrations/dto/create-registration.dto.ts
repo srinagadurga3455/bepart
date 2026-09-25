@@ -34,4 +34,11 @@ export class CreateRegistrationDto {
   })
   @IsOptional()
   formData?: any;
+
+  @ApiPropertyOptional({ example: 50000, description: 'Amount in paise for paid events (required if paymentRequired=true)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount?: number;
 }

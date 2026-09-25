@@ -64,8 +64,4 @@ export class EventsRepository {
   updateEventStatus(id: number, status: EventStatus) {
     return this.prisma.event.update({ where: { id }, data: { status } });
   }
-
-  updatePosterUrl(id: number, posterUrl: string) {
-    return this.prisma.event.update({ where: { id }, data: { posterUrl } });
-  }
 }

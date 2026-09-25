@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventsService } from './events.service';
 import { EventsRepository } from './events.repo';
-import { StorageService } from '../storage/storage.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { EventStatus } from '@prisma/client';
 
@@ -16,12 +15,6 @@ const mockEventsRepo: any = {
   findEventByIdWithRegistrations: jest.fn(),
   updateEvent: jest.fn(),
   updateEventStatus: jest.fn(),
-  updatePosterUrl: jest.fn(),
-};
-
-const mockStorageService = {
-  uploadPoster: jest.fn().mockResolvedValue({ url: 'https://azure.blob/event-posters/events/1/test.png', key: 'events/1/test.png' }),
-  deleteByUrl: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('EventsService - Updated Schema Int ID', () => {
@@ -30,7 +23,7 @@ describe('EventsService - Updated Schema Int ID', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const mod: TestingModule = await Test.createTestingModule({
-      providers: [EventsService, { provide: EventsRepository, useValue: mockEventsRepo }, { provide: StorageService, useValue: mockStorageService }],
+      providers: [EventsService, { provide: EventsRepository, useValue: mockEventsRepo }],
     }).compile();
     service = mod.get(EventsService);
   });
@@ -153,48 +146,6 @@ describe('EventsService - Updated Schema Int ID', () => {
     it('should throw 400 for invalid ID type (handled by ParseIntPipe)', async () => {
       mockEventsRepo.findEventByIdWithOrganizer.mockResolvedValue(null);
       await expect(service.findOnePublic(999)).rejects.toBeInstanceOf(NotFoundException);
-    });
-  });
-
-  describe('uploadPoster', () => {
-    const fakeFile = (overrides: Partial<Express.Multer.File> = {}) =>
-      ({
-        originalname: 'poster.png',
-        mimetype: 'image/png',
-        size: 1024,
-        buffer: Buffer.from('fake'),
-        ...overrides,
-      } as unknown as Express.Multer.File);
-
-    it('should upload poster for owner', async () => {
-      mockEventsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1', posterUrl: null });
-      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
-      mockEventsRepo.updatePosterUrl.mockResolvedValue({ id: 1, posterUrl: 'https://azure.blob/event-posters/events/1/test.png' });
-      const res = await service.uploadPoster(1, fakeFile(), 'user1');
-      expect(res.posterUrl).toContain('https://');
-      expect(mockStorageService.uploadPoster).toHaveBeenCalled();
-    });
-
-    it('should reject non-owner', async () => {
-      mockEventsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1' });
-      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org2' });
-      await expect(service.uploadPoster(1, fakeFile(), 'user2')).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('should reject invalid mimetype', async () => {
-      await expect(service.uploadPoster(1, fakeFile({ mimetype: 'application/pdf' }), 'user1')).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('should reject file over 5 MB', async () => {
-      await expect(service.uploadPoster(1, fakeFile({ size: 6 * 1024 * 1024 }), 'user1')).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('should delete old poster after replacement', async () => {
-      mockEventsRepo.findEventById.mockResolvedValue({ id: 1, organizerId: 'org1', posterUrl: 'https://azure.blob/event-posters/events/1/old.png' });
-      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
-      mockEventsRepo.updatePosterUrl.mockResolvedValue({ id: 1, posterUrl: 'https://azure.blob/event-posters/events/1/new.png' });
-      await service.uploadPoster(1, fakeFile(), 'user1');
-      expect(mockStorageService.deleteByUrl).toHaveBeenCalledWith('https://azure.blob/event-posters/events/1/old.png');
     });
   });
 });

@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventsRepository } from './events.repo';
-import { StorageService } from '../storage/storage.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { QueryEventDto } from './dto/query-event.dto';
@@ -10,10 +9,7 @@ import { validateFormStructure } from '../common/validators/form-structure.valid
 
 @Injectable()
 export class EventsService {
-  constructor(
-    private readonly eventsRepo: EventsRepository,
-    private readonly storageService: StorageService,
-  ) {}
+  constructor(private readonly eventsRepo: EventsRepository) {}
 
   private validateDates(date: string, closingTime: string) {
     const d = new Date(date);
@@ -152,31 +148,5 @@ export class EventsService {
     }
     EventPolicy.assertTransition(event.status, EventStatus.CANCELLED);
     return this.eventsRepo.updateEventStatus(id, EventStatus.CANCELLED);
-  }
-
-  async uploadPoster(eventId: number, file: Express.Multer.File, userId: string) {
-    if (!file) throw new BadRequestException('Poster file is required');
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowed.includes(file.mimetype)) {
-      throw new BadRequestException(`Invalid file type ${file.mimetype}. Allowed: jpeg, png, webp`);
-    }
-    const maxBytes = 5 * 1024 * 1024;
-    if (file.size > maxBytes) {
-      throw new BadRequestException(`File too large: ${file.size} bytes. Maximum 5 MB`);
-    }
-    const event = await this.eventsRepo.findEventById(eventId);
-    if (!event) throw new NotFoundException('Event not found');
-    const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
-    if (!organizer || event.organizerId !== organizer.id) {
-      throw new ForbiddenException('You do not own this event');
-    }
-    const oldUrl: string | null = (event as any).posterUrl || null;
-    const { url } = await this.storageService.uploadPoster(file, eventId);
-    const updated = await this.eventsRepo.updatePosterUrl(eventId, url);
-    if (oldUrl && oldUrl !== url) {
-      // Best-effort cleanup — don't fail request if delete fails
-      await this.storageService.deleteByUrl(oldUrl).catch(() => {});
-    }
-    return { message: 'Event poster uploaded successfully', posterUrl: updated.posterUrl };
   }
 }

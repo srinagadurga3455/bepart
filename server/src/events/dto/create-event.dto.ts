@@ -71,7 +71,11 @@ export class CreateEventDto {
   @IsOptional()
   formStructure?: any;
 
-  @ApiPropertyOptional({ example: false, description: 'Whether payment is required to register', default: false })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Whether payment is required for this event',
+    default: false,
+  })
   @IsOptional()
   @IsBoolean()
   paymentRequired?: boolean;

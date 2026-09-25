@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { RegistrationsRepository } from './registrations.repo';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { validateFormData } from '../common/validators/form-structure.validator';
+import { canonicalPhone } from '../common/utils/phone';
 
 @Injectable()
 export class RegistrationsService {
@@ -21,18 +22,75 @@ export class RegistrationsService {
       const now = new Date();
       if (event.closingTime && now > event.closingTime) throw new BadRequestException('Registration closed (closingTime passed)');
       if (event.formStructure) validateFormData(event.formStructure, dto.formData);
+      const canonical = canonicalPhone(dto.phone);
       const count = await tx.registration.count({ where: { eventId: event.id } });
       if (count >= event.slots) throw new BadRequestException(`Event slots full (${event.slots} slots, ${count} taken)`);
-      const existing = await tx.registration.findFirst({ where: { eventId: dto.eventId, phone: dto.phone } });
+      const existing = await tx.registration.findFirst({ where: { eventId: dto.eventId, phone: canonical } });
       if (existing) throw new ConflictException('Phone already registered for this event');
+
+      const isPaidEvent = (event as any).paymentRequired === true;
+
+      if (!isPaidEvent) {
+        const registration = await tx.registration.create({
+          data: {
+            phone: canonical,
+            eventId: dto.eventId,
+            formData: dto.formData as any,
+          },
+          include: { event: true },
+        });
+        return registration;
+      }
+
+      // Paid event: Registration only after PAID payment. Check for successful payment first (canonical).
+      const successfulPayment = await tx.payment.findFirst({
+        where: {
+          eventId: dto.eventId,
+          phone: canonical,
+          status: 'PAID' as any,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!successfulPayment) {
+        const pendingOrFailed = await tx.payment.findFirst({
+          where: { eventId: dto.eventId, phone: canonical, status: { in: ['PENDING', 'FAILED'] as any } },
+        });
+        if (pendingOrFailed) {
+          throw new BadRequestException(`Payment status is ${pendingOrFailed.status} - registration not allowed until payment is PAID. Please complete payment first.`);
+        }
+        throw new BadRequestException('Payment required for this event. Please create a payment with status PENDING and complete it to PAID before registering.');
+      }
+
+      // Prevent duplicate registration (should already be checked by existing, but double-check)
+      // Also ensure the successful payment is not already linked to a registration
+      if ((successfulPayment as any).registrationId) {
+        // Check if that registration still exists
+        const linkedReg = await tx.registration.findUnique({ where: { registrationId: (successfulPayment as any).registrationId } });
+        if (linkedReg) throw new ConflictException('Phone already registered for this event (via previous payment)');
+      }
+
+      // Also check if a registration already exists for this phone+event (in case payment was not linked)
+      // This is already checked above as `existing`, but we already checked existing at top for all events.
+      // For paid events, the existing check above already covers it, but we keep it for safety.
+
+      // Create Registration with paymentStatus PAID and link to the successful Payment atomically (canonical)
       const registration = await tx.registration.create({
         data: {
-          phone: dto.phone.trim(),
+          phone: canonical,
           eventId: dto.eventId,
           formData: dto.formData as any,
+          paymentStatus: 'PAID' as any,
         },
         include: { event: true },
       });
+
+      // Link the successful payment to this registration
+      await tx.payment.update({
+        where: { id: successfulPayment.id },
+        data: { registrationId: registration.registrationId },
+      });
+
       return registration;
     });
 
@@ -135,7 +193,7 @@ export class RegistrationsService {
     }
     const user = await this.registrationsRepo.findUserById(userId);
     if (user?.phone) {
-      return this.registrationsRepo.findByPhone(user.phone);
+      return this.registrationsRepo.findByPhone(canonicalPhone(user.phone));
     }
     return [];
   }
@@ -145,8 +203,10 @@ export class RegistrationsService {
     if (!reg) throw new NotFoundException('Registration not found');
     if (role === 'STUDENT') {
       const user = await this.registrationsRepo.findUserById(userId);
-      if (user?.phone && reg.phone !== user.phone) throw new ForbiddenException('Not your registration');
-      if (!user?.phone && reg.phone) throw new ForbiddenException('Not your registration');
+      const regPhoneCan = canonicalPhone(reg.phone);
+      const userPhoneCan = user?.phone ? canonicalPhone(user.phone) : null;
+      if (userPhoneCan && regPhoneCan !== userPhoneCan) throw new ForbiddenException('Not your registration');
+      if (!userPhoneCan && reg.phone) throw new ForbiddenException('Not your registration');
     }
     if (role === 'ORGANIZER') {
       const organizer = await this.registrationsRepo.findOrganizerByUserId(userId);
@@ -161,7 +221,9 @@ export class RegistrationsService {
     if (!reg) throw new NotFoundException('Registration not found');
     if (role === 'STUDENT') {
       const user = await this.registrationsRepo.findUserById(userId);
-      if (user?.phone !== reg.phone) throw new ForbiddenException('You can only cancel your own registration');
+      const regCan = canonicalPhone(reg.phone);
+      const userCan = user?.phone ? canonicalPhone(user.phone) : null;
+      if (userCan !== regCan) throw new ForbiddenException('You can only cancel your own registration');
     }
     if (role === 'ORGANIZER') {
       const org = await this.registrationsRepo.findOrganizerByUserId(userId);
