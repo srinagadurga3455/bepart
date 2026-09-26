@@ -31,25 +31,33 @@ export class PaymentsRepository {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
-  findEventById(id: number) {
+  findOrganizerByUserId(userId: string) {
+    return this.prisma.organizer.findUnique({ where: { userId } });
+  }
+
+  findEventById(id: string) {
     return this.prisma.event.findUnique({ where: { id } });
   }
 
-  findPendingPaymentByPhoneAndEvent(phone: string, eventId: number) {
+  findPendingPaymentByPhoneAndEvent(phone: string,  eventId: string) {
     return this.prisma.payment.findFirst({ where: { phone, eventId, status: PaymentStatus.PENDING } });
   }
 
-  findRegistrationByPhoneAndEvent(phone: string, eventId: number) {
+  findRegistrationByPhoneAndEvent(phone: string,  eventId: string) {
     return this.prisma.registration.findFirst({ where: { phone, eventId } });
   }
 
-  createPendingPayment(data: { phone: string; eventId: number; amount: number; status?: PaymentStatus }) {
+  createPendingPayment(data: { phone: string;  eventId: string; amount: number; status?: PaymentStatus; couponId?: string | null; couponCode?: string | null; originalAmount?: number | null; discountAmount?: number | null }) {
     return this.prisma.payment.create({
       data: {
         phone: data.phone,
         eventId: data.eventId,
         amount: data.amount,
         status: data.status ?? PaymentStatus.PENDING,
+        couponId: (data as any).couponId || null,
+        couponCode: (data as any).couponCode || null,
+        originalAmount: (data as any).originalAmount ?? data.amount,
+        discountAmount: (data as any).discountAmount ?? 0,
       },
     });
   }

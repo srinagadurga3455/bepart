@@ -74,6 +74,7 @@ async function bootstrap() {
     .addTag('auth', 'Authentication')
     .addTag('organizers', 'Organizer onboarding & approval')
     .addTag('events', 'Event lifecycle')
+    .addTag('coupons', 'Organizer coupons & validation')
     .addTag('registrations', 'Student registrations')
     .addTag('admin', 'Admin operations')
     .build();

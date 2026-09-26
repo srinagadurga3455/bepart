@@ -8,7 +8,7 @@ describe('WithdrawalsService', () => {
   let service: WithdrawalsService;
 
   const paidEvent = (overrides: any = {}) => ({
-    id: 3,
+    id: '550e8400-e29b-41d4-a716-446655440002',
     organizerId: 'org1',
     paymentRequired: true,
     formStructure: { payment: { amount: 100 } },
@@ -46,32 +46,32 @@ describe('WithdrawalsService', () => {
     mockPrisma.event.findUnique.mockResolvedValue(paidEvent({ organizerId: 'orgX' }));
     mockPrisma.registration.count.mockResolvedValue(5);
     mockPrisma.withdrawal.findMany.mockResolvedValue([]);
-    await expect(service.create({ eventId: 3, amount: 100 } as any, 'user1')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.create({ eventId: '550e8400-e29b-41d4-a716-446655440002', amount: 100 } as any, 'user1')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('should reject amount above available balance', async () => {
     financeStubs(5, []); // collected = 500
-    await expect(service.create({ eventId: 3, amount: 501 } as any, 'user1')).rejects.toThrow('exceeds available balance');
+    await expect(service.create({ eventId: '550e8400-e29b-41d4-a716-446655440002', amount: 501 } as any, 'user1')).rejects.toThrow('exceeds available balance');
   });
 
   it('should reject duplicate open request for same event', async () => {
     financeStubs(5, [{ id: 'w1', status: 'REQUESTED', amount: 100 }]);
-    await expect(service.create({ eventId: 3, amount: 100 } as any, 'user1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.create({ eventId: '550e8400-e29b-41d4-a716-446655440002', amount: 100 } as any, 'user1')).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('should reject events without a fee', async () => {
     mockPrisma.event.findUnique.mockResolvedValue(paidEvent({ paymentRequired: false }));
     mockPrisma.registration.count.mockResolvedValue(5);
     mockPrisma.withdrawal.findMany.mockResolvedValue([]);
-    await expect(service.create({ eventId: 3, amount: 10 } as any, 'user1')).rejects.toThrow('no registration fee');
+    await expect(service.create({ eventId: '550e8400-e29b-41d4-a716-446655440002', amount: 10 } as any, 'user1')).rejects.toThrow('no registration fee');
   });
 
   it('should create with UPI snapshot from organizer profile', async () => {
     financeStubs(5, []);
     mockPrisma.withdrawal.create.mockResolvedValue({ id: 'w1', amount: 200, upiId: 'org@upi' });
-    const res = await service.create({ eventId: 3, amount: 200 } as any, 'user1');
+    const res = await service.create({ eventId: '550e8400-e29b-41d4-a716-446655440002', amount: 200 } as any, 'user1');
     expect(mockPrisma.withdrawal.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ amount: 200, upiId: 'org@upi', organizerId: 'org1', eventId: 3 }) }),
+      expect.objectContaining({ data: expect.objectContaining({ amount: 200, upiId: 'org@upi', organizerId: 'org1', eventId: '550e8400-e29b-41d4-a716-446655440002' }) }),
     );
     expect(res.upiId).toBe('org@upi');
   });
@@ -79,7 +79,7 @@ describe('WithdrawalsService', () => {
   it('should forbid non-owner organizer from viewing withdrawal', async () => {
     mockPrisma.withdrawal.findUnique.mockResolvedValue({
       id: 'w1', organizerId: 'orgX', status: 'PAID',
-      organizer: { id: 'orgX' }, event: { id: 3 },
+      organizer: { id: 'orgX' }, event: { id: '550e8400-e29b-41d4-a716-446655440002' },
     });
     await expect(service.findOne('w1', 'user1', 'ORGANIZER')).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -112,7 +112,7 @@ describe('WithdrawalsService', () => {
   it('should hide proof from organizer before PAID', async () => {
     mockPrisma.withdrawal.findUnique.mockResolvedValue({
       id: 'w1', organizerId: 'org1', status: 'REQUESTED', proofUrl: null,
-      organizer: { id: 'org1' }, event: { id: 3 },
+      organizer: { id: 'org1' }, event: { id: '550e8400-e29b-41d4-a716-446655440002' },
     });
     await expect(service.proofContent('w1', 'user1', 'ORGANIZER')).rejects.toBeInstanceOf(ForbiddenException);
   });

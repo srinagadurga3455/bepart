@@ -37,31 +37,31 @@ export class EventsRepository {
     return this.prisma.event.count({ where });
   }
 
-  findEventById(id: number) {
+  findEventById(id: string) {
     return this.prisma.event.findUnique({ where: { id } });
   }
 
-  findEventByIdWithOrganizer(id: number) {
+  findEventByIdWithOrganizer(id: string) {
     return this.prisma.event.findUnique({ where: { id }, include: { organizer: { select: { id: true, name: true } } } });
   }
 
-  findEventByIdWithOrganizerFull(id: number) {
+  findEventByIdWithOrganizerFull(id: string) {
     return this.prisma.event.findUnique({ where: { id }, include: { organizer: true } });
   }
 
-  findEventByIdWithRegistrations(id: number) {
+  findEventByIdWithRegistrations(id: string) {
     return this.prisma.event.findUnique({ where: { id }, include: { registrations: { take: 5 } } });
   }
 
-  findEventFormStructure(id: number) {
+  findEventFormStructure(id: string) {
     return this.prisma.event.findUnique({ where: { id }, select: { formStructure: true, eventName: true, status: true } });
   }
 
-  updateEvent(id: number, data: any) {
+  updateEvent(id: string, data: any) {
     return this.prisma.event.update({ where: { id }, data });
   }
 
-  updateEventStatus(id: number, status: EventStatus) {
+  updateEventStatus(id: string, status: EventStatus) {
     return this.prisma.event.update({ where: { id }, data: { status } });
   }
 }

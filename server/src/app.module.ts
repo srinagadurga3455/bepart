@@ -12,6 +12,7 @@ import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { StorageModule } from './storage/storage.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { PaymentsModule } from './payments/payments.module';
+import { CouponsModule } from './coupons/coupons.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -31,6 +32,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     EventsModule,
     RegistrationsModule,
     PaymentsModule,
+    CouponsModule,
     AdminModule,
     WithdrawalsModule,
     StorageModule,

@@ -64,15 +64,15 @@ export class PaymentsController {
   }
 
   @Patch(':id/status')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'ADMIN: update payment status', description: 'Only ADMIN can manually change status. Synchronizes Registration.paymentStatus atomically via transaction. Allowed: PENDING, PAID, FAILED' })
+  @ApiOperation({ summary: 'ORGANIZER: update payment status', description: 'Only the organizer who owns the payment event can manually change status (e.g. confirm an offline collection). Synchronizes Registration.paymentStatus atomically via transaction. Allowed: PENDING, PAID, FAILED' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
   @ApiBody({ type: UpdatePaymentStatusDto })
   @ApiResponse({ status: 200, description: 'Payment status updated' })
-  @ApiResponse({ status: 403, description: 'Forbidden: ADMIN only' })
+  @ApiResponse({ status: 403, description: 'Forbidden: ORGANIZER only, own events' })
   @ApiResponse({ status: 404, description: 'Payment not found' })
-  updateStatus(@Param('id') id: string, @Body() dto: UpdatePaymentStatusDto) {
-    return this.paymentsService.updateStatus(id, dto);
+  updateStatus(@Param('id') id: string, @Body() dto: UpdatePaymentStatusDto, @CurrentUser() user: RequestUser) {
+    return this.paymentsService.updateStatus(id, dto, user);
   }
 }

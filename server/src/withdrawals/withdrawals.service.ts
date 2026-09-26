@@ -20,7 +20,7 @@ export class WithdrawalsService {
     return Number.isFinite(amount) && amount > 0 ? amount : 0;
   }
 
-  private async financeForEvent(eventId: number) {
+  private async financeForEvent( eventId: string) {
     const event = await this.prisma.event.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Event not found');
     const fee = this.eventFee(event);
