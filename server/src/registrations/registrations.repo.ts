@@ -60,7 +60,7 @@ export class RegistrationsRepository {
     return this.prisma.organizer.findUnique({ where: { userId } });
   }
 
-  findEventById(id: number) {
+  findEventById(id: string) {
     return this.prisma.event.findUnique({ where: { id } });
   }
 

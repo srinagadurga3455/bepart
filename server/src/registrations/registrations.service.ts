@@ -4,6 +4,7 @@ import { RegistrationsRepository } from './registrations.repo';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { validateFormData } from '../common/validators/form-structure.validator';
 import { canonicalPhone } from '../common/utils/phone';
+import { CouponsService } from '../coupons/coupons.service';
 
 @Injectable()
 export class RegistrationsService {
@@ -11,10 +12,17 @@ export class RegistrationsService {
 
   constructor(
     private readonly registrationsRepo: RegistrationsRepository,
+    private readonly couponsService: CouponsService,
     @Optional() private readonly configService?: ConfigService,
   ) {}
 
   async create(dto: CreateRegistrationDto, userId?: string) {
+    // Normalize an explicitly supplied coupon early: bad format is a 4xx,
+    // never silently ignored.
+    const requestedCouponCode = (dto as any).couponCode
+      ? CouponsService.normalizeCode((dto as any).couponCode)
+      : null;
+
     const registration = await this.registrationsRepo.transaction(async (tx) => {
       const event = await tx.event.findUnique({ where: { id: dto.eventId } });
       if (!event) throw new NotFoundException('Event not found');
@@ -31,6 +39,9 @@ export class RegistrationsService {
       const isPaidEvent = (event as any).paymentRequired === true;
 
       if (!isPaidEvent) {
+        if (requestedCouponCode) {
+          throw new BadRequestException('Coupon cannot be applied to a free event');
+        }
         const registration = await tx.registration.create({
           data: {
             phone: canonical,
@@ -74,6 +85,51 @@ export class RegistrationsService {
       // This is already checked above as `existing`, but we already checked existing at top for all events.
       // For paid events, the existing check above already covers it, but we keep it for safety.
 
+      // --- Coupon snapshot (pricing is sourced ONLY from the PAID payment) ---
+      // The discount was calculated exactly once at payment init. Here we copy
+      // the persisted payment amounts onto the registration so history survives
+      // later coupon edits/deactivation/deletion. An explicitly requested coupon
+      // that the payment does not carry is a 4xx, never silently full-priced.
+      let snapshot: { couponId: string | null; couponCode: string | null; originalAmount: number; discountAmount: number; totalAmount: number } = {
+        couponId: null,
+        couponCode: null,
+        originalAmount: (successfulPayment as any).originalAmount ?? (successfulPayment as any).amount,
+        discountAmount: (successfulPayment as any).discountAmount ?? 0,
+        totalAmount: (successfulPayment as any).amount,
+      };
+      if ((successfulPayment as any).couponId) {
+        const paymentCoupon = await tx.coupon.findUnique({ where: { id: (successfulPayment as any).couponId } });
+        const paymentCode = (successfulPayment as any).couponCode ?? paymentCoupon?.code ?? null;
+        if (requestedCouponCode && paymentCode !== requestedCouponCode) {
+          throw new BadRequestException(
+            `Payment does not use coupon ${requestedCouponCode}. Complete a discounted payment with that coupon first.`,
+          );
+        }
+        if (paymentCoupon && paymentCoupon.eventId !== dto.eventId) {
+          throw new BadRequestException('Coupon not valid for this event');
+        }
+        // Atomically consume one redemption (re-validates active/dates/usage
+        // inside the same transaction, so races cannot overshoot usageLimit).
+        // Coupon deleted after payment: keep the payment's persisted amounts.
+        if (paymentCoupon) {
+          await this.couponsService.consumeAtomic(tx, paymentCoupon.id, {
+            phone: canonical,
+            studentId: (await tx.user.findFirst({ where: { phone: canonical } }))?.id || undefined,
+          });
+        }
+        snapshot = {
+          couponId: (successfulPayment as any).couponId,
+          couponCode: paymentCode,
+          originalAmount: snapshot.originalAmount,
+          discountAmount: snapshot.discountAmount,
+          totalAmount: snapshot.totalAmount,
+        };
+      } else if (requestedCouponCode) {
+        throw new BadRequestException(
+          `Payment does not use coupon ${requestedCouponCode}. Complete a discounted payment with that coupon first.`,
+        );
+      }
+
       // Create Registration with paymentStatus PAID and link to the successful Payment atomically (canonical)
       const registration = await tx.registration.create({
         data: {
@@ -81,6 +137,11 @@ export class RegistrationsService {
           eventId: dto.eventId,
           formData: dto.formData as any,
           paymentStatus: 'PAID' as any,
+          couponId: snapshot.couponId,
+          couponCode: snapshot.couponCode,
+          originalAmount: snapshot.originalAmount,
+          discountAmount: snapshot.discountAmount,
+          totalAmount: snapshot.totalAmount,
         },
         include: { event: true },
       });
@@ -96,7 +157,13 @@ export class RegistrationsService {
 
     // Post-registration ticket flow: console confirmation + ticket URL (no new model).
     this.logRegistrationConfirmation(registration, (registration as any)?.event, dto.formData);
-    return { ...registration, ticketUrl: this.ticketUrl((registration as any)?.registrationId) };
+    const pricing = {
+      originalAmount: (registration as any)?.originalAmount ?? 0,
+      discountAmount: (registration as any)?.discountAmount ?? 0,
+      totalAmount: (registration as any)?.totalAmount ?? 0,
+      coupon: (registration as any)?.couponCode ? { code: (registration as any).couponCode } : null,
+    };
+    return { ...registration, pricing, ticketUrl: this.ticketUrl((registration as any)?.registrationId) };
   }
 
   // Public ticket lookup by registration ID (shareable /ticket/:id page, no auth, no listing).

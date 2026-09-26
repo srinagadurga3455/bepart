@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventsRepository } from './events.repo';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -6,10 +6,16 @@ import { QueryEventDto } from './dto/query-event.dto';
 import { EventPolicy } from './policies/event-policy';
 import { EventStatus } from '@prisma/client';
 import { validateFormStructure } from '../common/validators/form-structure.validator';
+import { CouponsService } from '../coupons/coupons.service';
+import { CouponsRepository } from '../coupons/coupons.repo';
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly eventsRepo: EventsRepository) {}
+  constructor(
+    private readonly eventsRepo: EventsRepository,
+    private readonly couponsService: CouponsService,
+    private readonly couponsRepo: CouponsRepository,
+  ) {}
 
   private validateDates(date: string, closingTime: string) {
     const d = new Date(date);
@@ -18,10 +24,21 @@ export class EventsService {
     if (isNaN(d.getTime()) || isNaN(c.getTime())) throw new BadRequestException('Invalid date format');
   }
 
-  async create(dto: CreateEventDto, userId: string) {
+  async create(dto: CreateEventDto, userId: string, role: string = 'ORGANIZER') {
     this.validateDates(dto.date, dto.closingTime);
     if (dto.slots < 1) throw new BadRequestException('slots must be >= 1');
     if (dto.formStructure !== undefined) validateFormStructure(dto.formStructure);
+    // Validate the optional coupon config BEFORE creating the event so an
+    // invalid discount can never leave behind a coupon-less orphan event.
+    const couponEnabled = (dto as any).coupon?.enabled === true;
+    if (couponEnabled) {
+      const cfg = (dto as any).coupon;
+      if (!cfg.discountType || cfg.discountValue === undefined || cfg.discountValue === null) {
+        throw new BadRequestException('discountType and discountValue are required when coupon.enabled=true');
+      }
+      CouponsService.assertValidDiscount(cfg.discountType, cfg.discountValue);
+      CouponsService.assertValidWindow(cfg.startsAt, cfg.expiresAt);
+    }
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
     if (!organizer) throw new NotFoundException('Organizer profile not found');
     if (organizer.status !== 'APPROVED') throw new ForbiddenException(`Only APPROVED organizers can create events (current: ${organizer.status})`);
@@ -36,7 +53,27 @@ export class EventsService {
       organizerId: organizer.id,
       paymentRequired: dto.paymentRequired,
     });
-    return event;
+    // YES: backend auto-generates the code and links exactly one coupon.
+    // NO (or omitted): normal event, no coupon row.
+    if (!couponEnabled) {
+      return { ...event, hasCoupon: false, coupon: null };
+    }
+    const cfg = (dto as any).coupon;
+    const already = await this.couponsRepo.findByEvent(event.id);
+    if (already.length > 0) throw new ConflictException('Event already has a coupon');
+    const coupon = await this.couponsService.create(
+      {
+        eventId: event.id,
+        discountType: cfg.discountType,
+        discountValue: cfg.discountValue,
+        isActive: cfg.isActive,
+        startsAt: cfg.startsAt,
+        expiresAt: cfg.expiresAt,
+        usageLimit: cfg.usageLimit,
+      } as any,
+      { userId, role },
+    );
+    return { ...event, hasCoupon: true, coupon: { code: coupon.code } };
   }
 
   async findPublished(query: QueryEventDto) {
@@ -46,10 +83,10 @@ export class EventsService {
     const where: any = { status: EventStatus.PUBLISHED };
     if (query.search) where.eventName = { contains: query.search, mode: 'insensitive' };
     const [data, total] = await Promise.all([
-      this.eventsRepo.findEvents(where, skip, limit, { date: 'asc' }, { organizer: { select: { id: true, name: true } }, _count: { select: { registrations: true } } }),
+      this.eventsRepo.findEvents(where, skip, limit, { date: 'asc' }, { organizer: { select: { id: true, name: true } }, _count: { select: { registrations: true, coupons: { where: { isActive: true } } } } }),
       this.eventsRepo.countEvents(where),
     ]);
-    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    return { data: data.map((e: any) => ({ ...e, hasCoupon: (e._count?.coupons ?? 0) > 0 })), meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async findMyEvents(userId: string, query: QueryEventDto) {
@@ -62,41 +99,42 @@ export class EventsService {
     if (query.status) where.status = query.status as EventStatus;
     if (query.search) where.eventName = { contains: query.search, mode: 'insensitive' };
     const [data, total] = await Promise.all([
-      this.eventsRepo.findEvents(where, skip, limit, { createdAt: 'desc' }),
+      this.eventsRepo.findEvents(where, skip, limit, { createdAt: 'desc' }, { _count: { select: { coupons: { where: { isActive: true } } } } }),
       this.eventsRepo.countEvents(where),
     ]);
-    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+    return { data: data.map((e: any) => ({ ...e, hasCoupon: (e._count?.coupons ?? 0) > 0 })), meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async findOnePublic(id: number) {
+  async findOnePublic(id: string) {
     const event = await this.eventsRepo.findEventByIdWithOrganizer(id);
     if (!event) throw new NotFoundException('Event not found');
     if (event.status !== EventStatus.PUBLISHED) throw new NotFoundException('Event not found');
-    return event;
+    return { ...event, hasCoupon: await this.couponsRepo.hasActiveCouponForEvent(id) };
   }
 
-  async getRegistrationForm(id: number) {
+  async getRegistrationForm(id: string) {
     const event = await this.eventsRepo.findEventFormStructure(id);
     if (!event) throw new NotFoundException('Event not found');
     if (event.status !== EventStatus.PUBLISHED) throw new NotFoundException('Event not found');
     return event.formStructure || { title: 'Registration', description: '', sections: [] };
   }
 
-  async findOneForOrganizer(id: number, userId: string) {
+  async findOneForOrganizer(id: string, userId: string) {
     const event = await this.eventsRepo.findEventById(id);
     if (!event) throw new NotFoundException('Event not found');
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
     if (!organizer || event.organizerId !== organizer.id) throw new ForbiddenException('You do not own this event');
-    return this.eventsRepo.findEventByIdWithRegistrations(id);
+    const full = await this.eventsRepo.findEventByIdWithRegistrations(id);
+    return { ...full, hasCoupon: await this.couponsRepo.hasActiveCouponForEvent(id) };
   }
 
-  async findOneForAdmin(id: number) {
+  async findOneForAdmin(id: string) {
     const event = await this.eventsRepo.findEventByIdWithOrganizerFull(id);
     if (!event) throw new NotFoundException('Event not found');
-    return event;
+    return { ...event, hasCoupon: await this.couponsRepo.hasActiveCouponForEvent(id) };
   }
 
-  async update(id: number, dto: UpdateEventDto, userId: string) {
+  async update(id: string, dto: UpdateEventDto, userId: string) {
     const event = await this.eventsRepo.findEventById(id);
     if (!event) throw new NotFoundException('Event not found');
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
@@ -119,7 +157,7 @@ export class EventsService {
     });
   }
 
-  async preview(id: number, userId: string) {
+  async preview(id: string, userId: string) {
     const event = await this.eventsRepo.findEventById(id);
     if (!event) throw new NotFoundException('Event not found');
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
@@ -129,7 +167,7 @@ export class EventsService {
     return this.eventsRepo.updateEventStatus(id, EventStatus.PREVIEW);
   }
 
-  async publish(id: number, userId: string) {
+  async publish(id: string, userId: string) {
     const event = await this.eventsRepo.findEventById(id);
     if (!event) throw new NotFoundException('Event not found');
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
@@ -139,7 +177,7 @@ export class EventsService {
     return this.eventsRepo.updateEventStatus(id, EventStatus.PUBLISHED);
   }
 
-  async cancel(id: number, userId: string, role: string) {
+  async cancel(id: string, userId: string, role: string) {
     const event = await this.eventsRepo.findEventById(id);
     if (!event) throw new NotFoundException('Event not found');
     if (role !== 'ADMIN') {

@@ -41,6 +41,12 @@ enum EventStatus {
   COMPLETED
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
 enum WithdrawalStatus {
   REQUESTED
   PROCESSING
@@ -48,17 +54,16 @@ enum WithdrawalStatus {
   REJECTED
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
+enum CouponDiscountType {
+  PERCENTAGE
+  FIXED
 }
 
 // ─────────────────────────────────────
 // Core Models — Preserved User for Auth/RBAC
 // ─────────────────────────────────────
 model User {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   email     String   @unique
   password  String?
   name      String
@@ -69,6 +74,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   organizerProfile Organizer?
+  coupons          Coupon[]
 
   @@index([role])
   @@index([createdAt])
@@ -81,7 +87,7 @@ enum OtpPurpose {
 }
 
 model OtpVerification {
-  id         String     @id @default(cuid())
+  id         String     @id @default(uuid())
   identifier String
   otpHash    String
   purpose    OtpPurpose
@@ -96,9 +102,10 @@ model OtpVerification {
 }
 
 model Admin {
-  id          String      @id @default(cuid())
+  id          String      @id @default(uuid())
   companyName String
   description String?     @db.Text
+  phone       String?
   status      AdminStatus @default(PENDING)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -110,7 +117,7 @@ model Admin {
 }
 
 model Organizer {
-  id          String          @id @default(cuid())
+  id          String          @id @default(uuid())
   name        String
   description String?         @db.Text
   phone       String?
@@ -139,27 +146,26 @@ model Organizer {
 }
 
 model Event {
-  id               Int         @id @default(autoincrement())
-  eventName        String
-  description      String?     @db.Text
-  date             DateTime
-  slots            Int
-  closingTime      DateTime
-  status            EventStatus @default(DRAFT)
-  formStructure    Json?
-  posterUrl        String?
-  posterSquareUrl  String?
+  id                 String      @id @default(uuid())
+  eventName          String
+  description        String?     @db.Text
+  date               DateTime
+  slots              Int
+  closingTime        DateTime
+  status             EventStatus @default(DRAFT)
+  formStructure      Json?
+  posterSquareUrl    String?
   posterRectangleUrl String?
-  paymentRequired  Boolean     @default(false)
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  paymentRequired    Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   organizerId String
   organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
 
   registrations Registration[]
-
-  withdrawals Withdrawal[]
+  coupons       Coupon[]
+  withdrawals   Withdrawal[]
 
   @@index([organizerId])
   @@index([status])
@@ -168,46 +174,56 @@ model Event {
 }
 
 model Registration {
-  registrationId String        @id @default(cuid())
+  registrationId String        @id @default(uuid())
   phone          String
   formData       Json?
   paymentStatus  PaymentStatus @default(PENDING)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  eventId Int
-  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   payment Payment?
 
+  // Coupon pricing snapshot (nullable so pre-feature registrations stay valid).
+  // Amounts are Int paise, matching the project's existing money approach.
+  // originalAmount = price before discount, discountAmount = discount applied,
+  // totalAmount = final amount actually payable (what the payment gateway gets).
+  couponId       String?
+  coupon         Coupon? @relation("RegistrationCoupon", fields: [couponId], references: [id], onDelete: SetNull)
+  couponCode     String?
+  originalAmount Int?
+  discountAmount Int?    @default(0)
+  totalAmount    Int?
+
   @@index([eventId])
   @@index([phone])
+  @@index([couponId])
   @@map("registrations")
 }
 
-// ─────────────────────────────────────
-// Organizer fund settlement
-// Organizer requests withdrawal of collected
-// registration fees per event; admin pays manually
-// and uploads proof.
-// ─────────────────────────────────────
+// Organizer fund settlement: organizer requests withdrawal of collected
+// registration fees per event; admin pays manually and uploads proof.
+// Amounts are Int paise (consistent with Payment.amount): 50000 = ₹500.00.
 model Withdrawal {
-  id            String           @id @default(cuid())
-  amount        Float
-  upiId         String
-  status        WithdrawalStatus @default(REQUESTED)
-  transactionId String?
-  proofUrl      String?
-  requestedAt   DateTime         @default(now())
-  paidAt        DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id              String           @id @default(uuid())
+  amount          Int
+  upiId           String
+  status          WithdrawalStatus @default(REQUESTED)
+  transactionId   String?
+  proofUrl        String?
+  rejectionReason String?
+  requestedAt     DateTime         @default(now())
+  paidAt          DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   organizerId String
   organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
 
-  eventId Int
-  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([organizerId])
   @@index([eventId])
@@ -215,28 +231,66 @@ model Withdrawal {
   @@map("withdrawals")
 }
 
-// ─────────────────────────────────────
-// Event registration payments
-// ─────────────────────────────────────
 model Payment {
-  id              String        @id @default(cuid())
+  id              String        @id @default(uuid())
   registrationId  String?       @unique
   registration    Registration? @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
   amount          Int           @default(0)
   status          PaymentStatus @default(PENDING)
-
-  // Pending payment holding form data for paid events
-  // before Registration is created
+  // Pending payment holding form data for paid events (before Registration is created)
   phone           String?
-  eventId         Int?
+  eventId         String?
   pendingFormData Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  couponId        String?
+  coupon          Coupon?       @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  // Denormalized code snapshot: survives coupon deletion/rename.
+  couponCode      String?
+  // Pricing audit (Int paise): amount is ALWAYS the final payable amount.
+  // originalAmount = event price before discount, discountAmount = discount applied.
+  originalAmount  Int?
+  discountAmount  Int?          @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([registrationId])
   @@index([status])
   @@index([eventId])
   @@index([phone])
+  @@index([couponId])
   @@map("payments")
+}
+
+model Coupon {
+  id            String             @id @default(uuid())
+  // Normalized uppercase (e.g. AICLUB20). Lookup uppercases + trims input,
+  // so aiclub20 / AICLUB20 / AiClub20 resolve to the same coupon.
+  code          String             @unique
+  eventId       String
+  event         Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  studentId     String?
+  student       User?              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  phone         String?
+  discountType  CouponDiscountType
+  discountValue Int
+  // Lifecycle / limits. Legacy single-use coupons use isUsed; coupons with
+  // usageLimit use the atomic usedCount counter (isUsed mirrors exhaustion).
+  isActive      Boolean            @default(true)
+  isUsed        Boolean            @default(false)
+  usedAt        DateTime?
+  usedCount     Int                @default(0)
+  usageLimit    Int?
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  payments      Payment[]
+  registrations Registration[]     @relation("RegistrationCoupon")
+
+  @@index([eventId])
+  @@index([studentId])
+  @@index([phone])
+  @@index([code])
+  @@index([isUsed])
+  @@index([isActive])
+  @@map("coupons")
 }

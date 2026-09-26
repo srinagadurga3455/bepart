@@ -1,6 +1,7 @@
-import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { EventCouponConfigDto } from './event-coupon-config.dto';
 
 export class CreateEventDto {
   @ApiProperty({ example: 'Tech Fest 2026' })
@@ -79,4 +80,13 @@ export class CreateEventDto {
   @IsOptional()
   @IsBoolean()
   paymentRequired?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Optional coupon: enabled=false (or omitted) = normal event. enabled=true = backend auto-generates a coupon code with your discount config.',
+    example: { enabled: true, discountType: 'PERCENTAGE', discountValue: 20 },
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventCouponConfigDto)
+  coupon?: EventCouponConfigDto;
 }
