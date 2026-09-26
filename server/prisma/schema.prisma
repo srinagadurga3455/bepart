@@ -205,17 +205,19 @@ model Registration {
 
 // Organizer fund settlement: organizer requests withdrawal of collected
 // registration fees per event; admin pays manually and uploads proof.
+// Amounts are Int paise (consistent with Payment.amount): 50000 = ₹500.00.
 model Withdrawal {
-  id            String           @id @default(uuid())
-  amount        Float
-  upiId         String
-  status        WithdrawalStatus @default(REQUESTED)
-  transactionId String?
-  proofUrl      String?
-  requestedAt   DateTime         @default(now())
-  paidAt        DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id              String           @id @default(uuid())
+  amount          Int
+  upiId           String
+  status          WithdrawalStatus @default(REQUESTED)
+  transactionId   String?
+  proofUrl        String?
+  rejectionReason String?
+  requestedAt     DateTime         @default(now())
+  paidAt          DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   organizerId String
   organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
