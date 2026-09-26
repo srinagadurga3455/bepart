@@ -47,46 +47,47 @@ export class StorageController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.storageService.handleEventPosterUpload(file, eventId, user);
+    return this.storageService.handleEventPosterGenericUpload(file, eventId, user);
   }
 
-  @Post('events/:eventId/poster-square')
-  @Roles(Role.ORGANIZER, Role.ADMIN)
-  @ApiBearerAuth('JWT-auth')
-  @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload event square poster (R2)', description: 'Stores at R2 events/{eventId}/poster-square.<ext>, validates 1:1 aspect ratio, replaces previous. ORGANIZER owner or ADMIN.' })
-  @ApiParam({ name: 'eventId', type: Number })
-  @ApiBody({
-    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
-  })
-  @ApiResponse({ status: 201, description: 'Square poster uploaded {posterSquareUrl}' })
-  @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
-  async uploadEventPosterSquare(
-    @Param('eventId', ParseIntPipe) eventId: number,
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: RequestUser,
-  ) {
-    return this.storageService.handleEventPosterSquareUpload(file, eventId, user);
-  }
+  // Commented out - posterSquareUrl and posterRectangleUrl fields were removed
+  // @Post('events/:eventId/poster-square')
+  // @Roles(Role.ORGANIZER, Role.ADMIN)
+  // @ApiBearerAuth('JWT-auth')
+  // @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
+  // @ApiConsumes('multipart/form-data')
+  // @ApiOperation({ summary: 'Upload event square poster (R2)', description: 'Stores at R2 events/{eventId}/poster-square.<ext>, validates 1:1 aspect ratio, replaces previous. ORGANIZER owner or ADMIN.' })
+  // @ApiParam({ name: 'eventId', type: Number })
+  // @ApiBody({
+  //   schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
+  // })
+  // @ApiResponse({ status: 201, description: 'Square poster uploaded {posterSquareUrl}' })
+  // @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
+  // async uploadEventPosterSquare(
+  //   @Param('eventId', ParseIntPipe) eventId: number,
+  //   @UploadedFile() file: Express.Multer.File,
+  //   @CurrentUser() user: RequestUser,
+  // ) {
+  //   return this.storageService.handleEventPosterSquareUpload(file, eventId, user);
+  // }
 
-  @Post('events/:eventId/poster-rectangle')
-  @Roles(Role.ORGANIZER, Role.ADMIN)
-  @ApiBearerAuth('JWT-auth')
-  @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload event rectangle poster (R2)', description: 'Stores at R2 events/{eventId}/poster-rectangle.<ext>, validates landscape 16:9, replaces previous. ORGANIZER owner or ADMIN.' })
-  @ApiParam({ name: 'eventId', type: Number })
-  @ApiBody({
-    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
-  })
-  @ApiResponse({ status: 201, description: 'Rectangle poster uploaded {posterRectangleUrl}' })
-  @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
-  async uploadEventPosterRectangle(
-    @Param('eventId', ParseIntPipe) eventId: number,
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: RequestUser,
-  ) {
-    return this.storageService.handleEventPosterRectangleUpload(file, eventId, user);
-  }
+  // @Post('events/:eventId/poster-rectangle')
+  // @Roles(Role.ORGANIZER, Role.ADMIN)
+  // @ApiBearerAuth('JWT-auth')
+  // @UseInterceptors(FileInterceptor('file', fileInterceptorOptions))
+  // @ApiConsumes('multipart/form-data')
+  // @ApiOperation({ summary: 'Upload event rectangle poster (R2)', description: 'Stores at R2 events/{eventId}/poster-rectangle.<ext>, validates landscape 16:9, replaces previous. ORGANIZER owner or ADMIN.' })
+  // @ApiParam({ name: 'eventId', type: Number })
+  // @ApiBody({
+  //   schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
+  // })
+  // @ApiResponse({ status: 201, description: 'Rectangle poster uploaded {posterRectangleUrl}' })
+  // @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
+  // async uploadEventPosterRectangle(
+  //   @Param('eventId', ParseIntPipe) eventId: number,
+  //   @UploadedFile() file: Express.Multer.File,
+  //   @CurrentUser() user: RequestUser,
+  // ) {
+  //   return this.storageService.handleEventPosterRectangleUpload(file, eventId, user);
+  // }
 }

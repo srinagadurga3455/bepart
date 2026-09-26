@@ -1,5 +1,5 @@
-import { IsInt, IsNotEmpty, IsString, MaxLength, Min } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreatePendingPaymentDto {
@@ -20,4 +20,8 @@ export class CreatePendingPaymentDto {
   @IsInt()
   @Min(1)
   amount: number;
+
+  @ApiPropertyOptional({ description: 'Pending form data to be stored until payment is completed' })
+  @IsOptional()
+  pendingFormData?: any;
 }

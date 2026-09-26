@@ -18,11 +18,12 @@ export class StorageRepository {
     return this.prisma.event.update({ where: { id }, data: { posterUrl } });
   }
 
-  updateEventPosterSquare(id: number, posterSquareUrl: string) {
-    return this.prisma.event.update({ where: { id }, data: { posterSquareUrl } });
-  }
+  // Commented out - these fields were removed in migration 20260925112831_add_razorpay_payment_fields
+  // updateEventPosterSquare(id: number, posterSquareUrl: string) {
+  //   return this.prisma.event.update({ where: { id }, data: { posterSquareUrl } });
+  // }
 
-  updateEventPosterRectangle(id: number, posterRectangleUrl: string) {
-    return this.prisma.event.update({ where: { id }, data: { posterRectangleUrl } });
-  }
+  // updateEventPosterRectangle(id: number, posterRectangleUrl: string) {
+  //   return this.prisma.event.update({ where: { id }, data: { posterRectangleUrl } });
+  // }
 }

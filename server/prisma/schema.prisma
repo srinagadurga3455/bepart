@@ -1,6 +1,3 @@
-// Pravesh - Prisma Schema — Updated to Required Design
-// Preserves User for Auth/RBAC, implements Admin/Organizer/Event/Registration as per spec
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,9 +7,135 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─────────────────────────────────────
-// Enums (kept only where needed)
-// ─────────────────────────────────────
+model User {
+  id               String     @id @default(cuid())
+  email            String     @unique
+  password         String?
+  name             String
+  phone            String?
+  role             Role       @default(STUDENT)
+  isActive         Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  organizerProfile Organizer?
+
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model OtpVerification {
+  id         String     @id @default(cuid())
+  identifier String
+  otpHash    String
+  purpose    OtpPurpose
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  verified   Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("otp_verifications")
+}
+
+model Admin {
+  id          String      @id @default(cuid())
+  companyName String
+  description String?
+  status      AdminStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  organizers  Organizer[]
+
+  @@index([status])
+  @@map("admins")
+}
+
+model Organizer {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  phone       String?
+  email       String?         @unique
+  upiId       String?
+  status      OrganizerStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  userId      String?         @unique
+  adminId     String?
+  events      Event[]
+  admin       Admin?          @relation(fields: [adminId], references: [id])
+  user        User?           @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([userId])
+  @@index([adminId])
+  @@index([email])
+  @@map("organizers")
+}
+
+model Event {
+  id              Int            @id @default(autoincrement())
+  eventName       String
+  description     String?
+  date            DateTime
+  slots           Int
+  closingTime     DateTime
+  status          EventStatus    @default(DRAFT)
+  formStructure   Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  organizerId     String
+  posterUrl       String?
+  paymentRequired Boolean        @default(false)
+  organizer       Organizer      @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  registrations   Registration[]
+
+  @@index([organizerId])
+  @@index([status])
+  @@index([date])
+  @@map("events")
+}
+
+model Registration {
+  registrationId String        @id @default(cuid())
+  phone          String
+  formData       Json?
+  paymentStatus  PaymentStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  eventId        Int
+  event          Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  payment        Payment?
+
+  @@index([eventId])
+  @@index([phone])
+  @@map("registrations")
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  registrationId   String?       @unique
+  amount           Int           @default(0)
+  status           PaymentStatus @default(PENDING)
+  razorpayOrderId  String?
+  razorpayPaymentId String?
+  phone            String?
+  eventId          Int?
+  pendingFormData  Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  registration     Registration? @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
+
+  @@index([registrationId])
+  @@index([status])
+  @@index([phone])
+  @@index([eventId])
+  @@index([razorpayOrderId])
+  @@map("payments")
+}
+
 enum Role {
   STUDENT
   ORGANIZER
@@ -41,195 +164,13 @@ enum EventStatus {
   COMPLETED
 }
 
-<<<<<<< HEAD
-enum WithdrawalStatus {
-  REQUESTED
-  PROCESSING
-  PAID
-  REJECTED
-=======
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
->>>>>>> 5a81ff9 (feat: complete event registration payment and R2 storage flow)
-}
-
-// ─────────────────────────────────────
-// Core Models — Preserved User for Auth/RBAC
-// ─────────────────────────────────────
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String?
-  name      String
-  phone     String?
-  role      Role     @default(STUDENT)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  organizerProfile Organizer?
-
-  @@index([role])
-  @@index([createdAt])
-  @@map("users")
-}
-
 enum OtpPurpose {
   ADMIN_LOGIN
   ORGANIZER_LOGIN
 }
 
-model OtpVerification {
-  id         String     @id @default(cuid())
-  identifier String
-  otpHash    String
-  purpose    OtpPurpose
-  expiresAt  DateTime
-  attempts   Int        @default(0)
-  verified   Boolean    @default(false)
-  createdAt  DateTime   @default(now())
-
-  @@index([identifier])
-  @@index([expiresAt])
-  @@map("otp_verifications")
-}
-
-model Admin {
-  id          String      @id @default(cuid())
-  companyName String
-  description String?     @db.Text
-  status      AdminStatus @default(PENDING)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  organizers Organizer[]
-
-  @@index([status])
-  @@map("admins")
-}
-
-model Organizer {
-  id          String          @id @default(cuid())
-  name        String
-  description String?         @db.Text
-  phone       String?
-  email       String?         @unique
-  upiId       String?
-  status      OrganizerStatus @default(PENDING)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-
-  // Relations: preserve link to User for RBAC + Admin management
-  userId String? @unique
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  adminId String?
-  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
-
-  events Event[]
-
-  withdrawals Withdrawal[]
-
-  @@index([status])
-  @@index([userId])
-  @@index([adminId])
-  @@index([email])
-  @@map("organizers")
-}
-
-model Event {
-  id            Int         @id @default(autoincrement())
-  eventName     String
-  description   String?     @db.Text
-  date          DateTime
-  slots         Int
-  closingTime   DateTime
-  status         EventStatus @default(DRAFT)
-  formStructure  Json?
-  posterUrl      String?
-  posterSquareUrl String?
-  posterRectangleUrl String?
-  paymentRequired Boolean @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  organizerId String
-  organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-
-  registrations Registration[]
-
-  withdrawals Withdrawal[]
-
-  @@index([organizerId])
-  @@index([status])
-  @@index([date])
-  @@map("events")
-}
-
-model Registration {
-  registrationId String        @id @default(cuid())
-  phone          String
-  formData       Json?
-  paymentStatus  PaymentStatus @default(PENDING)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  eventId Int
-  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  payment Payment?
-
-  @@index([eventId])
-  @@index([phone])
-  @@map("registrations")
-}
-
-<<<<<<< HEAD
-// Organizer fund settlement: organizer requests withdrawal of collected
-// registration fees per event; admin pays manually and uploads proof.
-// Amounts are snapshots in rupees at request/confirmation time.
-model Withdrawal {
-  id            String           @id @default(cuid())
-  amount        Float
-  upiId         String
-  status        WithdrawalStatus @default(REQUESTED)
-  transactionId String?
-  proofUrl      String?
-  requestedAt   DateTime         @default(now())
-  paidAt        DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  organizerId String
-  organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
-
-  eventId Int
-  event   Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([organizerId])
-  @@index([eventId])
-  @@index([status])
-  @@map("withdrawals")
-=======
-model Payment {
-  id              String        @id @default(cuid())
-  registrationId  String?       @unique
-  registration    Registration? @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
-  amount          Int           @default(0)
-  status          PaymentStatus @default(PENDING)
-  // Pending payment holding form data for paid events (before Registration is created)
-  phone           String?
-  eventId         Int?
-  pendingFormData Json?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  @@index([registrationId])
-  @@index([status])
-  @@index([eventId])
-  @@index([phone])
-  @@map("payments")
->>>>>>> 5a81ff9 (feat: complete event registration payment and R2 storage flow)
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
 }

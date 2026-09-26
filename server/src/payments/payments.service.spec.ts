@@ -1,14 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { PaymentsService } from './payments.service';
 import { PaymentsRepository } from './payments.repo';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
+import * as crypto from 'crypto';
 import { Role } from '../common/constants/roles';
+
+const mockConfigService = {
+  get: jest.fn((key: string) => {
+    if (key === 'RAZORPAY_WEBHOOK_SECRET') return 'test-webhook-secret';
+    if (key === 'RAZORPAY_KEY_ID') return 'rzp_test_mock_key';
+    if (key === 'RAZORPAY_SECRET') return 'test-mock-secret';
+    return undefined;
+  }),
+};
 
 const mockPaymentsRepo: any = {
   findRegistrationWithEvent: jest.fn(),
   findPaymentById: jest.fn(),
   findPaymentByRegistrationId: jest.fn(),
+  findPaymentByRazorpayOrderId: jest.fn(),
   createPayment: jest.fn(),
   updatePaymentStatusAtomic: jest.fn(),
   findUserById: jest.fn(),
@@ -24,7 +36,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const mod: TestingModule = await Test.createTestingModule({
-      providers: [PaymentsService, { provide: PaymentsRepository, useValue: mockPaymentsRepo }],
+      providers: [PaymentsService, { provide: PaymentsRepository, useValue: mockPaymentsRepo }, { provide: ConfigService, useValue: mockConfigService }],
     }).compile();
     service = mod.get(PaymentsService);
   });
@@ -123,7 +135,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       status: PaymentStatus.PAID,
     });
     const res = await service.updateStatus('pay1', { status: PaymentStatus.PAID } as any);
-    expect(res.status).toBe(PaymentStatus.PAID);
+    expect(res!.status).toBe(PaymentStatus.PAID);
   });
 
   it('should ADMIN change payment to FAILED', async () => {
@@ -133,7 +145,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       status: PaymentStatus.FAILED,
     });
     const res = await service.updateStatus('pay1', { status: PaymentStatus.FAILED } as any);
-    expect(res.status).toBe(PaymentStatus.FAILED);
+    expect(res!.status).toBe(PaymentStatus.FAILED);
   });
 
   it('should synchronize Registration.paymentStatus atomically via repo transaction', async () => {
@@ -143,7 +155,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     });
     const res = await service.updateStatus('pay1', { status: PaymentStatus.PAID } as any);
     expect(mockPaymentsRepo.updatePaymentStatusAtomic).toHaveBeenCalledWith('pay1', PaymentStatus.PAID);
-    expect(res.status).toBe(PaymentStatus.PAID);
+    expect(res!.status).toBe(PaymentStatus.PAID);
   });
 
   it('should ensure PATCH /:id/status is ADMIN-only via Roles guard', async () => {
@@ -173,7 +185,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       updatedAt: new Date(),
     });
     const res = await service.create('regFree', { amount: 50000 } as any, studentUser);
-    expect(res.status).toBe(PaymentStatus.PENDING);
+    expect(res!.status).toBe(PaymentStatus.PENDING);
   });
 
   it('should keep PENDING payment without creating Registration (paid flow)', async () => {
@@ -193,8 +205,8 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       pendingFormData: { name: 'Test' },
     });
     const res = await service.updateStatus('payPending', { status: PaymentStatus.PENDING } as any);
-    expect(res.status).toBe(PaymentStatus.PENDING);
-    expect(res.registrationId).toBeNull();
+    expect(res!.status).toBe(PaymentStatus.PENDING);
+    expect(res!.registrationId).toBeNull();
   });
 
   it('should keep FAILED payment without creating Registration', async () => {
@@ -212,8 +224,8 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       registrationId: null,
     });
     const res = await service.updateStatus('payFail', { status: PaymentStatus.FAILED } as any);
-    expect(res.status).toBe(PaymentStatus.FAILED);
-    expect(res.registrationId).toBeNull();
+    expect(res!.status).toBe(PaymentStatus.FAILED);
+    expect(res!.registrationId).toBeNull();
   });
 
   it('should create exactly one Registration on PAID via atomic transaction', async () => {
@@ -268,11 +280,105 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     mockPaymentsRepo.findPendingPaymentByPhoneAndEvent = jest.fn().mockResolvedValue(null);
     mockPaymentsRepo.findRegistrationByPhoneAndEvent = jest.fn().mockResolvedValue(null);
     mockPaymentsRepo.createPendingPayment = jest.fn().mockResolvedValue({ id: 'pay1', phone: '9123456789', eventId: 17, amount: 50000, status: 'PENDING' });
+    mockPaymentsRepo.updatePaymentRazorpayOrderId = jest.fn().mockResolvedValue({ id: 'pay1', razorpayOrderId: 'order_test_pending' });
+    (service as any).razorpay = {
+      orders: {
+        create: jest.fn().mockResolvedValue({ id: 'order_test_pending' }),
+      },
+    };
     // Add the methods to mock if not present
     mockPaymentsRepo.createPendingPayment.mockClear();
     // Test via service
     const res = await service.createPending({ eventId: 17, phone: '+91 9123456789', amount: 50000 } as any);
     expect(res.phone).toBe('9123456789');
     expect(mockPaymentsRepo.createPendingPayment).toHaveBeenCalledWith(expect.objectContaining({ phone: '9123456789' }));
+  });
+
+  it('should reject a webhook with an invalid signature before touching payments', async () => {
+    const payload = { event: 'order.paid', payload: {} };
+    const body = JSON.stringify(payload);
+
+    await expect(service.handleWebhook(Buffer.from(body, 'utf8'), '0'.repeat(64))).rejects.toBeInstanceOf(BadRequestException);
+    expect(mockPaymentsRepo.findPaymentByRazorpayOrderId).not.toHaveBeenCalled();
+    expect(mockPaymentsRepo.updatePaymentStatusAtomic).not.toHaveBeenCalled();
+  });
+
+  it('should process a signed order.paid webhook through the atomic payment transaction', async () => {
+    const payload = {
+      event: 'order.paid',
+      payload: {
+        order: { entity: { id: 'order_test_success' } },
+        payment: { entity: { id: 'pay_test_success' } },
+      },
+    };
+    const body = JSON.stringify(payload);
+    const signature = crypto.createHmac('sha256', 'test-webhook-secret').update(body).digest('hex');
+
+    mockPaymentsRepo.findPaymentByRazorpayOrderId.mockResolvedValue({ id: 'pay1', status: PaymentStatus.PENDING });
+    mockPaymentsRepo.updatePaymentStatusAtomic.mockResolvedValue({ id: 'pay1', status: PaymentStatus.PAID });
+
+    const res = await service.handleWebhook(Buffer.from(body, 'utf8'), signature);
+
+    expect(mockPaymentsRepo.findPaymentByRazorpayOrderId).toHaveBeenCalledWith('order_test_success');
+    expect(mockPaymentsRepo.updatePaymentStatusAtomic).toHaveBeenCalledWith('pay1', PaymentStatus.PAID, 'pay_test_success');
+    expect(res).toEqual({ received: true, processed: true, paymentId: 'pay1' });
+  });
+
+  it('should process a signed payment.captured webhook using the payment order reference', async () => {
+    const payload = {
+      event: 'payment.captured',
+      payload: {
+        payment: { entity: { id: 'pay_test_captured', order_id: 'order_test_captured' } },
+      },
+    };
+    const body = JSON.stringify(payload);
+    const signature = crypto.createHmac('sha256', 'test-webhook-secret').update(body).digest('hex');
+
+    mockPaymentsRepo.findPaymentByRazorpayOrderId.mockResolvedValue({ id: 'pay2', status: PaymentStatus.PENDING });
+    mockPaymentsRepo.updatePaymentStatusAtomic.mockResolvedValue({ id: 'pay2', status: PaymentStatus.PAID });
+
+    const res = await service.handleWebhook(Buffer.from(body, 'utf8'), signature);
+
+    expect(mockPaymentsRepo.findPaymentByRazorpayOrderId).toHaveBeenCalledWith('order_test_captured');
+    expect(mockPaymentsRepo.updatePaymentStatusAtomic).toHaveBeenCalledWith('pay2', PaymentStatus.PAID, 'pay_test_captured');
+    expect(res).toEqual({ received: true, processed: true, paymentId: 'pay2' });
+  });
+
+  it('should process a signed payment.failed webhook without creating a registration', async () => {
+    const payload = {
+      event: 'payment.failed',
+      payload: {
+        payment: { entity: { id: 'pay_test_failed', order_id: 'order_test_failed' } },
+      },
+    };
+    const body = JSON.stringify(payload);
+    const signature = crypto.createHmac('sha256', 'test-webhook-secret').update(body).digest('hex');
+
+    mockPaymentsRepo.findPaymentByRazorpayOrderId.mockResolvedValue({ id: 'pay3', status: PaymentStatus.PENDING });
+    mockPaymentsRepo.updatePaymentStatusAtomic.mockResolvedValue({ id: 'pay3', status: PaymentStatus.FAILED });
+
+    const res = await service.handleWebhook(Buffer.from(body, 'utf8'), signature);
+
+    expect(mockPaymentsRepo.findPaymentByRazorpayOrderId).toHaveBeenCalledWith('order_test_failed');
+    expect(mockPaymentsRepo.updatePaymentStatusAtomic).toHaveBeenCalledWith('pay3', PaymentStatus.FAILED, 'pay_test_failed');
+    expect(res).toEqual({ received: true, processed: true, paymentId: 'pay3', status: 'FAILED' });
+  });
+
+  it('should not move an already PAID payment back to FAILED', async () => {
+    const payload = {
+      event: 'payment.failed',
+      payload: {
+        payment: { entity: { id: 'pay_test_late_failure', order_id: 'order_test_paid' } },
+      },
+    };
+    const body = JSON.stringify(payload);
+    const signature = crypto.createHmac('sha256', 'test-webhook-secret').update(body).digest('hex');
+
+    mockPaymentsRepo.findPaymentByRazorpayOrderId.mockResolvedValue({ id: 'pay4', status: PaymentStatus.PAID });
+
+    const res = await service.handleWebhook(Buffer.from(body, 'utf8'), signature);
+
+    expect(mockPaymentsRepo.updatePaymentStatusAtomic).not.toHaveBeenCalled();
+    expect(res).toEqual({ received: true, processed: false, message: 'Payment already marked as PAID' });
   });
 });

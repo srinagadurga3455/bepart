@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Razorpay Integration - Bepart</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; }
+        h2 { color: #666; font-size: 1.2em; }
+        input, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #3399cc;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #2278aa;
+        }
+        .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; }
+        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 4px; }
+        .info { background: #d1ecf1; color: #0c5460; padding: 15px; border-radius: 4px; }
+        code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
+        pre { background: #f4f4f4; padding: 15px; border-radius: 4px; overflow-x: auto; }
+        .step { margin: 15px 0; padding: 15px; background: #f9f9f9; border-left: 4px solid #3399cc; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Razorpay Integration Test - Bepart</h1>
+    
+    <div class="card">
+        <h2>📋 Testing Instructions</h2>
+        <div class="info">
+            <strong>Before testing:</strong><br>
+            1. Backend must be running on port 5000<br>
+            2. You must have a JWT token (login first)<br>
+            3. You must have a published event with paymentRequired=true<br>
+            4. ngrok must be running for webhook testing
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Step 1: Configure & Initiate Payment</h2>
+        
+        <label>Backend URL:</label>
+        <input type="text" id="backendUrl" value="http://localhost:5000" placeholder="http://localhost:5000">
+        
+        <label>JWT Token (from login):</label>
+        <input type="text" id="jwtToken" placeholder="Your JWT token">
+        
+        <label>Event ID:</label>
+        <input type="number" id="eventId" value="1" placeholder="1">
+        
+        <label>Phone Number:</label>
+        <input type="text" id="phone" value="+91 9876543210" placeholder="+91 9876543210">
+        
+        <label>Amount (in paise, 50000 = ₹500):</label>
+        <input type="number" id="amount" value="50000" placeholder="50000">
+        
+        <label>Pending Form Data (JSON):</label>
+        <textarea id="formData" rows="4" placeholder='{"name": "Test User", "email": "test@example.com"}'>{
+  "name": "Test User",
+  "email": "test@example.com",
+  "college": "Test College"
+}</textarea>
+        
+        <button onclick="initiatePayment()">1️⃣ Initiate Payment</button>
+        
+        <div id="step1Result"></div>
+    </div>
+
+    <div class="card">
+        <h2>Step 2: Complete Payment</h2>
+        
+        <div class="step">
+            After clicking "Initiate Payment" above, the Razorpay order details will appear below. 
+            Then click this button to open Razorpay Checkout.
+        </div>
+        
+        <div id="paymentInfo"></div>
+        
+        <button id="payButton" onclick="openRazorpay()" disabled>2️⃣ Pay with Razorpay</button>
+        
+        <div class="info" style="margin-top: 15px;">
+            <strong>Test Card Details:</strong><br>
+            Card Number: <code>4111 1111 1111 1111</code><br>
+            CVV: <code>123</code> (any 3 digits)<br>
+            Expiry: Any future date (e.g., 12/25)
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Step 3: Verify Results</h2>
+        
+        <button onclick="checkPaymentStatus()">3️⃣ Check Payment Status</button>
+        
+        <div id="verificationResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>📊 Test Results</h2>
+        <div id="testResults"></div>
+    </div>
+
+    <script>
+        let paymentData = null;
+        let paymentId = null;
+
+        async function initiatePayment() {
+            const backendUrl = document.getElementById('backendUrl').value;
+            const jwtToken = document.getElementById('jwtToken').value;
+            const eventId = parseInt(document.getElementById('eventId').value);
+            const phone = document.getElementById('phone').value;
+            const amount = parseInt(document.getElementById('amount').value);
+            let formData;
+            
+            try {
+                formData = JSON.parse(document.getElementById('formData').value);
+            } catch (e) {
+                document.getElementById('step1Result').innerHTML = 
+                    '<div class="error">Invalid JSON in Form Data</div>';
+                return;
+            }
+
+            if (!jwtToken) {
+                document.getElementById('step1Result').innerHTML = 
+                    '<div class="error">Please enter your JWT token</div>';
+                return;
+            }
+
+            document.getElementById('step1Result').innerHTML = 
+                '<div class="info">⏳ Creating payment...</div>';
+
+            try {
+                const response = await fetch(`${backendUrl}/api/payments/init`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${jwtToken}`
+                    },
+                    body: JSON.stringify({
+                        eventId: eventId,
+                        phone: phone,
+                        amount: amount,
+                        pendingFormData: formData
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to create payment');
+                }
+
+                paymentData = data;
+                paymentId = data.id;
+
+                document.getElementById('step1Result').innerHTML = `
+                    <div class="success">
+                        ✅ Payment initiated successfully!<br><br>
+                        <strong>Payment ID:</strong> ${data.id}<br>
+                        <strong>Razorpay Order ID:</strong> ${data.razorpayOrderId}<br>
+                        <strong>Amount:</strong> ₹${data.amount / 100}<br>
+                        <strong>Status:</strong> ${data.status}
+                    </div>
+                `;
+
+                document.getElementById('paymentInfo').innerHTML = `
+                    <div class="info">
+                        <strong>Ready to pay!</strong><br>
+                        Order ID: <code>${data.razorpayOrderId}</code><br>
+                        Key ID: <code>${data.razorpayKeyId}</code>
+                    </div>
+                `;
+
+                document.getElementById('payButton').disabled = false;
+
+                addTestResult('✅ Step 1: Payment initiation successful');
+            } catch (error) {
+                document.getElementById('step1Result').innerHTML = `
+                    <div class="error">❌ Error: ${error.message}</div>
+                `;
+                addTestResult('❌ Step 1: Failed - ' + error.message);
+            }
+        }
+
+        function openRazorpay() {
+            if (!paymentData) {
+                alert('Please initiate payment first!');
+                return;
+            }
+
+            const options = {
+                key: paymentData.razorpayKeyId,
+                amount: paymentData.amount,
+                currency: 'INR',
+                name: 'Bepart',
+                description: 'Event Registration Payment',
+                order_id: paymentData.razorpayOrderId,
+                handler: function(response) {
+                    console.log('Payment Success:', response);
+                    
+                    document.getElementById('paymentInfo').innerHTML = `
+                        <div class="success">
+                            ✅ Payment Successful!<br><br>
+                            <strong>Razorpay Payment ID:</strong> ${response.razorpay_payment_id}<br>
+                            <strong>Order ID:</strong> ${response.razorpay_order_id}<br>
+                            <strong>Signature:</strong> ${response.razorpay_signature.substring(0, 20)}...<br><br>
+                            <em>Webhook should be processing... Check backend logs!</em>
+                        </div>
+                    `;
+                    
+                    addTestResult('✅ Step 2: Payment completed successfully');
+                    addTestResult('⏳ Waiting for webhook to process...');
+                    
+                    // Wait a bit then check status
+                    setTimeout(checkPaymentStatus, 3000);
+                },
+                prefill: {
+                    contact: paymentData.phone.replace(/\D/g, '')
+                },
+                theme: {
+                    color: '#3399cc'
+                }
+            };
+
+            const rzp = new Razorpay(options);
+            
+            rzp.on('payment.failed', function(response) {
+                console.log('Payment Failed:', response);
+                
+                document.getElementById('paymentInfo').innerHTML = `
+                    <div class="error">
+                        ❌ Payment Failed<br><br>
+                        <strong>Error:</strong> ${response.error.description}<br>
+                        <strong>Reason:</strong> ${response.error.reason}
+                    </div>
+                `;
+                
+                addTestResult('❌ Step 2: Payment failed - ' + response.error.description);
+            });
+            
+            rzp.open();
+        }
+
+        async function checkPaymentStatus() {
+            if (!paymentId) {
+                document.getElementById('verificationResult').innerHTML = 
+                    '<div class="error">No payment ID available. Please initiate payment first.</div>';
+                return;
+            }
+
+            const backendUrl = document.getElementById('backendUrl').value;
+            const jwtToken = document.getElementById('jwtToken').value;
+
+            document.getElementById('verificationResult').innerHTML = 
+                '<div class="info">⏳ Checking payment status...</div>';
+
+            try {
+                const response = await fetch(`${backendUrl}/api/payments/${paymentId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${jwtToken}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to fetch payment');
+                }
+
+                let statusColor = 'info';
+                if (data.status === 'PAID') statusColor = 'success';
+                if (data.status === 'FAILED') statusColor = 'error';
+
+                document.getElementById('verificationResult').innerHTML = `
+                    <div class="${statusColor}">
+                        <h3>Payment Status: ${data.status}</h3>
+                        <strong>Payment ID:</strong> ${data.id}<br>
+                        <strong>Razorpay Order ID:</strong> ${data.razorpayOrderId || 'N/A'}<br>
+                        <strong>Razorpay Payment ID:</strong> ${data.razorpayPaymentId || 'Not yet paid'}<br>
+                        <strong>Registration ID:</strong> ${data.registrationId || 'Not created yet'}<br>
+                        <strong>Amount:</strong> ₹${data.amount / 100}<br>
+                        <strong>Phone:</strong> ${data.phone}<br>
+                        <strong>Event ID:</strong> ${data.eventId}<br>
+                        <strong>Created:</strong> ${new Date(data.createdAt).toLocaleString()}
+                    </div>
+                `;
+
+                if (data.status === 'PAID' && data.registrationId) {
+                    addTestResult('✅ Step 3: Payment verified as PAID');
+                    addTestResult('✅ Registration created: ' + data.registrationId);
+                    addTestResult('🎉 ALL TESTS PASSED!');
+                } else if (data.status === 'PENDING') {
+                    addTestResult('⏳ Payment still PENDING - webhook may not have been called yet');
+                } else if (data.status === 'FAILED') {
+                    addTestResult('❌ Payment FAILED');
+                }
+            } catch (error) {
+                document.getElementById('verificationResult').innerHTML = `
+                    <div class="error">❌ Error: ${error.message}</div>
+                `;
+                addTestResult('❌ Step 3: Failed to verify - ' + error.message);
+            }
+        }
+
+        function addTestResult(message) {
+            const resultsDiv = document.getElementById('testResults');
+            const timestamp = new Date().toLocaleTimeString();
+            resultsDiv.innerHTML += `<div style="padding: 5px; border-bottom: 1px solid #eee;">[${timestamp}] ${message}</div>`;
+        }
+
+        // Initialize
+        document.getElementById('testResults').innerHTML = '<div class="info">Test log will appear here...</div>';
+    </script>
+</body>
+</html>

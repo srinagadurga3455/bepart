@@ -11,21 +11,20 @@ build/
 out/
 *.tsbuildinfo
 
-# Env
+# Environment / secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# Prisma
-prisma/migrations/
-
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# OS
 .DS_Store
 Thumbs.db
 
@@ -36,13 +35,12 @@ logs/
 # Coverage
 coverage/
 
-# Misc
+# Local uploads
+uploads/
+
+# Temporary files
 .tmp/
 temp/
 
 # Docker
 .docker/
-
-# OS
-.DS_Store
-Thumbs.db
