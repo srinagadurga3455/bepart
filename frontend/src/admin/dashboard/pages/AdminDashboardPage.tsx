@@ -1,21 +1,51 @@
-import { Box, Card, CardContent, CircularProgress, Grid, Typography, Alert } from '@mui/material';
+import { Alert, Box, CircularProgress, Grid, Typography } from '@mui/material';
+import { CalendarMonthOutlined, GroupsOutlined, PersonAddAltOutlined } from '@mui/icons-material';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { organizersApi } from '../../organizers/api/organizers';
 import { unwrapList } from '../../../app/api/client';
 import type { EventItem, OrganizerItem } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import AdminShell from '../../components/AdminShell';
 import OrganizerTable from '../../organizers/components/OrganizerTable';
-import { adminNav } from '../../routes';
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function StatCard({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
-    <Card variant="outlined" sx={{ borderRadius: 3, height: '100%' }}>
-      <CardContent>
-        <Typography variant="body2" color="text.secondary">{label}</Typography>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}>{value}</Typography>
-      </CardContent>
-    </Card>
+    <Box
+      sx={{
+        bgcolor: '#FFFFFF',
+        border: '1px solid #ECEEF4',
+        borderRadius: '12px',
+        p: 2.25,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 1.75,
+        height: '100%',
+      }}
+    >
+      <Box
+        sx={{
+          width: 46,
+          height: 46,
+          borderRadius: '50%',
+          bgcolor: '#EAF1FF',
+          color: '#2557F5',
+          display: 'grid',
+          placeItems: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 12.5, color: '#667085', fontWeight: 500 }}>
+          {label}
+        </Typography>
+        <Typography sx={{ fontSize: 27, fontWeight: 800, letterSpacing: '-0.02em', color: '#101828', lineHeight: 1.25 }}>
+          {value}
+        </Typography>
+      </Box>
+    </Box>
   );
 }
 
@@ -39,32 +69,31 @@ function DashboardContent() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.04em', mb: 0.5 }}>
-        Admin Dashboard
-      </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3 }}>Platform overview from live data.</Typography>
-
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Organizers" value={organizers.length} /></Grid>
+      <Grid container spacing={2} sx={{ mb: 2.5 }}>
         <Grid size={{ xs: 12, sm: 4 }}>
-          <StatCard label="Active Organizers" value={organizers.filter((o) => o.status === 'APPROVED').length} />
+          <StatCard icon={<GroupsOutlined sx={{ fontSize: 22 }} />} label="Total Organizers" value={organizers.length} />
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}><StatCard label="Total Events" value={events.length} /></Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <StatCard
+            icon={<PersonAddAltOutlined sx={{ fontSize: 22 }} />}
+            label="Active Organizers"
+            value={organizers.filter((o) => o.status === 'APPROVED').length}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <StatCard icon={<CalendarMonthOutlined sx={{ fontSize: 22 }} />} label="Total Events" value={events.length} />
+        </Grid>
       </Grid>
 
-      <Card variant="outlined" sx={{ borderRadius: 3 }}>
-        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <OrganizerTable />
-        </CardContent>
-      </Card>
+      <OrganizerTable />
     </Box>
   );
 }
 
 export default function AdminDashboardPage() {
   return (
-    <DashboardShell navItems={adminNav}>
+    <AdminShell title="Admin Dashboard" subtitle="Manage campus organizers and events from one place.">
       <DashboardContent />
-    </DashboardShell>
+    </AdminShell>
   );
 }

@@ -9,10 +9,9 @@ import { withdrawalsApi } from '../api/withdrawals';
 import { formatEventDate, formatINR } from '../../../app/utils/format';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { WithdrawalStatus } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import AdminShell from '../../components/AdminShell';
 import ProofButton from '../../../app/components/ProofButton';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
-import { adminNav } from '../../routes';
 
 const OPEN: WithdrawalStatus[] = ['REQUESTED', 'PROCESSING'];
 
@@ -184,8 +183,8 @@ function DetailContent({ id }: { id: string | undefined }) {
 export default function AdminWithdrawalDetailPage() {
   const { id } = useParams();
   return (
-    <DashboardShell navItems={adminNav}>
+    <AdminShell>
       <DetailContent id={id} />
-    </DashboardShell>
+    </AdminShell>
   );
 }

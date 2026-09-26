@@ -7,6 +7,7 @@ import { withdrawalsApi } from '../api/withdrawals';
 import { formatINR } from '../../../app/utils/format';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { EventItem, WithdrawalItem } from '../../../app/types';
+import { orgFormFieldSx, orgPrimaryButtonSx } from '../../components/organizerStyles';
 
 interface WithdrawDialogProps {
   open: boolean;
@@ -94,6 +95,7 @@ export default function WithdrawDialog({ open, event, finance, withdrawals, upiI
           size="small"
           slotProps={{ htmlInput: { min: 1, step: 'any', max: available } }}
           disabled={!upiId}
+          sx={{ ...orgFormFieldSx }}
         />
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
           The request stays PENDING until the admin processes the payment. It is never marked paid automatically.
@@ -101,7 +103,7 @@ export default function WithdrawDialog({ open, event, finance, withdrawals, upiI
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button variant="contained" onClick={submit} disabled={busy || !upiId}>
+        <Button variant="contained" onClick={submit} disabled={busy || !upiId} sx={{ ...orgPrimaryButtonSx }}>
           {busy ? 'Submitting…' : 'Request Withdrawal'}
         </Button>
       </DialogActions>

@@ -111,8 +111,8 @@ export default function QuestionCard({
         sx={{
           bgcolor: '#fff',
           border: '1px solid',
-          borderColor: error ? 'error.main' : 'divider',
-          borderRadius: 2,
+          borderColor: error ? 'error.main' : '#ECEEF4',
+          borderRadius: 3,
           px: 2.5,
           py: 1.75,
           mb: 1.5,
@@ -145,10 +145,10 @@ export default function QuestionCard({
       sx={{
         bgcolor: '#fff',
         border: '1px solid',
-        borderColor: error ? 'error.main' : 'divider',
+        borderColor: error ? 'error.main' : '#ECEEF4',
         borderLeft: '4px solid',
         borderLeftColor: error ? 'error.main' : 'primary.main',
-        borderRadius: 2,
+        borderRadius: 3,
         px: 2.5,
         py: 2,
         mb: 1.5,

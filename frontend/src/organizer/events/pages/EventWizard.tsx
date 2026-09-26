@@ -8,7 +8,13 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { eventsApi } from '../api/events';
-import DashboardShell from '../../../app/components/DashboardShell';
+import OrganizerShell from '../../components/OrganizerShell';
+import {
+  orgCardSx,
+  orgFormFieldSx,
+  orgPrimaryButtonSx,
+  orgSmallButtonSx,
+} from '../../components/organizerStyles';
 import RequireRole from '../../../auth/components/RequireRole';
 import FormBuilder from '../components/FormBuilder';
 import { toBuilderForm } from '../utils/formBuilderUtils';
@@ -254,27 +260,27 @@ export function EventWizardInner({ editId }: { editId?: string }) {
 
   if (isEdit && loadingEvent) {
     return (
-      <DashboardShell title="Edit Event" navItems={organizerNav}>
+      <OrganizerShell title="Edit Event" hideSearch hideCreate>
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>
-      </DashboardShell>
+      </OrganizerShell>
     );
   }
 
   if (isEdit && event?.status === 'PUBLISHED') {
     return (
-      <DashboardShell title="Edit Event" navItems={organizerNav}>
+      <OrganizerShell title="Edit Event" hideSearch hideCreate>
         <Alert severity="info" sx={{ mb: 3 }}>
           This event is published and cannot be edited. Cancel it first if changes are needed.
         </Alert>
-        <Button variant="contained" component={RouterLink} to={`/organizer/events/${event.id}`}>
+        <Button variant="contained" component={RouterLink} to={`/organizer/events/${event.id}`} sx={{ ...orgPrimaryButtonSx }}>
           View Event
         </Button>
-      </DashboardShell>
+      </OrganizerShell>
     );
   }
 
   return (
-    <DashboardShell title={isEdit ? 'Edit Event' : 'Create Event'} navItems={organizerNav}>
+    <OrganizerShell title={isEdit ? 'Edit Event' : 'Create Event'} subtitle={isEdit ? 'Update your event details.' : 'Set up a new event for registrations.'} hideSearch hideCreate>
       <Stepper activeStep={step} sx={{ mb: 4, overflowX: 'auto' }}>
         {STEPS.map((label) => (
           <Step key={label}><StepLabel>{label}</StepLabel></Step>
@@ -284,8 +290,8 @@ export function EventWizardInner({ editId }: { editId?: string }) {
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>{error}</Alert>}
 
       {step === 0 && (
-        <Card variant="outlined" sx={{ borderRadius: 3, maxWidth: 720 }}>
-          <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Card variant="outlined" sx={{ ...orgCardSx, maxWidth: 720 }}>
+          <CardContent sx={{ p: { xs: 2, md: 3 }, ...orgFormFieldSx }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Event Details</Typography>
             <TextField label="Event Name" placeholder="e.g. Udbhav Hackathon 2026" value={details.eventName}
               onChange={(e) => setDetails({ ...details, eventName: e.target.value })} fullWidth size="small" sx={{ mb: 2 }} />
@@ -338,7 +344,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
               </Button>
               {posterFile && <Typography variant="body2">{posterFile.name}</Typography>}
               {posterFile && event && (
-                <Button size="small" variant="contained" onClick={uploadPoster} disabled={posterBusy}>
+                <Button size="small" variant="contained" onClick={uploadPoster} disabled={posterBusy} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                   {posterBusy ? 'Uploading…' : 'Upload Poster'}
                 </Button>
               )}
@@ -348,7 +354,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
             </Box>
 
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
-              <Button variant="contained" size="large" onClick={saveDraft} disabled={busy} sx={{ px: 4 }}>
+              <Button variant="contained" size="large" onClick={saveDraft} disabled={busy} sx={{ ...orgPrimaryButtonSx, px: 4 }}>
                 {busy ? 'Saving…' : isEdit ? 'Save & Continue' : 'Save Draft & Continue'}
               </Button>
             </Box>
@@ -376,8 +382,8 @@ export function EventWizardInner({ editId }: { editId?: string }) {
             </Alert>
           )}
           {structure ? (
-            <Card variant="outlined" sx={{ borderRadius: 3, mb: 3 }}>
-              <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
+            <Card variant="outlined" sx={{ ...orgCardSx, mb: 3 }}>
+              <CardContent sx={{ p: { xs: 2, md: 3 } }}>
                 <RegistrationFlow
                   formStructure={structure}
                   onSubmit={() => setPreviewSubmitted(true)}
@@ -391,31 +397,31 @@ export function EventWizardInner({ editId }: { editId?: string }) {
             <Alert severity="warning" sx={{ mb: 3 }}>Save the registration form first to preview it.</Alert>
           )}
 
-          <Card variant="outlined" sx={{ borderRadius: 3 }}>
-            <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+          <Card variant="outlined" sx={{ ...orgCardSx }}>
+            <CardContent sx={{ p: { xs: 2, md: 3 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>Publish</Typography>
                 <Chip label={event?.status || 'DRAFT'} color={event?.status === 'PUBLISHED' ? 'success' : 'default'} variant="outlined" />
               </Box>
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Button variant="outlined" onClick={() => setStep(1)} disabled={busy}>Back</Button>
+                <Button variant="outlined" onClick={() => setStep(1)} disabled={busy} sx={{ ...orgSmallButtonSx, fontSize: 13, padding: '6px 16px' }}>Back</Button>
                 {event?.status === 'DRAFT' && (
-                  <Button variant="contained" onClick={() => doTransition((id) => eventsApi.preview(id))} disabled={busy}>
+                  <Button variant="contained" onClick={() => doTransition((id) => eventsApi.preview(id))} disabled={busy} sx={{ ...orgPrimaryButtonSx }}>
                     {busy ? 'Working…' : 'Move to Preview'}
                   </Button>
                 )}
                 {event?.status === 'PREVIEW' && (
-                  <Button variant="contained" color="success" onClick={() => doTransition((id) => eventsApi.publish(id))} disabled={busy}>
+                  <Button variant="contained" color="success" onClick={() => doTransition((id) => eventsApi.publish(id))} disabled={busy} sx={{ ...orgPrimaryButtonSx }}>
                     {busy ? 'Publishing…' : 'Publish Event'}
                   </Button>
                 )}
                 {event?.status === 'PUBLISHED' && (
-                  <Button variant="contained" component={RouterLink} to={`/organizer/events/${event.id}`}>
+                  <Button variant="contained" component={RouterLink} to={`/organizer/events/${event.id}`} sx={{ ...orgPrimaryButtonSx }}>
                     View Event
                   </Button>
                 )}
                 {event && event.status !== 'CANCELLED' && event.status !== 'PUBLISHED' && (
-                  <Button variant="text" color="error" onClick={doCancel} disabled={busy}>
+                  <Button variant="text" color="error" onClick={doCancel} disabled={busy} sx={{ ...orgSmallButtonSx, fontSize: 13 }}>
                     {confirmCancel ? 'Click again to confirm cancel' : 'Cancel Event'}
                   </Button>
                 )}
@@ -429,7 +435,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
           </Card>
         </Box>
       )}
-    </DashboardShell>
+    </OrganizerShell>
   );
 }
 

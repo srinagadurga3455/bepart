@@ -15,6 +15,7 @@ import type {
   BuilderSection,
 } from '../utils/formBuilderUtils';
 import type { FormStructure } from '../../../app/types';
+import { orgPrimaryButtonSx } from '../../components/organizerStyles';
 
 type Selection =
   | { kind: 'title' }
@@ -344,7 +345,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }: Form
   const titleActive = !selected || selected.kind === 'title' || !builder.title.trim() || errorMap.title;
 
   return (
-    <Box sx={{ bgcolor: '#f1f3f4', borderRadius: 3, p: { xs: 1.5, sm: 3 } }}>
+    <Box sx={{ bgcolor: 'transparent', borderRadius: 3, p: { xs: 0.5, sm: 1.5 } }}>
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={closePlusMenu}>
         <MenuItem onClick={menuAddQuestion} autoFocus>
           <Add fontSize="small" sx={{ mr: 1.5, color: 'text.secondary' }} />
@@ -361,7 +362,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }: Form
           sx={{
             display: { xs: 'flex', md: 'none' },
             flexDirection: 'row', gap: 0.5, justifyContent: 'center',
-            bgcolor: '#fff', border: '1px solid', borderColor: 'divider', borderRadius: 3,
+            bgcolor: '#fff', border: '1px solid', borderColor: '#ECEEF4', borderRadius: '12px',
             p: 0.75, position: 'sticky', top: 72, zIndex: 1, mb: 2, mx: 'auto', width: 'fit-content',
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
           }}
@@ -377,7 +378,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }: Form
         <Box
           sx={{
             display: { xs: 'none', md: 'flex' }, flexDirection: 'column', gap: 0.5,
-            bgcolor: '#fff', border: '1px solid', borderColor: 'divider', borderRadius: 3,
+            bgcolor: '#fff', border: '1px solid', borderColor: '#ECEEF4', borderRadius: '12px',
             p: 0.75, position: 'absolute', right: 0, top: toolbarTop,
             boxShadow: '0 2px 8px rgba(0,0,0,0.08)', zIndex: 1,
             transition: 'top 0.25s ease',
@@ -395,8 +396,8 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }: Form
             data-card-key="t"
             onClick={() => setSelected({ kind: 'title' })}
             sx={{
-              bgcolor: '#fff', borderRadius: 2, border: '1px solid',
-              borderColor: errorMap.title ? 'error.main' : 'divider',
+              bgcolor: '#fff', borderRadius: 3, border: '1px solid',
+              borderColor: errorMap.title ? 'error.main' : '#ECEEF4',
               borderTop: '8px solid', borderTopColor: 'primary.main',
               px: 3, py: 3, mb: 2, cursor: 'text',
             }}
@@ -452,9 +453,9 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }: Form
           )}
 
           {builder.sections.length === 0 && (
-            <Box sx={{ bgcolor: '#fff', borderRadius: 2, border: '1px dashed', borderColor: 'divider', p: 4, textAlign: 'center', mb: 2 }}>
+            <Box sx={{ bgcolor: '#fff', borderRadius: 3, border: '1px dashed', borderColor: '#D9DEE8', p: 4, textAlign: 'center', mb: 2 }}>
               <Typography color="text.secondary" sx={{ mb: 2 }}>Start by adding your first section.</Typography>
-              <Button variant="contained" onClick={addSection}>Add section</Button>
+              <Button variant="contained" onClick={addSection} sx={{ ...orgPrimaryButtonSx }}>Add section</Button>
             </Box>
           )}
 
@@ -607,7 +608,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving }: Form
             <Button variant="outlined" onClick={handlePreview} disabled={saving}>
               Preview
             </Button>
-            <Button variant="contained" onClick={handleSave} disabled={saving} sx={{ px: 4 }}>
+            <Button variant="contained" onClick={handleSave} disabled={saving} sx={{ ...orgPrimaryButtonSx, px: 4 }}>
               {saving ? 'Saving…' : 'Save & Continue'}
             </Button>
           </Box>

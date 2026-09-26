@@ -1,7 +1,16 @@
 import axios, { type AxiosResponse } from 'axios';
 
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
+if (!import.meta.env.VITE_API_BASE_URL && import.meta.env.DEV) {
+  console.warn(
+    '[api] VITE_API_BASE_URL is missing (frontend/.env). Falling back to http://localhost:3000/api. ' +
+      'Create frontend/.env with VITE_API_BASE_URL=http://localhost:3000/api and restart Vite.'
+  );
+}
+
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,7 +37,7 @@ client.interceptors.response.use(
         const refreshToken = localStorage.getItem('refreshToken');
         if (refreshToken) {
           const response = await axios.post(
-            `${import.meta.env.VITE_API_BASE_URL}/auth/refresh`,
+            `${baseURL}/auth/refresh`,
             { refreshToken }
           );
           const { accessToken } = response.data;

@@ -11,10 +11,16 @@ import { unwrapList } from '../../../app/api/client';
 import { formatEventDate, formatINR } from '../../../app/utils/format';
 import { financeByEvent, withdrawalsByEvent } from '../utils/eventData';
 import type { EventItem, RegistrationItem, WithdrawalItem } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import OrganizerShell from '../../components/OrganizerShell';
+import {
+  orgCardSx,
+  orgPageSubtitleSx,
+  orgPageTitleSx,
+  orgPrimaryButtonSx,
+  orgSmallButtonSx,
+} from '../../components/organizerStyles';
 import WithdrawDialog from '../../withdrawals/components/WithdrawDialog';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
-import { organizerNav } from './EventWizard';
 import { apiErrorMessage } from '../../../app/api/client';
 
 function EventsContent() {
@@ -67,9 +73,10 @@ function EventsContent() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.04em' }}>My Events</Typography>
-        <Button variant="contained" startIcon={<Add />} component={RouterLink} to="/organizer/events/create">
+      <Typography sx={{ ...orgPageTitleSx }}>My Events</Typography>
+      <Typography sx={{ ...orgPageSubtitleSx, mb: 2.5 }}>Create and manage your events.</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+        <Button variant="contained" startIcon={<Add sx={{ fontSize: 17 }} />} component={RouterLink} to="/organizer/events/create" sx={{ ...orgPrimaryButtonSx }}>
           Create Event
         </Button>
       </Box>
@@ -101,8 +108,8 @@ function EventsContent() {
           const available = Math.max(0, fin.collected - (wd?.openTotal || 0) - (wd?.paidTotal || 0));
           const canWithdraw = fin.collected > 0 && available > 0 && !wd?.open && !!upiId;
           return (
-            <Card key={event.id} variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Card key={event.id} variant="outlined" sx={{ ...orgCardSx, mb: 2 }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', p: { xs: 2, md: 2.5 }, '&:last-child': { pb: { xs: 2, md: 2.5 } } }}>
                 <Box sx={{ flex: '1 1 220px', minWidth: 0 }}>
                   <Typography noWrap sx={{ fontWeight: 700 }}>{event.eventName}</Typography>
                   <Typography variant="body2" color="text.secondary">
@@ -114,26 +121,26 @@ function EventsContent() {
                   )}
                 </Box>
                 <Chip label={event.status} size="small" variant="outlined" color={event.status === 'PUBLISHED' ? 'success' : 'default'} />
-                <Button size="small" variant="outlined" component={RouterLink} to={`/organizer/events/${event.id}`}>View</Button>
+                <Button size="small" variant="outlined" component={RouterLink} to={`/organizer/events/${event.id}`} sx={{ ...orgSmallButtonSx }}>View</Button>
                 {canWithdraw && (
-                  <Button size="small" variant="contained" color="success" onClick={() => setWithdrawEvent(event)}>
+                  <Button size="small" variant="contained" color="success" onClick={() => setWithdrawEvent(event)} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                     Withdraw
                   </Button>
                 )}
                 {event.status === 'DRAFT' && (
                   <>
-                    <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`}>
+                    <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                       Continue Editing
                     </Button>
-                    <Button size="small" variant="text" disabled={busyId === event.id} onClick={() => act(event.id, (id) => eventsApi.preview(id))}>
+                    <Button size="small" variant="text" disabled={busyId === event.id} onClick={() => act(event.id, (id) => eventsApi.preview(id))} sx={{ ...orgSmallButtonSx }}>
                       {busyId === event.id ? 'Working…' : 'Preview'}
                     </Button>
                   </>
                 )}
                 {event.status === 'PREVIEW' && (
                   <>
-                    <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`}>Edit</Button>
-                    <Button size="small" variant="contained" color="success" disabled={busyId === event.id} onClick={() => act(event.id, (id) => eventsApi.publish(id))}>
+                    <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>Edit</Button>
+                    <Button size="small" variant="contained" color="success" disabled={busyId === event.id} onClick={() => act(event.id, (id) => eventsApi.publish(id))} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                       {busyId === event.id ? 'Publishing…' : 'Publish'}
                     </Button>
                   </>
@@ -149,8 +156,8 @@ function EventsContent() {
 
 export default function OrganizerEventsPage() {
   return (
-    <DashboardShell navItems={organizerNav}>
+    <OrganizerShell hideSearch hideCreate>
       <EventsContent />
-    </DashboardShell>
+    </OrganizerShell>
   );
 }

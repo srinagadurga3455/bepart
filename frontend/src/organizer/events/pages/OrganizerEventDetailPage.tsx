@@ -14,10 +14,18 @@ import { unwrapList, apiErrorMessage } from '../../../app/api/client';
 import { formatEventDate, formatINR } from '../../../app/utils/format';
 import { registrantName, eventFee } from '../utils/eventData';
 import type { FormDataRecord, FormStructure, RegistrationItem, WithdrawalItem } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import OrganizerShell from '../../components/OrganizerShell';
+import {
+  orgCardSx,
+  orgSectionTitleSx,
+  orgSmallButtonSx,
+  orgTableBodyCellSx,
+  orgTableContainerSx,
+  orgTableHeadCellSx,
+  orgTableHeadRowSx,
+} from '../../components/organizerStyles';
 import WithdrawDialog from '../../withdrawals/components/WithdrawDialog';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
-import { organizerNav } from './EventWizard';
 
 function isEmptyValue(v: unknown): boolean {
   return v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
@@ -139,12 +147,12 @@ function DetailContent({ id }: { id: string | undefined }) {
     <Box>
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
-      <Card variant="outlined" sx={{ borderRadius: 3, mb: 3 }}>
+      <Card variant="outlined" sx={{ ...orgCardSx, mb: 3 }}>
         {event.posterUrl && (
           <Box component="img" src={event.posterUrl} alt={`${event.eventName} poster`}
             sx={{ width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: '12px 12px 0 0' }} />
         )}
-        <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
+        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
             <Chip label={event.status} size="small" variant="outlined" color={event.status === 'PUBLISHED' ? 'success' : 'default'} />
             <Chip label={event.paymentRequired ? `Paid${event.formStructure?.payment?.amount ? ` · ₹${event.formStructure.payment.amount}` : ''}` : 'Free'} size="small" variant="outlined" color={event.paymentRequired ? 'primary' : 'default'} />
@@ -159,7 +167,7 @@ function DetailContent({ id }: { id: string | undefined }) {
 
           <Divider sx={{ my: 2.5 }} />
 
-          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Payments</Typography>
+          <Typography sx={{ ...orgSectionTitleSx }} gutterBottom>Payments</Typography>
           {requestedMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setRequestedMsg('')}>{requestedMsg}</Alert>}
           <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 2 }}>
             <Box>
@@ -189,7 +197,7 @@ function DetailContent({ id }: { id: string | undefined }) {
             </Typography>
           )}
           {canWithdraw && (
-            <Button size="small" variant="contained" color="success" onClick={() => setWithdrawOpen(true)} sx={{ mb: 1 }}>
+            <Button size="small" variant="contained" color="success" onClick={() => setWithdrawOpen(true)} sx={{ mb: 1, ...orgSmallButtonSx, boxShadow: 'none' }}>
               Withdraw {formatINR(available)}
             </Button>
           )}
@@ -212,22 +220,22 @@ function DetailContent({ id }: { id: string | undefined }) {
 
           <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
             {event.status !== 'PUBLISHED' && (
-              <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`}>
+              <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                 {event.status === 'DRAFT' ? 'Continue Editing' : 'Edit'}
               </Button>
             )}
             {event.status === 'DRAFT' && (
-              <Button size="small" variant="outlined" disabled={busy} onClick={() => act((eid) => eventsApi.preview(eid))}>
+              <Button size="small" variant="outlined" disabled={busy} onClick={() => act((eid) => eventsApi.preview(eid))} sx={{ ...orgSmallButtonSx }}>
                 {busy ? 'Working…' : 'Move to Preview'}
               </Button>
             )}
             {event.status === 'PREVIEW' && (
-              <Button size="small" variant="contained" color="success" disabled={busy} onClick={() => act((eid) => eventsApi.publish(eid))}>
+              <Button size="small" variant="contained" color="success" disabled={busy} onClick={() => act((eid) => eventsApi.publish(eid))} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                 {busy ? 'Publishing…' : 'Publish'}
               </Button>
             )}
             {event.status === 'PUBLISHED' && (
-              <Button size="small" variant="outlined" component={RouterLink} to={`/events/${event.id}`}>
+              <Button size="small" variant="outlined" component={RouterLink} to={`/events/${event.id}`} sx={{ ...orgSmallButtonSx }}>
                 View Public Page
               </Button>
             )}
@@ -236,6 +244,7 @@ function DetailContent({ id }: { id: string | undefined }) {
                 size="small"
                 color="error"
                 disabled={busy}
+                sx={{ ...orgSmallButtonSx }}
                 onClick={() => {
                   if (!confirmCancel) { setConfirmCancel(true); return; }
                   setConfirmCancel(false);
@@ -249,30 +258,30 @@ function DetailContent({ id }: { id: string | undefined }) {
         </CardContent>
       </Card>
 
-      <Card variant="outlined" sx={{ borderRadius: 3 }}>
+      <Card variant="outlined" sx={{ ...orgCardSx }}>
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>
+          <Typography sx={{ ...orgSectionTitleSx }} gutterBottom>
             Registrations ({registrations.length})
           </Typography>
           {registrations.length === 0 ? (
             <Alert severity="info">No registrations yet.</Alert>
           ) : (
-            <TableContainer sx={{ overflowX: 'auto' }}>
-              <Table size="small">
+            <TableContainer sx={{ ...orgTableContainerSx }}>
+              <Table size="small" sx={{ minWidth: 520 }}>
                 <TableHead>
-                  <TableRow>
-                    <TableCell>Registrant / Team</TableCell>
-                    <TableCell>Phone</TableCell>
-                    <TableCell>Date</TableCell>
+                  <TableRow sx={{ ...orgTableHeadRowSx }}>
+                    <TableCell sx={{ ...orgTableHeadCellSx }}>Registrant / Team</TableCell>
+                    <TableCell sx={{ ...orgTableHeadCellSx }}>Phone</TableCell>
+                    <TableCell sx={{ ...orgTableHeadCellSx }}>Date</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {registrations.map((r) => (
                     <Fragment key={r.registrationId}>
                       <TableRow>
-                        <TableCell>{registrantName(r.formData)}</TableCell>
-                        <TableCell>{r.phone}</TableCell>
-                        <TableCell>{formatEventDate(r.createdAt)}</TableCell>
+                        <TableCell sx={{ ...orgTableBodyCellSx }}>{registrantName(r.formData)}</TableCell>
+                        <TableCell sx={{ ...orgTableBodyCellSx }}>{r.phone}</TableCell>
+                        <TableCell sx={{ ...orgTableBodyCellSx }}>{formatEventDate(r.createdAt)}</TableCell>
                       </TableRow>
                       <TableRow>
                         <TableCell colSpan={3} sx={{ bgcolor: 'grey.50', borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -303,8 +312,8 @@ function DetailContent({ id }: { id: string | undefined }) {
 export default function OrganizerEventDetailPage() {
   const { id } = useParams();
   return (
-    <DashboardShell navItems={organizerNav}>
+    <OrganizerShell hideSearch hideCreate>
       <DetailContent id={id} />
-    </DashboardShell>
+    </OrganizerShell>
   );
 }

@@ -41,18 +41,17 @@ enum EventStatus {
   COMPLETED
 }
 
-<<<<<<< HEAD
 enum WithdrawalStatus {
   REQUESTED
   PROCESSING
   PAID
   REJECTED
-=======
+}
+
 enum PaymentStatus {
   PENDING
   PAID
   FAILED
->>>>>>> 5a81ff9 (feat: complete event registration payment and R2 storage flow)
 }
 
 // ─────────────────────────────────────
@@ -140,20 +139,20 @@ model Organizer {
 }
 
 model Event {
-  id            Int         @id @default(autoincrement())
-  eventName     String
-  description   String?     @db.Text
-  date          DateTime
-  slots         Int
-  closingTime   DateTime
-  status         EventStatus @default(DRAFT)
-  formStructure  Json?
-  posterUrl      String?
-  posterSquareUrl String?
+  id               Int         @id @default(autoincrement())
+  eventName        String
+  description      String?     @db.Text
+  date             DateTime
+  slots            Int
+  closingTime      DateTime
+  status            EventStatus @default(DRAFT)
+  formStructure    Json?
+  posterUrl        String?
+  posterSquareUrl  String?
   posterRectangleUrl String?
-  paymentRequired Boolean @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  paymentRequired  Boolean     @default(false)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   organizerId String
   organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
@@ -186,10 +185,12 @@ model Registration {
   @@map("registrations")
 }
 
-<<<<<<< HEAD
-// Organizer fund settlement: organizer requests withdrawal of collected
-// registration fees per event; admin pays manually and uploads proof.
-// Amounts are snapshots in rupees at request/confirmation time.
+// ─────────────────────────────────────
+// Organizer fund settlement
+// Organizer requests withdrawal of collected
+// registration fees per event; admin pays manually
+// and uploads proof.
+// ─────────────────────────────────────
 model Withdrawal {
   id            String           @id @default(cuid())
   amount        Float
@@ -212,24 +213,30 @@ model Withdrawal {
   @@index([eventId])
   @@index([status])
   @@map("withdrawals")
-=======
+}
+
+// ─────────────────────────────────────
+// Event registration payments
+// ─────────────────────────────────────
 model Payment {
   id              String        @id @default(cuid())
   registrationId  String?       @unique
   registration    Registration? @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
   amount          Int           @default(0)
   status          PaymentStatus @default(PENDING)
-  // Pending payment holding form data for paid events (before Registration is created)
+
+  // Pending payment holding form data for paid events
+  // before Registration is created
   phone           String?
   eventId         Int?
   pendingFormData Json?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([registrationId])
   @@index([status])
   @@index([eventId])
   @@index([phone])
   @@map("payments")
->>>>>>> 5a81ff9 (feat: complete event registration payment and R2 storage flow)
 }

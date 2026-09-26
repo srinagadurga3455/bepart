@@ -7,10 +7,15 @@ import { withdrawalsApi } from '../api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
 import { formatEventDate, formatINR } from '../../../app/utils/format';
 import type { WithdrawalItem } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import OrganizerShell from '../../components/OrganizerShell';
+import {
+  orgCardSx,
+  orgPageSubtitleSx,
+  orgPageTitleSx,
+  orgSmallButtonSx,
+} from '../../components/organizerStyles';
 import ProofButton from '../../../app/components/ProofButton';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
-import { organizerNav } from '../../events/pages/EventWizard';
 
 function WithdrawalsContent() {
   const { data, isLoading, error } = useQuery({
@@ -24,10 +29,10 @@ function WithdrawalsContent() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.04em', mb: 0.5 }}>
+      <Typography sx={{ ...orgPageTitleSx }}>
         Withdrawals
       </Typography>
-      <Typography color="text.secondary" sx={{ mb: 3 }}>Your withdrawal requests and payment history.</Typography>
+      <Typography sx={{ ...orgPageSubtitleSx, mb: 2.5 }}>Your withdrawal requests and payment history.</Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>Could not load withdrawals.</Alert>}
 
@@ -35,8 +40,8 @@ function WithdrawalsContent() {
         <Alert severity="info">No withdrawals yet. Open an event and request a withdrawal of collected fees.</Alert>
       ) : (
         withdrawals.map((w) => (
-          <Card key={w.id} variant="outlined" sx={{ borderRadius: 3, mb: 2 }}>
-            <CardContent>
+          <Card key={w.id} variant="outlined" sx={{ ...orgCardSx, mb: 2 }}>
+            <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 1 }}>
                 <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
                   <Typography noWrap sx={{ fontWeight: 700 }}>{w.event?.eventName || `Event ${w.eventId}`}</Typography>
@@ -59,7 +64,7 @@ function WithdrawalsContent() {
                 </Typography>
               )}
               <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-                <Button size="small" variant="outlined" component={RouterLink} to={`/organizer/events/${w.eventId}`}>
+                <Button size="small" variant="outlined" component={RouterLink} to={`/organizer/events/${w.eventId}`} sx={{ ...orgSmallButtonSx }}>
                   View Event
                 </Button>
                 {w.status === 'PAID' && <ProofButton withdrawalId={w.id} />}
@@ -74,8 +79,8 @@ function WithdrawalsContent() {
 
 export default function OrganizerWithdrawalsPage() {
   return (
-    <DashboardShell navItems={organizerNav}>
+    <OrganizerShell hideSearch hideCreate>
       <WithdrawalsContent />
-    </DashboardShell>
+    </OrganizerShell>
   );
 }

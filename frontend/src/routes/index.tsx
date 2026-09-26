@@ -1,4 +1,4 @@
-import { BrowserRouter, useRoutes } from 'react-router-dom';
+import { BrowserRouter, Navigate, useRoutes } from 'react-router-dom';
 import type { RouteObject } from 'react-router-dom';
 
 import LandingPage from '../landing/pages/LandingPage';
@@ -13,6 +13,8 @@ const routes: RouteObject[] = [
   ...authRoutes,
   ...organizerRoutes,
   ...adminRoutes,
+  // Catch-all: avoids "No routes matched location" warning for unknown URLs.
+  { path: '*', element: <Navigate to="/" replace /> },
 ];
 
 function AppRoutes() {

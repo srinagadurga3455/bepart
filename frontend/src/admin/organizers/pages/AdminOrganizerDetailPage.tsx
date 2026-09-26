@@ -8,9 +8,8 @@ import { organizersApi } from '../api/organizers';
 import { formatEventDate } from '../../../app/utils/format';
 import { apiErrorMessage, unwrapList } from '../../../app/api/client';
 import type { EventItem } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import AdminShell from '../../components/AdminShell';
 import { isOrganizerActive, OrganizerStatusChip } from '../components/OrganizerTable';
-import { adminNav } from '../../routes';
 
 function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
@@ -162,8 +161,8 @@ function DetailContent({ id }: { id: string | undefined }) {
 export default function AdminOrganizerDetailPage() {
   const { id } = useParams();
   return (
-    <DashboardShell navItems={adminNav}>
+    <AdminShell>
       <DetailContent id={id} />
-    </DashboardShell>
+    </AdminShell>
   );
 }

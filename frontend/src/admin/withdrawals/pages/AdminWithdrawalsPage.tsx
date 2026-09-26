@@ -1,13 +1,12 @@
-import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { withdrawalsApi } from '../api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
 import { formatEventDate, formatINR } from '../../../app/utils/format';
 import type { WithdrawalItem } from '../../../app/types';
-import DashboardShell from '../../../app/components/DashboardShell';
+import AdminShell from '../../components/AdminShell';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
-import { adminNav } from '../../routes';
 
 export default function AdminWithdrawalsPage() {
   const { data, isLoading, error } = useQuery({
@@ -16,7 +15,7 @@ export default function AdminWithdrawalsPage() {
   const withdrawals: WithdrawalItem[] = data ? unwrapList<WithdrawalItem>(data) : [];
 
   return (
-    <DashboardShell title="Withdrawal Requests" navItems={adminNav}>
+    <AdminShell title="Withdrawal Requests" subtitle="Review and settle organizer payouts.">
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
           {isLoading ? (
@@ -62,6 +61,6 @@ export default function AdminWithdrawalsPage() {
           </Typography>
         </CardContent>
       </Card>
-    </DashboardShell>
+    </AdminShell>
   );
 }

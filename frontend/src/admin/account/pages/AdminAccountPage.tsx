@@ -2,9 +2,8 @@ import { useNavigate } from 'react-router-dom';
 import { Alert, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { authApi } from '../../../auth/api/auth';
-import DashboardShell from '../../../app/components/DashboardShell';
+import AdminShell from '../../components/AdminShell';
 import { logout } from '../../../auth/components/RequireRole';
-import { adminNav } from '../../routes';
 
 export default function AdminAccountPage() {
   const navigate = useNavigate();
@@ -12,7 +11,7 @@ export default function AdminAccountPage() {
   const user = data?.data;
 
   return (
-    <DashboardShell title="Account" navItems={adminNav}>
+    <AdminShell title="Account" subtitle="Your admin profile and session.">
       <Card variant="outlined" sx={{ borderRadius: 3, maxWidth: 640 }}>
         <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
           {isLoading ? (
@@ -49,6 +48,6 @@ export default function AdminAccountPage() {
           </Typography>
         </CardContent>
       </Card>
-    </DashboardShell>
+    </AdminShell>
   );
 }
