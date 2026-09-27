@@ -1,19 +1,44 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { CreatePendingPaymentDto } from './dto/create-pending-payment.dto';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
+import { VerifyPaymentDto } from './dto/verify-payment.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/constants/roles';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/types/jwt-payload';
 import { Public } from '../common/decorators/public.decorator';
+import { Request } from 'express';
 
 @ApiTags('payments')
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Post('webhook')
+  @Public()
+  @ApiOperation({ summary: 'Razorpay webhook handler', description: 'Public endpoint for Razorpay webhooks. Verifies x-razorpay-signature against the raw body. Handles order.paid, payment.captured and payment.failed.' })
+  @ApiResponse({ status: 200, description: 'Webhook processed (or acknowledged for unhandled events)' })
+  @ApiResponse({ status: 400, description: 'Invalid signature or payload' })
+  async handleWebhook(@Req() req: Request, @Headers('x-razorpay-signature') signature: string | undefined) {
+    const rawBody = (req as any).rawBody ?? req.body;
+    if (!rawBody) throw new BadRequestException('Request body is required');
+    if (!signature) throw new BadRequestException('Missing x-razorpay-signature header');
+    return this.paymentsService.handleWebhook(rawBody, signature);
+  }
+
+  @Post('verify')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Verify Razorpay payment signature', description: 'Verifies HMAC_SHA256(razorpay_order_id|razorpay_payment_id) with the Razorpay key secret and marks the linked payment PAID.' })
+  @ApiBody({ type: VerifyPaymentDto })
+  @ApiResponse({ status: 200, description: 'Payment verified' })
+  @ApiResponse({ status: 400, description: 'Invalid signature' })
+  @ApiResponse({ status: 404, description: 'Payment not found for Razorpay order' })
+  verifyPayment(@Body() dto: VerifyPaymentDto) {
+    return this.paymentsService.verifyPayment(dto);
+  }
 
   @Post('init')
   @ApiBearerAuth('JWT-auth')

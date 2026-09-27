@@ -9,7 +9,10 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { appValidationPipe } from './common/pipes/validation.pipe';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody:true + verify callbacks below preserve the raw webhook bytes on
+  // req.rawBody so Razorpay webhook signatures can be verified, while normal
+  // JSON/urlencoded parsing keeps working for every other route.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
 
   // Security: Helmet headers
@@ -18,8 +21,21 @@ async function bootstrap() {
   // Serve local uploads as static files: http://localhost:3000/uploads/...
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(
+    express.json({
+      verify: (req: any, _res: any, buf: Buffer) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
+  app.use(
+    express.urlencoded({
+      extended: true,
+      verify: (req: any, _res: any, buf: Buffer) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
 
   // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
