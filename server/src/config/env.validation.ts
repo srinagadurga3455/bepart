@@ -22,6 +22,12 @@ export const envValidationSchema = Joi.object({
   ADMIN_PASSWORD: Joi.string().allow('').optional(),
   AZURE_STORAGE_CONNECTION_STRING: Joi.string().allow('').optional(),
   AZURE_STORAGE_CONTAINER: Joi.string().default('event-posters'),
+
+  // Razorpay (optional until Razorpay is enabled; required at runtime for order/webhook flows)
+  RAZORPAY_KEY_ID: Joi.string().allow('').optional().description('Razorpay Key ID'),
+  RAZORPAY_KEY_SECRET: Joi.string().allow('').optional().description('Razorpay Key Secret'),
+  RAZORPAY_SECRET: Joi.string().allow('').optional().description('Legacy alias for RAZORPAY_KEY_SECRET'),
+  RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional().description('Razorpay Webhook Secret'),
 });
 
 export type EnvConfig = {

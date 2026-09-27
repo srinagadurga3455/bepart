@@ -249,6 +249,9 @@ model Payment {
   // originalAmount = event price before discount, discountAmount = discount applied.
   originalAmount  Int?
   discountAmount  Int?          @default(0)
+  // Razorpay integration (order creation + webhook verification).
+  razorpayOrderId   String?
+  razorpayPaymentId String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -257,6 +260,7 @@ model Payment {
   @@index([eventId])
   @@index([phone])
   @@index([couponId])
+  @@index([razorpayOrderId])
   @@map("payments")
 }
 

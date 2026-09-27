@@ -25,4 +25,8 @@ export class CreatePendingPaymentDto {
   @IsString()
   @MaxLength(32)
   couponCode?: string;
+
+  @ApiPropertyOptional({ description: 'Pending form data stored until payment completes (used to create Registration on PAID)' })
+  @IsOptional()
+  pendingFormData?: any;
 }
