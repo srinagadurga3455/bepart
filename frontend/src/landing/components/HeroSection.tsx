@@ -3,12 +3,22 @@ import {
   CalendarMonth,
   ConfirmationNumber,
   Dashboard as DashboardIcon,
+  DescriptionOutlined,
+  EventAvailableOutlined,
+  LocalOfferOutlined,
+  PaymentsOutlined,
   QrCodeScanner,
   Search,
 } from '@mui/icons-material';
-import { Box, Button, Container, Typography } from '@mui/material';
+import { Box, Button, Chip, Container, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import type { ElementType } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { eventsApi } from '../../participant/events/api/events';
+import { unwrapList } from '../../app/api/client';
+import { formatINR } from '../../app/utils/format';
+import { eventPoster } from '../../app/types';
+import type { EventItem } from '../../app/types';
 
 const sidebarItems: { label: string; icon: ElementType; active?: boolean }[] = [
   { label: 'Dashboard', icon: DashboardIcon, active: true },
@@ -17,14 +27,37 @@ const sidebarItems: { label: string; icon: ElementType; active?: boolean }[] = [
   { label: 'Check-in', icon: QrCodeScanner },
 ];
 
-const previewEvents = [
-  { title: 'Tech Conference 2026', meta: 'STEM Center · 10:00 AM', price: '₱ 250' },
-  { title: 'Charity Fun Run', meta: 'Campus Oval · 6:00 AM', price: '₱ 150' },
-  { title: 'Cultural Night', meta: 'Auditorium · 6:00 PM', price: 'Free' },
-  { title: "Dean's Welcome", meta: 'Alumni Hall · 9:00 AM', price: 'Free' },
+const CAPABILITIES: { icon: ElementType; label: string }[] = [
+  { icon: ConfirmationNumber, label: 'Digital Tickets' },
+  { icon: QrCodeScanner, label: 'QR Check-in' },
+  { icon: PaymentsOutlined, label: 'Free & Paid Events' },
+  { icon: DescriptionOutlined, label: 'Custom Registration Forms' },
+  { icon: EventAvailableOutlined, label: 'Event Management' },
 ];
 
+function priceLabel(event: EventItem): string {
+  if (!event.paymentRequired) return 'Free';
+  const amount = event.formStructure?.payment?.amount;
+  return typeof amount === 'number' ? formatINR(amount) : 'Paid';
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+// Live preview of the product: real published events rendered in the actual
+// event-card style. Falls back gracefully when the API is unreachable.
 function DashboardIllustration() {
+  const { data } = useQuery({
+    queryKey: ['landing', 'preview-events'],
+    queryFn: () => eventsApi.listPublished({ page: 1, limit: 4 }),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const events: EventItem[] = data ? unwrapList<EventItem>(data) : [];
+
   return (
     <Box sx={{ position: 'relative' }}>
       <Box
@@ -240,62 +273,63 @@ function DashboardIllustration() {
                 gap: 1.5,
               }}
             >
-              {previewEvents.map((event) => (
-                <Box
-                  key={event.title}
-                  sx={{
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: '14px',
-                    p: 1.4,
-                    bgcolor: '#fff',
-                  }}
-                >
-                  <Box
-                    sx={{
-                      height: { xs: 54, sm: 66 },
-                      borderRadius: '10px',
-                      bgcolor: '#EDF2FF',
-                      display: 'grid',
-                      placeItems: 'center',
-                    }}
-                  >
-                    <ConfirmationNumber sx={{ fontSize: 22, color: '#8EA3F7' }} />
-                  </Box>
-                  <Box
-                    sx={{
-                      mt: 1.25,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1,
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography noWrap sx={{ fontSize: 12, fontWeight: 700 }}>
-                        {event.title}
-                      </Typography>
-                      <Typography noWrap sx={{ fontSize: 10, color: '#A3A3A3', mt: 0.25 }}>
-                        {event.meta}
-                      </Typography>
-                    </Box>
-                    <Box
-                      sx={{
-                        bgcolor: '#EDF2FF',
-                        color: 'primary.main',
-                        borderRadius: 999,
-                        px: 1.1,
-                        py: 0.4,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {event.price}
-                    </Box>
-                  </Box>
+              {events.length === 0 ? (
+                <Box sx={{ gridColumn: '1 / -1', border: '1px dashed', borderColor: 'divider', borderRadius: '14px', p: 2.5, textAlign: 'center' }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 700 }}>No published events right now</Typography>
+                  <Typography sx={{ fontSize: 11, color: '#A3A3A3', mt: 0.5 }}>
+                    New events appear here automatically once organizers publish them.
+                  </Typography>
                 </Box>
-              ))}
+              ) : (
+                events.map((event) => {
+                  const poster = eventPoster(event);
+                  return (
+                    <Box
+                      key={event.id}
+                      sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '14px', p: 1.4, bgcolor: '#fff', minWidth: 0 }}
+                    >
+                      {poster ? (
+                        <Box component="img" src={poster} alt="" sx={{ height: { xs: 54, sm: 66 }, width: '100%', objectFit: 'cover', borderRadius: '10px', display: 'block' }} />
+                      ) : (
+                        <Box sx={{ height: { xs: 54, sm: 66 }, borderRadius: '10px', bgcolor: '#EDF2FF', display: 'grid', placeItems: 'center' }}>
+                          <ConfirmationNumber sx={{ fontSize: 22, color: '#8EA3F7' }} />
+                        </Box>
+                      )}
+                      <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography noWrap sx={{ fontSize: 12, fontWeight: 700 }}>
+                            {event.eventName}
+                          </Typography>
+                          <Typography noWrap sx={{ fontSize: 10, color: '#A3A3A3', mt: 0.25 }}>
+                            {formatShortDate(event.date)}{event.organizer?.name ? ` · ${event.organizer.name}` : ''}
+                          </Typography>
+                        </Box>
+                        <Box
+                          sx={{
+                            bgcolor: event.paymentRequired ? '#EDF2FF' : '#E7F7EE',
+                            color: event.paymentRequired ? 'primary.main' : '#15803D',
+                            borderRadius: 999,
+                            px: 1.1,
+                            py: 0.4,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {priceLabel(event)}
+                        </Box>
+                      </Box>
+                    </Box>
+                  );
+                })
+              )}
+            </Box>
+
+            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LocalOfferOutlined sx={{ fontSize: 14, color: '#8EA3F7' }} />
+              <Typography sx={{ fontSize: 10.5, color: '#A3A3A3' }}>
+                Organizer coupons apply automatically at payment
+              </Typography>
             </Box>
           </Box>
         </Box>
@@ -308,15 +342,7 @@ function HeroSection() {
   const navigate = useNavigate();
 
   return (
-    <Box
-      component="section"
-      sx={{
-        overflow: 'hidden',
-        px: { xs: 2, sm: 3, lg: 4 },
-        pt: { xs: 7, md: 11 },
-        pb: { xs: 7, md: 9 },
-      }}
-    >
+    <Box component="section" sx={{ overflow: 'hidden', px: { xs: 2, sm: 3, lg: 4 }, pt: { xs: 7, md: 11 }, pb: { xs: 7, md: 9 } }}>
       <Container maxWidth="lg">
         <Box
           sx={{
@@ -327,6 +353,11 @@ function HeroSection() {
           }}
         >
           <Box sx={{ textAlign: { xs: 'center', md: 'left' } }}>
+            <Chip
+              label="Campus event discovery & registration"
+              size="small"
+              sx={{ bgcolor: '#EAF1FF', color: 'primary.main', fontWeight: 700, mb: 2.5 }}
+            />
             <Typography
               component="h1"
               sx={{
@@ -337,13 +368,7 @@ function HeroSection() {
                 letterSpacing: '-0.06em',
               }}
             >
-              Every event.
-              <br />
-              Everyone gets to
-              <br />
-              <Box component="span" sx={{ color: 'primary.main' }}>
-                BePart.
-              </Box>
+              Discover. Register. Participate.
             </Typography>
 
             <Typography
@@ -356,26 +381,44 @@ function HeroSection() {
                 mx: { xs: 'auto', md: 0 },
               }}
             >
-              One platform for every campus event — discover, register, pay, get your ticket, and
-              check in.
+              BePart is the event discovery and registration platform connecting participants
+              with event organizers — browse events, register in minutes, get your QR ticket,
+              and check in at the gate.
             </Typography>
 
-            <Button
-              variant="contained"
-              size="large"
-              endIcon={<ArrowForward />}
-              onClick={() => navigate('/events')}
-              sx={{
-                mt: 4.5,
-                px: 3.5,
-                py: 1.3,
-                fontSize: 15.5,
-                boxShadow: 'none',
-                '&:hover': { bgcolor: 'primary.dark', boxShadow: 'none' },
-              }}
-            >
-              Explore Campus Events
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1.5, mt: 4.5, flexWrap: 'wrap', justifyContent: { xs: 'center', md: 'flex-start' } }}>
+              <Button
+                variant="contained"
+                size="large"
+                endIcon={<ArrowForward />}
+                onClick={() => navigate('/events')}
+                sx={{ px: 3.5, py: 1.3, fontSize: 15.5, boxShadow: 'none', '&:hover': { bgcolor: 'primary.dark', boxShadow: 'none' } }}
+              >
+                Explore Events
+              </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                component="a"
+                href="#organizers"
+                sx={{ px: 3, py: 1.3, fontSize: 15, borderRadius: 999 }}
+              >
+                I&apos;m an Organizer
+              </Button>
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 1, mt: 3.5, flexWrap: 'wrap', justifyContent: { xs: 'center', md: 'flex-start' } }}>
+              {CAPABILITIES.map((c) => (
+                <Chip
+                  key={c.label}
+                  icon={<c.icon sx={{ fontSize: 15 }} />}
+                  label={c.label}
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderRadius: 999, fontSize: 12 }}
+                />
+              ))}
+            </Box>
           </Box>
 
           <DashboardIllustration />

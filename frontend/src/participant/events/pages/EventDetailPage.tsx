@@ -1,4 +1,4 @@
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
+﻿import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Avatar,
@@ -9,7 +9,6 @@ import {
   Chip,
   CircularProgress,
   Container,
-  TextField,
   Typography,
 } from '@mui/material';
 import {
@@ -19,12 +18,13 @@ import {
   ConfirmationNumber,
   GroupsOutlined,
   HourglassEmpty,
+  LocalOfferOutlined,
   PersonOutlined,
-  Search,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { eventsApi } from '../api/events';
-import { useAuth } from '../../../auth/components/RequireRole';
+import ParticipantNavbar from '../../components/ParticipantNavbar';
+import { formatINR } from '../../../app/utils/format';
 import type { EventItem } from '../../../app/types';
 
 const BLUE = '#2557F5';
@@ -35,7 +35,7 @@ const CARD_BORDER = '#ECEEF4';
 
 function formatDateTime(iso: string): { date: string; time: string } {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: '—', time: '—' };
+  if (Number.isNaN(d.getTime())) return { date: 'â€”', time: 'â€”' };
   return {
     date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
@@ -45,155 +45,79 @@ function formatDateTime(iso: string): { date: string; time: string } {
 function priceLabel(event: EventItem): string {
   if (!event.paymentRequired) return 'Free';
   const amount = event.formStructure?.payment?.amount;
-  return typeof amount === 'number' ? `₹${amount}` : 'Paid';
+  return typeof amount === 'number' ? formatINR(amount) : 'Paid';
 }
 
-/** BePart mark: blue circle with a white capital "B" (no dot). */
-function BePartMark() {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-      <Box
-        sx={{
-          width: 34,
-          height: 34,
-          borderRadius: '50%',
-          bgcolor: BLUE,
-          color: '#fff',
-          display: 'grid',
-          placeItems: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontSize: 19, fontWeight: 800, lineHeight: 1 }}>
-          B
-        </Typography>
-      </Box>
-      <Typography
-        sx={{
-          fontFamily: 'Manrope, sans-serif',
-          fontSize: 21,
-          fontWeight: 800,
-          letterSpacing: '-0.05em',
-          color: INK,
-        }}
-      >
-        BePart
-      </Typography>
-    </Box>
-  );
+/** Remaining seats when the backend exposes registration counts. */
+export function seatsLeft(event: EventItem): number | null {
+  const taken = event._count?.registrations;
+  if (typeof taken !== 'number') return null;
+  return Math.max(0, event.slots - taken);
 }
 
-function DetailsHeader({ onSearchSubmit }: { onSearchSubmit: () => void }) {
-  const navigate = useNavigate();
-  const { loading, user } = useAuth();
-
-  return (
-    <Box
-      component="header"
-      sx={{ bgcolor: '#FFFFFF', borderBottom: '1px solid', borderColor: CARD_BORDER, position: 'sticky', top: 0, zIndex: 10 }}
-    >
-      <Container maxWidth="lg">
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1.5, md: 3 }, py: { xs: 1.5, md: 2 } }}>
-          <Box onClick={() => navigate('/')} sx={{ cursor: 'pointer', flexShrink: 0 }} role="link" aria-label="BePart home">
-            <BePartMark />
-          </Box>
-
-          <TextField
-            placeholder="Search for events, clubs, or keywords..."
-            size="small"
-            fullWidth
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onSearchSubmit();
-            }}
-            slotProps={{
-              input: {
-                startAdornment: <Search sx={{ fontSize: 20, color: MUTED, mr: 1 }} />,
-              },
-            }}
-            sx={{
-              maxWidth: 560,
-              mx: 'auto',
-              display: { xs: 'none', sm: 'flex' },
-              '& .MuiOutlinedInput-root': { borderRadius: 999, bgcolor: '#F5F7FF', fontSize: 14 },
-            }}
-          />
-
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
-            <Button
-              variant="text"
-              onClick={() => navigate('/events')}
-              sx={{ color: INK, fontSize: 13.5, display: { xs: 'none', md: 'inline-flex' } }}
-            >
-              Explore events
-            </Button>
-            {loading ? (
-              <CircularProgress size={24} />
-            ) : user ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                <Box sx={{ textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
-                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: INK, lineHeight: 1.2 }}>
-                    {user.name}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12, color: MUTED, lineHeight: 1.2 }}>{user.role}</Typography>
-                </Box>
-                <Avatar sx={{ width: 38, height: 38, bgcolor: BLUE, fontWeight: 800 }}>
-                  {user.name?.charAt(0)?.toUpperCase() || 'U'}
-                </Avatar>
-              </Box>
-            ) : (
-              <Button
-                variant="contained"
-                onClick={() => navigate('/login')}
-                sx={{ borderRadius: 999, boxShadow: 'none', px: 3 }}
-              >
-                Login
-              </Button>
-            )}
-          </Box>
-        </Box>
-      </Container>
-    </Box>
-  );
-}
-
-/** Generic event visual used when the event has no poster. Works for any event. */
-function EventVisual({ event }: { event: EventItem }) {
-  if (event.posterUrl) {
+/** Event gallery: wide banner first, square artwork as a thumbnail strip. */
+function EventGallery({ event }: { event: EventItem }) {
+  const images = [event.posterRectangleUrl, event.posterSquareUrl].filter((u): u is string => !!u);
+  if (images.length === 0) {
     return (
       <Box
-        component="img"
-        src={event.posterUrl}
-        alt={`${event.eventName} poster`}
-        sx={{ width: '100%', height: '100%', minHeight: { xs: 220, md: 380 }, objectFit: 'cover', display: 'block' }}
-      />
+        sx={{
+          position: 'relative',
+          width: '100%',
+          minHeight: { xs: 220, md: 380 },
+          height: '100%',
+          overflow: 'hidden',
+          background: `linear-gradient(135deg, ${BLUE} 0%, ${INDIGO} 100%)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        role="img"
+        aria-label="Event visual"
+      >
+        <Box sx={{ position: 'absolute', width: 280, height: 280, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.12)', top: -70, right: -70 }} />
+        <Box sx={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.10)', bottom: -60, left: -50 }} />
+        <Box sx={{ position: 'absolute', width: 120, height: 120, borderRadius: '50%', border: '14px solid rgba(255,255,255,0.14)', bottom: 30, right: 40 }} />
+        <Box sx={{ position: 'relative', textAlign: 'center', color: '#fff', px: 3 }}>
+          <ConfirmationNumber sx={{ fontSize: 56, opacity: 0.95 }} />
+          <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, fontSize: 20, letterSpacing: '-0.02em', mt: 1.5 }}>
+            {event.eventName}
+          </Typography>
+          <Typography sx={{ fontSize: 13.5, opacity: 0.85, mt: 0.5 }}>BePart campus event</Typography>
+        </Box>
+      </Box>
     );
   }
+  const [main, ...rest] = images;
   return (
-    <Box
-      sx={{
-        position: 'relative',
-        width: '100%',
-        minHeight: { xs: 220, md: 380 },
-        height: '100%',
-        overflow: 'hidden',
-        background: `linear-gradient(135deg, ${BLUE} 0%, ${INDIGO} 100%)`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      role="img"
-      aria-label="Event visual"
-    >
-      <Box sx={{ position: 'absolute', width: 280, height: 280, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.12)', top: -70, right: -70 }} />
-      <Box sx={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.10)', bottom: -60, left: -50 }} />
-      <Box sx={{ position: 'absolute', width: 120, height: 120, borderRadius: '50%', border: '14px solid rgba(255,255,255,0.14)', bottom: 30, right: 40 }} />
-      <Box sx={{ position: 'relative', textAlign: 'center', color: '#fff', px: 3 }}>
-        <ConfirmationNumber sx={{ fontSize: 56, opacity: 0.95 }} />
-        <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, fontSize: 20, letterSpacing: '-0.02em', mt: 1.5 }}>
-          {event.eventName}
-        </Typography>
-        <Typography sx={{ fontSize: 13.5, opacity: 0.85, mt: 0.5 }}>BePart campus event</Typography>
-      </Box>
+    <Box sx={{ width: '100%', height: '100%', minHeight: { xs: 220, md: 380 }, display: 'flex', flexDirection: 'column', bgcolor: '#0F172A' }}>
+      <Box
+        component="img"
+        src={main}
+        alt={`${event.eventName} poster`}
+        sx={{ width: '100%', flex: 1, minHeight: 0, objectFit: 'cover', display: 'block' }}
+      />
+      {rest.length > 0 && (
+        <Box sx={{ display: 'flex', gap: 1, p: 1.5, bgcolor: '#FFFFFF' }}>
+          {images.map((src, i) => (
+            <Box
+              key={src}
+              component="img"
+              src={src}
+              alt={`${event.eventName} image ${i + 1}`}
+              sx={{
+                width: 72,
+                height: 72,
+                objectFit: 'cover',
+                borderRadius: 2,
+                border: '2px solid',
+                borderColor: i === 0 ? BLUE : CARD_BORDER,
+                display: 'block',
+              }}
+            />
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }
@@ -275,7 +199,7 @@ export default function EventDetailPage() {
   if (isLoading) {
     return (
       <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
-        <DetailsHeader onSearchSubmit={goToEvents} />
+        <ParticipantNavbar />
         <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 10 }}>
             <CircularProgress size={48} color="primary" />
@@ -289,7 +213,7 @@ export default function EventDetailPage() {
   if (error || !event) {
     return (
       <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
-        <DetailsHeader onSearchSubmit={goToEvents} />
+        <ParticipantNavbar />
         <Container maxWidth="md" sx={{ py: { xs: 3, md: 5 } }}>
           <Button
             component={RouterLink}
@@ -323,7 +247,7 @@ export default function EventDetailPage() {
 
   return (
     <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
-      <DetailsHeader onSearchSubmit={goToEvents} />
+      <ParticipantNavbar />
 
       <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
         <Button
@@ -352,7 +276,7 @@ export default function EventDetailPage() {
               alignItems: 'stretch',
             }}
           >
-            <EventVisual event={event} />
+            <EventGallery event={event} />
 
             <CardContent sx={{ p: { xs: 3, md: 5 }, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -372,6 +296,27 @@ export default function EventDetailPage() {
                     borderRadius: 999,
                   }}
                 />
+                {event.hasCoupon && (
+                  <Chip
+                    icon={<LocalOfferOutlined sx={{ fontSize: 15 }} />}
+                    label="COUPONS ACCEPTED"
+                    size="small"
+                    sx={{ bgcolor: '#FFF7E6', color: '#B45309', fontWeight: 800, fontSize: 11.5, borderRadius: 999 }}
+                  />
+                )}
+                {seatsLeft(event) !== null && (
+                  <Chip
+                    label={seatsLeft(event) === 0 ? 'SOLD OUT' : `${seatsLeft(event)} SEATS LEFT`}
+                    size="small"
+                    sx={{
+                      bgcolor: seatsLeft(event) === 0 ? '#FDECEC' : '#EAF1FF',
+                      color: seatsLeft(event) === 0 ? '#DC2626' : BLUE,
+                      fontWeight: 800,
+                      fontSize: 11.5,
+                      borderRadius: 999,
+                    }}
+                  />
+                )}
               </Box>
 
               <Typography
@@ -436,7 +381,7 @@ export default function EventDetailPage() {
                 <MetaItem
                   icon={<PersonOutlined sx={{ fontSize: 20 }} />}
                   label="ORGANIZER"
-                  value={event.organizer?.name || '—'}
+                  value={event.organizer?.name || 'â€”'}
                 />
               </Box>
 
@@ -461,7 +406,7 @@ export default function EventDetailPage() {
                 </Button>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: MUTED }}>
                   <AccessTime sx={{ fontSize: 17 }} />
-                  <Typography sx={{ fontSize: 13 }}>Closes {closes.date} · {closes.time}</Typography>
+                  <Typography sx={{ fontSize: 13 }}>Closes {closes.date} Â· {closes.time}</Typography>
                 </Box>
               </Box>
             </CardContent>
@@ -492,8 +437,8 @@ export default function EventDetailPage() {
           </InfoCard>
 
           <InfoCard title="Registration Information">
-            <InfoRow label="Date" value={`${date.date} · ${date.time}`} />
-            <InfoRow label="Registration deadline" value={`${closes.date} · ${closes.time}`} />
+            <InfoRow label="Date" value={`${date.date} Â· ${date.time}`} />
+            <InfoRow label="Registration deadline" value={`${closes.date} Â· ${closes.time}`} />
             <InfoRow label="Available slots" value={String(event.slots)} />
             <InfoRow label="Pricing" value={priceLabel(event)} />
             <Button
@@ -513,17 +458,17 @@ export default function EventDetailPage() {
                 {event.organizer?.name?.charAt(0)?.toUpperCase() || 'O'}
               </Avatar>
               <Box>
-                <Typography sx={{ fontWeight: 800, color: INK }}>{event.organizer?.name || '—'}</Typography>
+                <Typography sx={{ fontWeight: 800, color: INK }}>{event.organizer?.name || 'â€”'}</Typography>
                 <Typography sx={{ fontSize: 13, color: MUTED }}>Event organizer</Typography>
               </Box>
             </Box>
-            <InfoRow label="Organizer" value={event.organizer?.name || '—'} />
+            <InfoRow label="Organizer" value={event.organizer?.name || 'â€”'} />
           </InfoCard>
 
           <InfoCard title="Availability">
             <InfoRow label="Available slots" value={String(event.slots)} />
             <InfoRow label="Status" value={event.status} />
-            <InfoRow label="Registration closes" value={`${closes.date} · ${closes.time}`} />
+            <InfoRow label="Registration closes" value={`${closes.date} Â· ${closes.time}`} />
           </InfoCard>
         </Box>
 

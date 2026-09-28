@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -29,4 +29,9 @@ export class CreatePendingPaymentDto {
   @ApiPropertyOptional({ description: 'Pending form data stored until payment completes (used to create Registration on PAID)' })
   @IsOptional()
   pendingFormData?: any;
+
+  @ApiPropertyOptional({ description: 'Frontend alias for pendingFormData: participant registration answers. Stored as pendingFormData so organizer confirmation (PAID) creates the Registration atomically.' })
+  @IsOptional()
+  @IsObject()
+  formData?: Record<string, unknown>;
 }

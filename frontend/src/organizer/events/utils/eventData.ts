@@ -1,17 +1,12 @@
 import type {
   EventItem,
-  FormDataRecord,
   RegistrationItem,
   WithdrawalItem,
   WithdrawalStatus,
 } from '../../../app/types';
+import { paiseToRupees } from '../../../app/utils/format';
 
-export function registrantName(formData: FormDataRecord | null | undefined, fallback = '—'): string {
-  if (!formData || typeof formData !== 'object') return fallback;
-  const raw: unknown =
-    formData.teamName || formData.member1Name || formData.fullName || fallback;
-  return typeof raw === 'string' ? raw : fallback;
-}
+export { registrantName } from '../../../app/utils/registrations';
 
 // Registration fee comes ONLY from the event's own config (no invented pricing).
 export function eventFee(event: EventItem | null | undefined): number {
@@ -30,12 +25,12 @@ export interface EventFinance {
 export function financeByEvent(
   events: EventItem[],
   registrations: RegistrationItem[]
-): Record<number, EventFinance> {
-  const counts: Record<number, number> = {};
+): Record<string, EventFinance> {
+  const counts: Record<string, number> = {};
   (registrations || []).forEach((r) => {
     counts[r.eventId] = (counts[r.eventId] || 0) + 1;
   });
-  const map: Record<number, EventFinance> = {};
+  const map: Record<string, EventFinance> = {};
   (events || []).forEach((e) => {
     const count = counts[e.id] || 0;
     const fee = eventFee(e);
@@ -54,15 +49,18 @@ export interface WithdrawalPosition {
 }
 
 // Per-event withdrawal position from the organizer's own withdrawal records.
-export function withdrawalsByEvent(withdrawals: WithdrawalItem[]): Record<number, WithdrawalPosition> {
-  const map: Record<number, WithdrawalPosition> = {};
+// Backend amounts are PAISE; totals are normalized to RUPEES to match the
+// fee-based collected math above.
+export function withdrawalsByEvent(withdrawals: WithdrawalItem[]): Record<string, WithdrawalPosition> {
+  const map: Record<string, WithdrawalPosition> = {};
   (withdrawals || []).forEach((w) => {
     const entry: WithdrawalPosition = (map[w.eventId] =
       map[w.eventId] || { open: null, paidTotal: 0, openTotal: 0, history: [] });
     entry.history.push(w);
-    if (w.status === 'PAID') entry.paidTotal += Number(w.amount) || 0;
+    const rupees = paiseToRupees(w.amount);
+    if (w.status === 'PAID') entry.paidTotal += rupees;
     else if (OPEN_WITHDRAWAL.includes(w.status)) {
-      entry.openTotal += Number(w.amount) || 0;
+      entry.openTotal += rupees;
       if (!entry.open) entry.open = w;
     }
   });

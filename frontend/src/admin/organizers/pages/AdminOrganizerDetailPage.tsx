@@ -1,23 +1,29 @@
 import { useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
-  Alert, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Divider, Typography,
+  Alert, Avatar, Box, Button, Card, CardContent, Chip, Divider, Typography,
 } from '@mui/material';
+import { CalendarMonthOutlined } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSnackbar } from 'notistack';
 import { organizersApi } from '../api/organizers';
 import { formatEventDate } from '../../../app/utils/format';
 import { apiErrorMessage, unwrapList } from '../../../app/api/client';
 import type { EventItem } from '../../../app/types';
 import AdminShell from '../../components/AdminShell';
 import { isOrganizerActive, OrganizerStatusChip } from '../components/OrganizerTable';
+import ConfirmDialog from '../../../app/components/ConfirmDialog';
+import EmptyState from '../../../app/components/EmptyState';
+import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 
 function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDeact, setConfirmDeact] = useState(false);
 
-  const { data: orgRes, isLoading: orgLoading, error: orgError } = useQuery({
+  const { data: orgRes, isLoading: orgLoading, error: orgError, refetch } = useQuery({
     queryKey: ['admin', 'organizer', id], queryFn: () => organizersApi.get(id!),
   });
   const { data: eventsRes, isLoading: eventsLoading } = useQuery({
@@ -33,44 +39,30 @@ function DetailContent({ id }: { id: string | undefined }) {
     queryClient.invalidateQueries({ queryKey: ['admin', 'organizer', id] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'organizers'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+    refetch();
   };
 
-  const deactivate = async () => {
-    if (!confirmDeact) {
-      setConfirmDeact(true);
-      return;
-    }
-    setConfirmDeact(false);
+  const runChange = async (fn: () => Promise<unknown>, okMsg: string, failMsg: string) => {
     setError('');
     setBusy(true);
     try {
-      await organizersApi.deactivate(id!);
+      await fn();
       refresh();
+      enqueueSnackbar(okMsg, { variant: 'success' });
     } catch (err) {
-      setError(apiErrorMessage(err, 'Deactivation failed.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const activate = async () => {
-    setError('');
-    setBusy(true);
-    try {
-      await organizersApi.approve(id!);
-      refresh();
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Activation failed.'));
+      const msg = apiErrorMessage(err, failMsg);
+      setError(msg);
+      enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setBusy(false);
     }
   };
 
   if (orgLoading || eventsLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
+    return <LoadingState message="Loading organizer…" />;
   }
   if (orgError || !organizer) {
-    return <Alert severity="error">Organizer not found.</Alert>;
+    return <ErrorState message="Organizer not found." onRetry={() => refetch()} />;
   }
 
   return (
@@ -88,14 +80,11 @@ function DetailContent({ id }: { id: string | undefined }) {
                 {organizer.name}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Email: {organizer.email || organizer.user?.email || '—'}
+                {organizer.email || organizer.user?.email || '—'}
               </Typography>
             </Box>
             <OrganizerStatusChip organizer={organizer} />
           </Box>
-          <Typography variant="body2" color="text.secondary">
-            Email: {organizer.email || organizer.user?.email || '—'}
-          </Typography>
           <Typography variant="body2" color="text.secondary">
             Phone: {organizer.phone || '—'}
           </Typography>
@@ -103,7 +92,7 @@ function DetailContent({ id }: { id: string | undefined }) {
             UPI ID: {organizer.upiId || '—'}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Status: {organizer.status}
+            Status: {organizer.status}{organizer.isActive === false ? ' · events hidden' : ''}
           </Typography>
           {organizer.description && (
             <Typography color="text.secondary" sx={{ mb: 2 }}>{organizer.description}</Typography>
@@ -112,11 +101,12 @@ function DetailContent({ id }: { id: string | undefined }) {
             Total Events: {events.length} · Conducted Events: {conducted} · Upcoming Events: {upcoming}
           </Typography>
           {isOrganizerActive(organizer) ? (
-            <Button size="small" color="error" variant="outlined" disabled={busy} onClick={deactivate}>
-              {busy ? 'Working…' : confirmDeact ? 'Click again to confirm deactivate' : 'Deactivate Organizer'}
+            <Button size="small" color="error" variant="outlined" disabled={busy} onClick={() => setConfirmDeact(true)}>
+              Deactivate Organizer
             </Button>
           ) : (
-            <Button size="small" color="success" variant="outlined" disabled={busy} onClick={activate}>
+            <Button size="small" color="success" variant="outlined" disabled={busy}
+              onClick={() => runChange(() => organizersApi.approve(id!), 'Organizer activated. Their events are visible again.', 'Activation failed.')}>
               {busy ? 'Working…' : 'Activate Organizer'}
             </Button>
           )}
@@ -129,7 +119,11 @@ function DetailContent({ id }: { id: string | undefined }) {
             Events by this organizer ({events.length})
           </Typography>
           {events.length === 0 ? (
-            <Alert severity="info">This organizer has not created any events yet.</Alert>
+            <EmptyState
+              icon={CalendarMonthOutlined}
+              title="No events yet"
+              description="This organizer has not created any events yet."
+            />
           ) : (
             events.map((event) => (
               <Box key={event.id} sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' } }}>
@@ -141,6 +135,7 @@ function DetailContent({ id }: { id: string | undefined }) {
                     </Typography>
                   </Box>
                   <Chip label={event.status} size="small" variant="outlined" color={event.status === 'PUBLISHED' ? 'success' : 'default'} />
+                  {event.isActive === false && <Chip label="Hidden" size="small" color="warning" />}
                   {event.status === 'PUBLISHED' && (
                     <Button size="small" variant="outlined" component={RouterLink} to={`/events/${event.id}`}>
                       View Event
@@ -154,6 +149,19 @@ function DetailContent({ id }: { id: string | undefined }) {
           <Button variant="text" component={RouterLink} to="/admin/organizers">← Back to Organizers</Button>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmDeact}
+        title="Deactivate organizer?"
+        description="The organizer will lose access and their events will be hidden from participants until reactivation. Event history and data are preserved."
+        confirmLabel="Deactivate"
+        busy={busy}
+        onCancel={() => setConfirmDeact(false)}
+        onConfirm={() => {
+          setConfirmDeact(false);
+          runChange(() => organizersApi.deactivate(id!), 'Organizer deactivated. Their events are now hidden.', 'Deactivation failed.');
+        }}
+      />
     </Box>
   );
 }
@@ -161,7 +169,7 @@ function DetailContent({ id }: { id: string | undefined }) {
 export default function AdminOrganizerDetailPage() {
   const { id } = useParams();
   return (
-    <AdminShell>
+    <AdminShell title="Organizer" subtitle="Profile, events and status.">
       <DetailContent id={id} />
     </AdminShell>
   );

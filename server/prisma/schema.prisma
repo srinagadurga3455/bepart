@@ -124,6 +124,9 @@ model Organizer {
   email       String?         @unique
   upiId       String?
   status      OrganizerStatus @default(PENDING)
+  // Admin-controlled visibility: deactivation sets isActive=false and cascades
+  // to the organizer's events; reactivation restores both.
+  isActive    Boolean         @default(true)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -139,6 +142,7 @@ model Organizer {
   withdrawals Withdrawal[]
 
   @@index([status])
+  @@index([isActive])
   @@index([userId])
   @@index([adminId])
   @@index([email])
@@ -153,6 +157,9 @@ model Event {
   slots              Int
   closingTime        DateTime
   status             EventStatus @default(DRAFT)
+  // Visibility switch controlled by organizer deactivation cascade.
+  // Public listing/registration only include isActive events.
+  isActive           Boolean     @default(true)
   formStructure      Json?
   posterSquareUrl    String?
   posterRectangleUrl String?
@@ -169,6 +176,7 @@ model Event {
 
   @@index([organizerId])
   @@index([status])
+  @@index([isActive])
   @@index([date])
   @@map("events")
 }
@@ -178,6 +186,8 @@ model Registration {
   phone          String
   formData       Json?
   paymentStatus  PaymentStatus @default(PENDING)
+  // QR check-in: set when an organizer/admin scans the ticket at entry.
+  checkedInAt    DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Avatar, Box, Typography } from '@mui/material';
+import { Avatar, Box, Chip, Typography } from '@mui/material';
 import {
   AccountBalanceWalletOutlined,
   GridViewOutlined,
@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { authApi } from '../../auth/api/auth';
 import { logout } from '../../auth/components/RequireRole';
 import { adminNav } from '../routes';
+import { BePartMark } from '../../app/components/BePartBrand';
 
 // Sidebar application shell for the Admin Console.
 // Visual-only chrome: navigation + current admin identity + logout.
@@ -79,26 +80,8 @@ export default function AdminShell({ title, subtitle, children }: AdminShellProp
           onClick={() => navigate('/admin')}
           sx={{ display: 'flex', alignItems: 'center', gap: 1.25, cursor: 'pointer', px: { xs: 0.5, sm: 1 }, mb: 2.5 }}
         >
-          <Box
-            sx={{
-              width: 34,
-              height: 34,
-              borderRadius: '50%',
-              bgcolor: '#2557F5',
-              color: '#fff',
-              display: 'grid',
-              placeItems: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontSize: 16, fontWeight: 800, lineHeight: 1 }}>
-              B
-            </Typography>
-          </Box>
+          <BePartMark size={34} fontSize={15} />
           <Box sx={{ display: { xs: 'none', sm: 'block' }, lineHeight: 1.2 }}>
-            <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em' }}>
-              BePart
-            </Typography>
             <Typography sx={{ fontSize: 11, color: '#98A2B3' }}>
               Admin Console
             </Typography>
@@ -186,19 +169,64 @@ export default function AdminShell({ title, subtitle, children }: AdminShellProp
       </Box>
 
       {/* MAIN CONTENT */}
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}>
-        <Box sx={{ width: '100%', maxWidth: 1060, px: { xs: 2, md: 4 }, py: { xs: 2.5, md: 3.5 } }}>
-          {title && (
-            <Typography sx={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: '#101828' }}>
-              {title}
-            </Typography>
-          )}
-          {subtitle && (
-            <Typography sx={{ fontSize: 13.5, color: '#667085', mt: 0.25, mb: title ? 2.5 : 0 }}>
-              {subtitle}
-            </Typography>
-          )}
-          <Box sx={{ mt: title || subtitle ? 0 : 0 }}>
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Top header: page title left, BePart brand + admin profile right */}
+        <Box
+          component="header"
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            bgcolor: 'rgba(246, 248, 251, 0.9)',
+            backdropFilter: 'blur(8px)',
+            borderBottom: '1px solid #ECEEF4',
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              px: { xs: 2, md: 4 },
+              py: 1.5,
+              maxWidth: 1060,
+              mx: 'auto',
+              width: '100%',
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              {title && (
+                <Typography noWrap sx={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', color: '#101828' }}>
+                  {title}
+                </Typography>
+              )}
+              {subtitle && (
+                <Typography noWrap sx={{ fontSize: 12.5, color: '#667085', display: { xs: 'none', sm: 'block' } }}>
+                  {subtitle}
+                </Typography>
+              )}
+            </Box>
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                <BePartMark size={28} fontSize={16} />
+              </Box>
+              <Chip label="ADMIN" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700, fontSize: 10.5, display: { xs: 'none', sm: 'flex' } }} />
+              <Avatar sx={{ width: 34, height: 34, bgcolor: '#2557F5', fontSize: 13, fontWeight: 700 }}>
+                {initials(me?.name, me?.email)}
+              </Avatar>
+              <Box sx={{ display: { xs: 'none', sm: 'block' }, lineHeight: 1.25, minWidth: 0 }}>
+                <Typography noWrap sx={{ fontSize: 13, fontWeight: 700, color: '#101828', maxWidth: 160 }}>
+                  {displayName}
+                </Typography>
+                <Typography noWrap sx={{ fontSize: 11.5, color: '#667085', maxWidth: 160 }}>
+                  {me?.email || 'Platform admin'}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'center', flex: 1, minWidth: 0 }}>
+          <Box sx={{ width: '100%', maxWidth: 1060, px: { xs: 2, md: 4 }, py: { xs: 2.5, md: 3.5 } }}>
             {children}
           </Box>
         </Box>

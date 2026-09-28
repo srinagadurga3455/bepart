@@ -6,34 +6,47 @@ import {
   CreditCard,
   Explore,
   HowToReg,
+  InfoOutlined,
   QrCodeScanner,
+  VerifiedOutlined,
 } from '@mui/icons-material';
 
+// 7-step participant workflow with anchor id for nav/footer links.
 const steps = [
   {
-    title: 'Discover',
-    description: 'Find events happening on campus.',
+    title: 'Discover Event',
+    description: 'Browse published events and find one to join.',
     icon: Explore,
   },
   {
+    title: 'View Details',
+    description: 'Date, organizer, price, slots and coupon info.',
+    icon: InfoOutlined,
+  },
+  {
     title: 'Register',
-    description: 'Quickly register for events.',
+    description: 'Fill the organizer\u2019s custom form and review.',
     icon: HowToReg,
   },
   {
-    title: 'Pay',
-    description: 'Secure and simple payment.',
+    title: 'Pay if Required',
+    description: 'Free events skip this. Paid events show the fee first.',
     icon: CreditCard,
   },
   {
-    title: 'Get Ticket',
-    description: 'Receive your digital ticket instantly.',
+    title: 'Receive Ticket',
+    description: 'Digital ticket with QR is issued on confirmation.',
     icon: ConfirmationNumber,
   },
   {
-    title: 'Check-in',
-    description: 'Scan your QR code and get in.',
+    title: 'QR Check-in',
+    description: 'Scan at the gate for instant verification.',
     icon: QrCodeScanner,
+  },
+  {
+    title: 'Participate',
+    description: 'Attend and enjoy the event.',
+    icon: VerifiedOutlined,
   },
 ];
 
@@ -41,9 +54,11 @@ function HowItWorks() {
   return (
     <Box
       component="section"
+      id="how-it-works"
       sx={{
         px: { xs: 2, sm: 3, lg: 4 },
         py: { xs: 8, md: 11 },
+        scrollMarginTop: 80,
       }}
     >
       <Container maxWidth="lg">
@@ -66,13 +81,13 @@ function HowItWorks() {
           sx={{
             fontFamily: 'Manrope, sans-serif',
             fontWeight: 800,
-            fontSize: { xs: '1.5rem', sm: '1.9rem', md: '2.3rem' },
+            fontSize: { xs: '1.6rem', sm: '2rem', md: '2.4rem' },
             letterSpacing: '-0.05em',
-            lineHeight: 1.2,
+            lineHeight: 1.15,
             mt: 2,
           }}
         >
-          Discover → Register → Pay → Ticket → Check-in
+          From discovery to check-in in seven steps
         </Typography>
 
         <Box
@@ -88,14 +103,14 @@ function HowItWorks() {
         >
           {steps.map((step, index) => (
             <Fragment key={step.title}>
-              <Box sx={{ width: { xs: 260, sm: 240, md: 158 }, textAlign: 'center' }}>
+              <Box sx={{ width: { xs: 260, sm: 240, md: 140 }, textAlign: 'center' }}>
                 <Box
                   sx={{
                     width: 58,
                     height: 58,
                     mx: 'auto',
                     borderRadius: '50%',
-                    bgcolor: '#EAF0FF',
+                    bgcolor: '#EAF1FF',
                     display: 'grid',
                     placeItems: 'center',
                   }}
@@ -106,17 +121,17 @@ function HowItWorks() {
                   sx={{
                     fontFamily: 'Manrope, sans-serif',
                     fontWeight: 800,
-                    fontSize: 16,
-                    letterSpacing: '-0.03em',
+                    fontSize: 15,
+                    letterSpacing: '-0.02em',
                     mt: 1.75,
                   }}
                 >
-                  {step.title}
+                  {index + 1}. {step.title}
                 </Typography>
                 <Typography
                   sx={{
                     color: 'text.secondary',
-                    fontSize: 13.5,
+                    fontSize: 13,
                     lineHeight: 1.55,
                     mt: 0.75,
                     px: { xs: 2, md: 0 },

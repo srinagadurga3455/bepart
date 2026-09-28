@@ -16,6 +16,7 @@ import {
   orgSmallButtonSx,
 } from '../../components/organizerStyles';
 import RequireRole from '../../../auth/components/RequireRole';
+import ConfirmDialog from '../../../app/components/ConfirmDialog';
 import FormBuilder from '../components/FormBuilder';
 import { toBuilderForm } from '../utils/formBuilderUtils';
 import type { BuilderForm } from '../utils/formBuilderUtils';
@@ -66,8 +67,9 @@ export function EventWizardInner({ editId }: { editId?: string }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   const [details, setDetails] = useState<WizardDetails>({ eventName: '', description: '', date: '', time: '', deadline: '', slots: 100, paymentType: 'free', feeAmount: '' });
-  const [posterFile, setPosterFile] = useState<File | null>(null);
-  const [posterBusy, setPosterBusy] = useState(false);
+  const [squareFile, setSquareFile] = useState<File | null>(null);
+  const [rectFile, setRectFile] = useState<File | null>(null);
+  const [posterBusy, setPosterBusy] = useState<null | 'square' | 'rectangle'>(null);
 
   const { data: loaded, isLoading: loadingEvent } = useQuery({
     queryKey: ['organizer-event', editId],
@@ -199,18 +201,25 @@ export function EventWizardInner({ editId }: { editId?: string }) {
     }
   };
 
-  const uploadPoster = async () => {
-    if (!posterFile || !event) return;
+  const uploadPoster = async (kind: 'square' | 'rectangle') => {
+    const file = kind === 'square' ? squareFile : rectFile;
+    if (!file || !event) return;
     setError('');
-    setPosterBusy(true);
+    setPosterBusy(kind);
     try {
-      const res = await eventsApi.uploadPoster(event.id, posterFile);
-      setEvent({ ...event, posterUrl: res.data.posterUrl });
-      setPosterFile(null);
+      if (kind === 'square') {
+        const res = await eventsApi.uploadPosterSquare(event.id, file);
+        setEvent({ ...event, posterSquareUrl: res.data.posterSquareUrl });
+        setSquareFile(null);
+      } else {
+        const res = await eventsApi.uploadPosterRectangle(event.id, file);
+        setEvent({ ...event, posterRectangleUrl: res.data.posterRectangleUrl });
+        setRectFile(null);
+      }
     } catch (err) {
-      fail(err, 'Poster upload failed.');
+      fail(err, kind === 'square' ? 'Square poster upload failed (needs a 1:1 image).' : 'Banner upload failed (needs a 16:9 landscape image).');
     } finally {
-      setPosterBusy(false);
+      setPosterBusy(null);
     }
   };
 
@@ -234,7 +243,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
     }
   };
 
-  const doTransition = async (fn: (id: number) => Promise<{ data: EventItem }>, okMsg?: string) => {
+  const doTransition = async (fn: (id: string) => Promise<{ data: EventItem }>, okMsg?: string) => {
     if (!event) return;
     setError('');
     setBusy(true);
@@ -250,10 +259,6 @@ export function EventWizardInner({ editId }: { editId?: string }) {
   };
 
   const doCancel = async () => {
-    if (!confirmCancel) {
-      setConfirmCancel(true);
-      return;
-    }
     setConfirmCancel(false);
     await doTransition((id) => eventsApi.cancel(id));
   };
@@ -280,12 +285,28 @@ export function EventWizardInner({ editId }: { editId?: string }) {
   }
 
   return (
-    <OrganizerShell title={isEdit ? 'Edit Event' : 'Create Event'} subtitle={isEdit ? 'Update your event details.' : 'Set up a new event for registrations.'} hideSearch hideCreate>
-      <Stepper activeStep={step} sx={{ mb: 4, overflowX: 'auto' }}>
-        {STEPS.map((label) => (
-          <Step key={label}><StepLabel>{label}</StepLabel></Step>
-        ))}
-      </Stepper>
+    <OrganizerShell title={step === 1 ? '' : (isEdit ? 'Edit Event' : 'Create Event')} subtitle={step === 1 ? '' : (isEdit ? 'Update your event details.' : 'Set up a new event for registrations.')} hideSearch hideCreate>
+      {step === 1 ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, px: 0.5 }}>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+            Event Details
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.disabled' }}>→</Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'primary.main' }}>
+            Registration Form
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.disabled' }}>→</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+            Preview & Publish
+          </Typography>
+        </Box>
+      ) : (
+        <Stepper activeStep={step} sx={{ mb: 4, overflowX: 'auto' }}>
+          {STEPS.map((label) => (
+            <Step key={label}><StepLabel>{label}</StepLabel></Step>
+          ))}
+        </Stepper>
+      )}
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>{error}</Alert>}
 
@@ -330,26 +351,49 @@ export function EventWizardInner({ editId }: { editId?: string }) {
             )}
 
             <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>Event Poster (optional)</Typography>
-            {event?.posterUrl && (
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>Event Images (optional)</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Add a wide banner (16:9) for the event page and a square (1:1) image for event cards.
+            </Typography>
+            {event?.posterRectangleUrl && (
               <Box sx={{ mb: 2 }}>
-                <Box component="img" src={event.posterUrl} alt="Event poster"
-                  sx={{ width: '100%', maxWidth: 420, borderRadius: 2, border: '1px solid', borderColor: 'divider' }} />
+                <Typography variant="caption" color="text.secondary">Banner (16:9)</Typography>
+                <Box component="img" src={event.posterRectangleUrl} alt="Event banner"
+                  sx={{ width: '100%', maxWidth: 480, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'block', mt: 0.5 }} />
+              </Box>
+            )}
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
+              <Button variant="outlined" component="label" size="small" disabled={!event && !isEdit}>
+                Choose Banner (16:9)
+                <input type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => setRectFile(e.target.files?.[0] || null)} />
+              </Button>
+              {rectFile && <Typography variant="body2">{rectFile.name}</Typography>}
+              {rectFile && event && (
+                <Button size="small" variant="contained" onClick={() => uploadPoster('rectangle')} disabled={posterBusy !== null} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
+                  {posterBusy === 'rectangle' ? 'Uploading…' : 'Upload Banner'}
+                </Button>
+              )}
+            </Box>
+            {event?.posterSquareUrl && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary">Square (1:1)</Typography>
+                <Box component="img" src={event.posterSquareUrl} alt="Event square poster"
+                  sx={{ width: 180, height: 180, objectFit: 'cover', borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'block', mt: 0.5 }} />
               </Box>
             )}
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
               <Button variant="outlined" component="label" size="small" disabled={!event && !isEdit}>
-                Choose Image
-                <input type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => setPosterFile(e.target.files?.[0] || null)} />
+                Choose Square (1:1)
+                <input type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => setSquareFile(e.target.files?.[0] || null)} />
               </Button>
-              {posterFile && <Typography variant="body2">{posterFile.name}</Typography>}
-              {posterFile && event && (
-                <Button size="small" variant="contained" onClick={uploadPoster} disabled={posterBusy} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
-                  {posterBusy ? 'Uploading…' : 'Upload Poster'}
+              {squareFile && <Typography variant="body2">{squareFile.name}</Typography>}
+              {squareFile && event && (
+                <Button size="small" variant="contained" onClick={() => uploadPoster('square')} disabled={posterBusy !== null} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
+                  {posterBusy === 'square' ? 'Uploading…' : 'Upload Square'}
                 </Button>
               )}
               {!event && !isEdit && (
-                <Typography variant="body2" color="text.secondary">Save the draft first to upload a poster.</Typography>
+                <Typography variant="body2" color="text.secondary">Save the draft first to upload images.</Typography>
               )}
             </Box>
 
@@ -367,6 +411,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
           initial={builderInitial}
           saving={busy}
           onSave={saveForm}
+          onBack={() => setStep(0)}
           onPreview={(s) => { setStructure(s); setPreviewSubmitted(false); setStep(2); }}
         />
       )}
@@ -388,8 +433,9 @@ export function EventWizardInner({ editId }: { editId?: string }) {
                   formStructure={structure}
                   onSubmit={() => setPreviewSubmitted(true)}
                   isSubmitting={false}
+                  eventId={event?.id || editId || 'preview'}
                   event={{ eventName: details.eventName || event?.eventName }}
-                  onBackToEvent={() => {}}
+                  previewMode
                 />
               </CardContent>
             </Card>
@@ -421,8 +467,8 @@ export function EventWizardInner({ editId }: { editId?: string }) {
                   </Button>
                 )}
                 {event && event.status !== 'CANCELLED' && event.status !== 'PUBLISHED' && (
-                  <Button variant="text" color="error" onClick={doCancel} disabled={busy} sx={{ ...orgSmallButtonSx, fontSize: 13 }}>
-                    {confirmCancel ? 'Click again to confirm cancel' : 'Cancel Event'}
+                  <Button variant="text" color="error" onClick={() => setConfirmCancel(true)} disabled={busy} sx={{ ...orgSmallButtonSx, fontSize: 13 }}>
+                    Cancel Event
                   </Button>
                 )}
               </Box>
@@ -435,16 +481,18 @@ export function EventWizardInner({ editId }: { editId?: string }) {
           </Card>
         </Box>
       )}
+      <ConfirmDialog
+        open={confirmCancel}
+        title="Cancel this event?"
+        description="The event will be marked CANCELLED and participants will no longer see it. This cannot be undone."
+        confirmLabel="Cancel Event"
+        busy={busy}
+        onCancel={() => setConfirmCancel(false)}
+        onConfirm={doCancel}
+      />
     </OrganizerShell>
   );
 }
-
-export const organizerNav: { label: string; to: string; end?: boolean }[] = [
-  { label: 'Dashboard', to: '/organizer', end: true },
-  { label: 'My Events', to: '/organizer/events' },
-  { label: 'Withdrawals', to: '/organizer/withdrawals' },
-  { label: 'Account', to: '/organizer/account' },
-];
 
 export function EventCreatePage() {
   return (

@@ -34,6 +34,7 @@ export interface OrganizerItem {
   email?: string | null;
   upiId?: string | null;
   status: OrganizerStatus;
+  isActive?: boolean;
   createdAt: string;
   updatedAt: string;
   userId?: string | null;
@@ -69,6 +70,8 @@ export interface FormFieldDef {
   type: FormFieldType;
   required?: boolean;
   options?: string[];
+  /** Optional help text shown under the question (ignored by validation). */
+  description?: string;
 }
 
 /** Team member group: repeat the nested fields based on a "number of members" question. */
@@ -91,12 +94,27 @@ export interface FormPaymentConfig {
   upiId?: string;
 }
 
+/** Optional visual theme for a registration form. All fields optional and
+ *  ignored by backend validation — purely presentational, fully
+ *  backward-compatible with forms that omit it. */
+export interface FormTheme {
+  /** Cover/header image URL shown at the top of the participant form. */
+  headerImageUrl?: string;
+  /** 'light' | 'bepart' (brand tint) | 'dark'. Defaults to light. */
+  theme?: 'light' | 'bepart' | 'dark';
+  questionFont?: 'default' | 'serif' | 'mono';
+  questionSize?: 'sm' | 'md' | 'lg';
+  answerFont?: 'default' | 'serif' | 'mono';
+  answerSize?: 'sm' | 'md' | 'lg';
+}
+
 /** Registration form blueprint stored on the event (never modified by participants). */
 export interface FormStructure {
   title: string;
   description?: string;
   sections: FormSectionDef[];
   payment?: FormPaymentConfig;
+  theme?: FormTheme;
 }
 
 /** A participant's answers keyed by field name. Checkbox answers are arrays. */
@@ -104,21 +122,29 @@ export type FormDataValue = string | string[];
 export type FormDataRecord = Record<string, FormDataValue | undefined>;
 
 export interface EventItem {
-  id: number;
+  id: string;
   eventName: string;
   description?: string | null;
   date: string;
   slots: number;
   closingTime: string;
   status: EventStatus;
+  isActive?: boolean;
   formStructure?: FormStructure | null;
-  posterUrl?: string | null;
+  posterSquareUrl?: string | null;
+  posterRectangleUrl?: string | null;
   paymentRequired: boolean;
   createdAt: string;
   updatedAt: string;
   organizerId: string;
   organizer?: Pick<OrganizerItem, 'id' | 'name'> | null;
+  hasCoupon?: boolean;
   _count?: { registrations?: number };
+}
+
+// Preferred event artwork: wide banner first, then square, then nothing.
+export function eventPoster(event: Pick<EventItem, 'posterRectangleUrl' | 'posterSquareUrl'> | null | undefined): string | null {
+  return event?.posterRectangleUrl || event?.posterSquareUrl || null;
 }
 
 export interface EventPayload {
@@ -148,18 +174,22 @@ export type OrganizerListResponse = OrganizerItem[] | Paged<OrganizerItem>;
 export type RegistrationListResponse = RegistrationItem[] | Paged<RegistrationItem>;
 export type WithdrawalListResponse = WithdrawalItem[] | Paged<WithdrawalItem>;
 
+export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
+
 export interface RegistrationItem {
   registrationId: string;
   phone: string;
   formData?: FormDataRecord | null;
-  eventId: number;
+  paymentStatus?: PaymentStatus;
+  checkedInAt?: string | null;
+  eventId: string;
   createdAt: string;
   updatedAt: string;
   event?: EventItem | null;
 }
 
 export interface RegistrationPayload {
-  eventId: number;
+  eventId: string;
   phone: string;
   formData: FormDataRecord;
 }
@@ -167,6 +197,16 @@ export interface RegistrationPayload {
 /** Public ticket lookup returns the registration with its event plus a shareable URL. */
 export interface TicketItem extends RegistrationItem {
   ticketUrl: string;
+}
+
+export interface CheckInResult {
+  registrationId: string;
+  checkedInAt?: string | null;
+  alreadyCheckedIn?: boolean;
+  message?: string;
+  phone?: string;
+  formData?: FormDataRecord | null;
+  event?: Pick<EventItem, 'id' | 'eventName' | 'date' | 'organizerId'> | null;
 }
 
 export type WithdrawalStatus = 'REQUESTED' | 'PROCESSING' | 'PAID' | 'REJECTED';
@@ -178,18 +218,62 @@ export interface WithdrawalItem {
   status: WithdrawalStatus;
   transactionId?: string | null;
   proofUrl?: string | null;
+  rejectionReason?: string | null;
   requestedAt: string;
   paidAt?: string | null;
   createdAt: string;
-  eventId: number;
+  eventId: string;
   organizerId: string;
   organizer?: OrganizerItem | null;
   event?: EventItem | null;
 }
 
 export interface WithdrawalPayload {
-  eventId: number;
+  eventId: string;
   amount: number;
+}
+
+export interface PaymentItem {
+  id: string;
+  registrationId?: string | null;
+  eventId?: string | null;
+  phone?: string | null;
+  amount: number;
+  originalAmount?: number | null;
+  discountAmount?: number | null;
+  couponCode?: string | null;
+  status: PaymentStatus;
+  createdAt: string;
+  updatedAt: string;
+  event?: EventItem | null;
+  registration?: RegistrationItem | null;
+}
+
+export type CouponDiscountType = 'PERCENTAGE' | 'FIXED';
+
+export interface CouponItem {
+  id: string;
+  code: string;
+  eventId: string;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  isActive: boolean;
+  isUsed?: boolean;
+  usedCount?: number;
+  usageLimit?: number | null;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CouponPayload {
+  discountType: CouponDiscountType;
+  discountValue: number;
+  isActive?: boolean;
+  usageLimit?: number | null;
+  startsAt?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface ConfirmPaidPayload {

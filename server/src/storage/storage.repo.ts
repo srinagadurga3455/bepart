@@ -7,6 +7,8 @@ export class StorageRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // Event — R2 square/rectangle only
+  // Event IDs are UUID strings (see Prisma schema): pass through as string,
+  // never Number(id). Preserves friend's UUID fix.
   findEventById(id: string) {
     return this.prisma.event.findUnique({
       where: { id },

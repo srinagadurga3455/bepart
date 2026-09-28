@@ -42,6 +42,7 @@ export class EventsService {
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
     if (!organizer) throw new NotFoundException('Organizer profile not found');
     if (organizer.status !== 'APPROVED') throw new ForbiddenException(`Only APPROVED organizers can create events (current: ${organizer.status})`);
+    if ((organizer as any).isActive === false) throw new ForbiddenException('Organizer account is deactivated. Contact support to reactivate.');
     const event = await this.eventsRepo.createEvent({
       eventName: dto.eventName.trim(),
       description: dto.description?.trim(),
@@ -80,7 +81,7 @@ export class EventsService {
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(50, Math.max(1, query.limit || 10));
     const skip = (page - 1) * limit;
-    const where: any = { status: EventStatus.PUBLISHED };
+    const where: any = { status: EventStatus.PUBLISHED, isActive: true, organizer: { isActive: true } };
     if (query.search) where.eventName = { contains: query.search, mode: 'insensitive' };
     const [data, total] = await Promise.all([
       this.eventsRepo.findEvents(where, skip, limit, { date: 'asc' }, { organizer: { select: { id: true, name: true } }, _count: { select: { registrations: true, coupons: { where: { isActive: true } } } } }),
@@ -109,6 +110,9 @@ export class EventsService {
     const event = await this.eventsRepo.findEventByIdWithOrganizer(id);
     if (!event) throw new NotFoundException('Event not found');
     if (event.status !== EventStatus.PUBLISHED) throw new NotFoundException('Event not found');
+    if ((event as any).isActive === false || (event as any).organizer?.isActive === false) {
+      throw new NotFoundException('Event not found');
+    }
     return { ...event, hasCoupon: await this.couponsRepo.hasActiveCouponForEvent(id) };
   }
 
@@ -116,6 +120,7 @@ export class EventsService {
     const event = await this.eventsRepo.findEventFormStructure(id);
     if (!event) throw new NotFoundException('Event not found');
     if (event.status !== EventStatus.PUBLISHED) throw new NotFoundException('Event not found');
+    if ((event as any).isActive === false) throw new NotFoundException('Event not found');
     return event.formStructure || { title: 'Registration', description: '', sections: [] };
   }
 
@@ -173,6 +178,7 @@ export class EventsService {
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
     if (!organizer || event.organizerId !== organizer.id) throw new ForbiddenException('You do not own this event');
     if (organizer.status !== 'APPROVED') throw new ForbiddenException('Organizer not approved');
+    if ((organizer as any).isActive === false) throw new ForbiddenException('Organizer account is deactivated');
     EventPolicy.assertTransition(event.status, EventStatus.PUBLISHED);
     return this.eventsRepo.updateEventStatus(id, EventStatus.PUBLISHED);
   }

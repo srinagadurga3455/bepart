@@ -4,7 +4,7 @@ import {
   TextField, Typography,
 } from '@mui/material';
 import { withdrawalsApi } from '../api/withdrawals';
-import { formatINR } from '../../../app/utils/format';
+import { formatINR, paiseToRupees, rupeesToPaise } from '../../../app/utils/format';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { EventItem, WithdrawalItem } from '../../../app/types';
 import { orgFormFieldSx, orgPrimaryButtonSx } from '../../components/organizerStyles';
@@ -20,15 +20,18 @@ interface WithdrawDialogProps {
 }
 
 // Withdrawal request dialog. UPI comes from the organizer profile (read-only);
-// amount is validated against the available balance. Never marks paid.
+// amount is entered in RUPEES, validated against the available balance, and
+// converted to backend PAISE on submit. Never marks paid.
 export default function WithdrawDialog({ open, event, finance, withdrawals, upiId, onClose, onRequested }: WithdrawDialogProps) {
+  // finance.collected is rupees (registrations x fee); backend withdrawal
+  // amounts are paise — normalize to rupees for the balance math.
   const collected = finance?.collected || 0;
   const reserved = (withdrawals || [])
     .filter((w) => ['REQUESTED', 'PROCESSING'].includes(w.status))
-    .reduce((s, w) => s + (Number(w.amount) || 0), 0);
+    .reduce((s, w) => s + paiseToRupees(w.amount), 0);
   const paid = (withdrawals || [])
     .filter((w) => w.status === 'PAID')
-    .reduce((s, w) => s + (Number(w.amount) || 0), 0);
+    .reduce((s, w) => s + paiseToRupees(w.amount), 0);
   const available = Math.max(0, collected - reserved - paid);
   const hasOpen = (withdrawals || []).some((w) => ['REQUESTED', 'PROCESSING'].includes(w.status));
 
@@ -53,7 +56,7 @@ export default function WithdrawDialog({ open, event, finance, withdrawals, upiI
     }
     setBusy(true);
     try {
-      await withdrawalsApi.create({ eventId: event!.id, amount: value });
+      await withdrawalsApi.create({ eventId: event!.id, amount: rupeesToPaise(value) });
       onRequested();
       onClose();
     } catch (err) {

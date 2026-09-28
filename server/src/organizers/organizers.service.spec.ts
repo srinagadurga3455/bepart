@@ -24,7 +24,9 @@ const mockOrganizersRepo: any = {
   createOtp: jest.fn().mockResolvedValue({ id: 'otp1' }),
   createOrganizerWithUser: jest.fn(),
   deactivateTransaction: jest.fn(),
+  reactivateTransaction: jest.fn(),
   updateUserPhone: jest.fn().mockResolvedValue({}),
+  updateUserEmail: jest.fn().mockResolvedValue({}),
   updateUserActive: jest.fn().mockResolvedValue({}),
 };
 
@@ -72,10 +74,53 @@ describe('OrganizersService - Phase 2', () => {
 
   it('should reactivate the linked user on approve', async () => {
     mockOrganizersRepo.findOrganizerById.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.REJECTED });
-    mockOrganizersRepo.updateOrganizerStatus.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.APPROVED });
+    mockOrganizersRepo.reactivateTransaction.mockResolvedValue([{ id: 'o1', userId: 'u1', status: OrganizerStatus.APPROVED, isActive: true }]);
     const res = await service.approve('o1');
     expect(res.status).toBe(OrganizerStatus.APPROVED);
-    expect(mockOrganizersRepo.updateUserActive).toHaveBeenCalledWith('u1', true);
+    expect(mockOrganizersRepo.reactivateTransaction).toHaveBeenCalledWith('o1', 'u1');
+  });
+
+  it('should cascade event visibility on approve (reactivateTransaction restores events)', async () => {
+    mockOrganizersRepo.findOrganizerById.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.REJECTED, isActive: false });
+    mockOrganizersRepo.reactivateTransaction.mockResolvedValue([{ id: 'o1', status: OrganizerStatus.APPROVED, isActive: true }]);
+    const res = await service.approve('o1');
+    expect((res as any).isActive).toBe(true);
+    // deactivate path uses the cascade transaction (organizer + user + events)
+    mockOrganizersRepo.findOrganizerById.mockResolvedValue({ id: 'o1', userId: 'u1' });
+    mockOrganizersRepo.deactivateTransaction.mockResolvedValue([{ id: 'o1', status: OrganizerStatus.REJECTED, isActive: false }]);
+    await service.deactivate('o1');
+    expect(mockOrganizersRepo.deactivateTransaction).toHaveBeenCalledWith('o1', 'u1');
+  });
+
+  it('should reject event management for deactivated organizers', async () => {
+    mockOrganizersRepo.findOrganizerByUserId.mockResolvedValue({ id: 'o1', userId: 'u1', status: OrganizerStatus.APPROVED, isActive: false });
+    await expect(service.getApprovedOrganizerByUserId('u1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('should let organizers update their own profile (updateMy) with user sync', async () => {
+    mockOrganizersRepo.findOrganizerByUserId.mockResolvedValue({ id: 'o1', userId: 'u1', email: 'old@example.com' });
+    mockOrganizersRepo.findUserByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.findOrganizerByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.updateOrganizer.mockResolvedValue({ id: 'o1', name: 'New Name' });
+    const res = await service.updateMy('u1', { name: 'New Name', phone: '+91 98765-43224', upiId: 'club@okhdfc' } as any);
+    expect(mockOrganizersRepo.updateOrganizer).toHaveBeenCalledWith('o1', expect.objectContaining({ name: 'New Name', phone: '+919876543224', upiId: 'club@okhdfc' }));
+    expect(mockOrganizersRepo.updateUserPhone).toHaveBeenCalledWith('u1', '+919876543224');
+    expect(res.name).toBe('New Name');
+  });
+
+  it('should sync login email on updateMy with uniqueness checks', async () => {
+    mockOrganizersRepo.findOrganizerByUserId.mockResolvedValue({ id: 'o1', userId: 'u1', email: 'old@example.com' });
+    mockOrganizersRepo.findUserByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.findOrganizerByEmail.mockResolvedValue(null);
+    mockOrganizersRepo.updateOrganizer.mockResolvedValue({ id: 'o1', email: 'new@example.com' });
+    await service.updateMy('u1', { email: 'new@example.com' } as any);
+    expect(mockOrganizersRepo.updateUserEmail).toHaveBeenCalledWith('u1', 'new@example.com');
+  });
+
+  it('should reject updateMy email already registered', async () => {
+    mockOrganizersRepo.findOrganizerByUserId.mockResolvedValue({ id: 'o1', userId: 'u1', email: 'old@example.com' });
+    mockOrganizersRepo.findUserByEmail.mockResolvedValue({ id: 'other', email: 'taken@example.com' });
+    await expect(service.updateMy('u1', { email: 'taken@example.com' } as any)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('should allow ADMIN reject', async () => {

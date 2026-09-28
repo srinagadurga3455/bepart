@@ -4,6 +4,7 @@ import { OrganizersService } from './organizers.service';
 import { CreateOrganizerDto } from './dto/create-organizer.dto';
 import { AdminCreateOrganizerDto } from './dto/admin-create-organizer.dto';
 import { UpdateOrganizerDto } from './dto/update-organizer.dto';
+import { UpdateMyOrganizerDto } from './dto/update-my-organizer.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/constants/roles';
@@ -36,6 +37,18 @@ export class OrganizersController {
   @ApiResponse({ status: 404, description: 'Not found' })
   findMy(@CurrentUser() user: RequestUser) {
     return this.organizersService.findMyOrganizer(user.userId || user.id);
+  }
+
+  @Patch('me')
+  @Roles(Role.ORGANIZER)
+  @ApiOperation({ summary: 'Update my organizer profile', description: 'Organizer self-service: name, description, phone, email (synced to login user with uniqueness checks), upiId. Status cannot be changed here.' })
+  @ApiBody({ type: UpdateMyOrganizerDto })
+  @ApiResponse({ status: 200, description: 'Updated profile' })
+  @ApiResponse({ status: 403, description: 'ORGANIZER only' })
+  @ApiResponse({ status: 404, description: 'Organizer profile not found' })
+  @ApiResponse({ status: 409, description: 'Email already registered/used' })
+  updateMy(@Body() dto: UpdateMyOrganizerDto, @CurrentUser() user: RequestUser) {
+    return this.organizersService.updateMy(user.userId || user.id, dto);
   }
 
   @Get()

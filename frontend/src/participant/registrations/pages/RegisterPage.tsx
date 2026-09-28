@@ -6,6 +6,7 @@ import { eventsApi } from '../../events/api/events';
 import { registrationsApi } from '../api/registrations';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { FormDataRecord } from '../../../app/types';
+import { eventPoster } from '../../../app/types';
 import RegistrationFlow from '../components/RegistrationFlow';
 
 interface RegisterVariables {
@@ -40,7 +41,7 @@ export default function RegisterPage() {
     // Backend requires phone BOTH top-level and inside formData (validated against formStructure).
     // Keep the full dynamic formData intact; only add the top-level phone from it.
     mutationFn: (values: RegisterVariables) => registrationsApi.create({
-      eventId: parseInt(eventId!),
+      eventId: eventId!,
       phone: values.phone,
       formData: { ...values } as FormDataRecord,
     }),
@@ -84,14 +85,6 @@ export default function RegisterPage() {
     createRegistration.mutate({ ...formData, phone });
   };
 
-  const handleRegistrationSuccess = () => {
-    navigate('/events');
-  };
-
-  const handleBackToEvent = () => {
-    navigate(`/events/${eventId}`);
-  };
-
   const isFormEmpty = !formStructure?.sections?.length;
 
   return (
@@ -103,6 +96,14 @@ export default function RegisterPage() {
         </Link>
 
         <Card elevation={0} variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
+          {eventPoster(event) && (
+            <Box
+              component="img"
+              src={eventPoster(event)!}
+              alt={`${event.eventName} banner`}
+              sx={{ width: '100%', maxHeight: 280, objectFit: 'cover', display: 'block' }}
+            />
+          )}
           <CardContent sx={{ p: { xs: 3, md: 4 } }}>
             <Stack direction="column" spacing={2} sx={{ mb: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -182,8 +183,8 @@ export default function RegisterPage() {
                 formStructure={formStructure}
                 onSubmit={handleFormSubmit}
                 isSubmitting={createRegistration.isPending}
+                eventId={eventId!}
                 event={event}
-                onBackToEvent={handleBackToEvent}
               />
             )}
 
@@ -194,7 +195,7 @@ export default function RegisterPage() {
                   variant="contained"
                   onClick={() => {
                     if (!event) return;
-                    createRegistration.mutate({ phone: '', eventId: parseInt(eventId!), formData: {} });
+                    createRegistration.mutate({ phone: '', eventId: eventId!, formData: {} });
                   }}
                   disabled={createRegistration.isPending}
                   sx={{ mt: 1.5 }}

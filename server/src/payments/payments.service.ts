@@ -143,7 +143,11 @@ export class PaymentsService {
       couponCode: couponCode as any,
       originalAmount: originalAmount ?? dto.amount,
       discountAmount,
-      pendingFormData: (dto as any).pendingFormData ?? null,
+      // Pending answers ride along so organizer PAID confirmation creates the
+      // Registration atomically (see updatePaymentStatusAtomic).
+      // Accept both `pendingFormData` (canonical DB/API name) and `formData`
+      // (frontend alias) to preserve both flows.
+      pendingFormData: (dto as any).pendingFormData ?? (dto as any).formData ?? null,
     } as any);
 
     // Razorpay order creation (only when Razorpay is configured).
@@ -343,6 +347,14 @@ export class PaymentsService {
     const payment = await this.paymentsRepo.findPaymentByRegistrationId(registrationId);
     if (!payment) throw new NotFoundException('Payment not found for registration');
     return payment;
+  }
+
+  // Transaction listing: ADMIN sees all, ORGANIZER sees own events' payments.
+  async findMine(userId: string, role: string) {
+    if (role === 'ADMIN') return this.paymentsRepo.findAllPayments();
+    const organizer = await this.paymentsRepo.findOrganizerByUserId(userId);
+    if (!organizer) return [];
+    return this.paymentsRepo.findByOrganizerId(organizer.id);
   }
 
   async updateStatus(id: string, dto: UpdatePaymentStatusDto, actor: RequestUser) {

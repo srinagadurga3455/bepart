@@ -47,6 +47,63 @@ export class PaymentsRepository {
     return this.prisma.registration.findFirst({ where: { phone, eventId } });
   }
 
+  // Payment.eventId is a LOOSE scalar field (no Prisma relation), so event
+  // details ride along via registration->event plus an explicit batch lookup
+  // for pending payments that carry only eventId.
+  // Preserved from product UX/registration improvements (transaction listing).
+  private paymentListInclude() {
+    return {
+      registration: {
+        select: {
+          registrationId: true,
+          phone: true,
+          paymentStatus: true,
+          event: { select: { id: true, eventName: true, date: true, organizerId: true } },
+        },
+      },
+      coupon: { select: { id: true, code: true } },
+    };
+  }
+
+  private async attachEvents(payments: any[]) {
+    const ids = [...new Set(payments.map((p) => p.eventId).filter(Boolean))];
+    const byId = new Map<string, any>();
+    if (ids.length > 0) {
+      const evts = await this.prisma.event.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, eventName: true, date: true, organizerId: true },
+      });
+      for (const e of evts) byId.set(e.id, e);
+    }
+    return payments.map((p) => ({
+      ...p,
+      event: (p.eventId && byId.get(p.eventId)) || p.registration?.event || null,
+    }));
+  }
+
+  // Organizer transaction listing: payments for events owned by the organizer.
+  // Payment.eventId is a loose field (no Prisma relation), so scope by the
+  // organizer's event IDs plus the registration->event ownership path.
+  async findByOrganizerId(organizerId: string) {
+    const events = await this.prisma.event.findMany({ where: { organizerId }, select: { id: true } });
+    const ids = events.map((e) => e.id);
+    if (ids.length === 0) return [];
+    const payments = await this.prisma.payment.findMany({
+      where: { OR: [{ eventId: { in: ids } }, { registration: { event: { organizerId } } }] },
+      include: this.paymentListInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+    return this.attachEvents(payments);
+  }
+
+  async findAllPayments() {
+    const payments = await this.prisma.payment.findMany({
+      include: this.paymentListInclude(),
+      orderBy: { createdAt: 'desc' },
+    });
+    return this.attachEvents(payments);
+  }
+
   createPendingPayment(data: { phone: string;  eventId: string; amount: number; status?: PaymentStatus; couponId?: string | null; couponCode?: string | null; originalAmount?: number | null; discountAmount?: number | null; pendingFormData?: any }) {
     return this.prisma.payment.create({
       data: {

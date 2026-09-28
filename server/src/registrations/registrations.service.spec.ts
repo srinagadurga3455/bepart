@@ -219,13 +219,92 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     expect(mockTx.registration.create).not.toHaveBeenCalled();
   });
 
-  it('should reject coupon on a free event', async () => {
-    const eventId = '550e8400-e29b-41d4-a716-446655440032';
+  it('should reject coupon on a free event', async () => {    const eventId = '550e8400-e29b-41d4-a716-446655440032';
     mockTx.event.findUnique.mockResolvedValue({ id: eventId, status: 'PUBLISHED', slots: 10, closingTime: new Date(Date.now() + 1000000), paymentRequired: false });
     mockTx.registration.count.mockResolvedValue(0);
     mockTx.registration.findFirst.mockResolvedValue(null);
     await expect(service.create({ phone: '+91 9999999999', eventId, formData: {}, couponCode: 'CLUB20' } as any))
       .rejects.toThrow(/free event/);
     expect(mockTx.registration.create).not.toHaveBeenCalled();
+  });
+
+  it('should reject registration for a deactivated (isActive=false) event', async () => {
+    const eventId = '550e8400-e29b-41d4-a716-446655440033';
+    mockTx.event.findUnique.mockResolvedValue({ id: eventId, status: 'PUBLISHED', isActive: false, slots: 10, closingTime: new Date(Date.now() + 1000000), paymentRequired: false });
+    await expect(service.create({ phone: '+91 9999999999', eventId, formData: {} } as any))
+      .rejects.toThrow(/closed for this event/);
+    expect(mockTx.registration.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('RegistrationsService - QR check-in', () => {
+  let service: RegistrationsService;
+  const mockRepo: any = {
+    findByRegistrationId: jest.fn(),
+    findOrganizerByUserId: jest.fn(),
+    findEventById: jest.fn(),
+    markCheckedIn: jest.fn(),
+    clearCheckedIn: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [
+        RegistrationsService,
+        { provide: RegistrationsRepository, useValue: mockRepo },
+        { provide: require('../coupons/coupons.service').CouponsService, useValue: {} },
+      ],
+    }).compile();
+    service = mod.get(RegistrationsService);
+  });
+
+  const ownEvent = { id: 'ev1', organizerId: 'org1' };
+
+  it('should check in a valid ticket for the owning organizer', async () => {
+    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: null });
+    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'u1' });
+    mockRepo.findEventById.mockResolvedValue(ownEvent);
+    mockRepo.markCheckedIn.mockResolvedValue({ registrationId: 'r1', checkedInAt: new Date() });
+    const res: any = await service.checkIn('r1', 'u1', 'ORGANIZER');
+    expect(mockRepo.markCheckedIn).toHaveBeenCalledWith('r1');
+    expect(res.alreadyCheckedIn).toBe(false);
+    expect(res.checkedInAt).toBeDefined();
+  });
+
+  it('should report already-checked-in tickets without double check-in', async () => {
+    const at = new Date();
+    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: at });
+    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'u1' });
+    mockRepo.findEventById.mockResolvedValue(ownEvent);
+    const res: any = await service.checkIn('r1', 'u1', 'ORGANIZER');
+    expect(mockRepo.markCheckedIn).not.toHaveBeenCalled();
+    expect(res.alreadyCheckedIn).toBe(true);
+    expect(res.checkedInAt).toEqual(at);
+  });
+
+  it('should 404 on unknown ticket id', async () => {
+    mockRepo.findByRegistrationId.mockResolvedValue(null);
+    const { NotFoundException } = require('@nestjs/common');
+    await expect(service.checkIn('missing', 'u1', 'ORGANIZER')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('should 403 when another organizer scans the ticket', async () => {
+    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: null });
+    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org2', userId: 'u2' });
+    mockRepo.findEventById.mockResolvedValue(ownEvent);
+    await expect(service.checkIn('r1', 'u2', 'ORGANIZER')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(mockRepo.markCheckedIn).not.toHaveBeenCalled();
+  });
+
+  it('should allow ADMIN to check in any ticket and to revert check-in', async () => {
+    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: null });
+    mockRepo.markCheckedIn.mockResolvedValue({ registrationId: 'r1', checkedInAt: new Date() });
+    const res: any = await service.checkIn('r1', 'admin1', 'ADMIN');
+    expect(res.alreadyCheckedIn).toBe(false);
+    mockRepo.clearCheckedIn.mockResolvedValue({ registrationId: 'r1', checkedInAt: null });
+    const undone: any = await service.undoCheckIn('r1', 'admin1', 'ADMIN');
+    expect(mockRepo.clearCheckedIn).toHaveBeenCalledWith('r1');
+    expect(undone.checkedInAt).toBeNull();
   });
 });

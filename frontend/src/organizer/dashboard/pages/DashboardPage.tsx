@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Box, CircularProgress, Grid, MenuItem, Select, Typography } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import { Box, Button, Grid, MenuItem, Select, Typography } from '@mui/material';
 import {
   AccountBalanceWalletOutlined,
   CalendarMonthOutlined,
@@ -14,12 +15,15 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { eventsApi } from '../../events/api/events';
 import { registrationsApi } from '../../events/api/registrations';
+import { withdrawalsApi } from '../../withdrawals/api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
-import { formatINR } from '../../../app/utils/format';
+import { formatINR, formatPaise } from '../../../app/utils/format';
 import { financeByEvent } from '../../events/utils/eventData';
-import type { EventItem, RegistrationItem } from '../../../app/types';
+import type { EventItem, RegistrationItem, WithdrawalItem } from '../../../app/types';
 import OrganizerShell from '../../components/OrganizerShell';
 import { useOrganizerIdentity } from '../../components/useOrganizerIdentity';
+import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 
 const CARD_SX = {
   bgcolor: '#FFFFFF',
@@ -119,7 +123,7 @@ function TrendChart({ days }: { days: DayBucket[] }) {
 
 const DONUT_COLORS = ['#2557F5', '#7C3AED', '#60A5FA', '#A78BFA', '#34D399', '#F59E0B', '#EF4444', '#14B8A6'];
 
-function ByEventDonut({ events, regCountByEvent }: { events: EventItem[]; regCountByEvent: Record<number, number> }) {
+function ByEventDonut({ events, regCountByEvent }: { events: EventItem[]; regCountByEvent: Record<string, number> }) {
   const R = 62;
   const C = 2 * Math.PI * R;
   const total = events.reduce((s, e) => s + (regCountByEvent[e.id] || 0), 0);
@@ -228,15 +232,18 @@ function DashboardContent() {
   const { data: eventsRes, isLoading: eventsLoading } = useQuery({
     queryKey: ['events', 'my'], queryFn: () => eventsApi.listMy({ page: 1, limit: 50 }),
   });
-  const { data: regsRes, isLoading: regsLoading } = useQuery({
+  const { data: regsRes, isLoading: regsLoading, error: regsError } = useQuery({
     queryKey: ['registrations', 'mine'], queryFn: () => registrationsApi.list(),
+  });
+  const { data: wdsRes } = useQuery({
+    queryKey: ['withdrawals', 'mine'], queryFn: () => withdrawalsApi.mine(),
   });
 
   const name = organizer?.name || user?.name || user?.email || 'Organizer';
   const events: EventItem[] = unwrapList<EventItem>(eventsRes);
   const registrations: RegistrationItem[] = unwrapList<RegistrationItem>(regsRes);
 
-  const regCountByEvent: Record<number, number> = {};
+  const regCountByEvent: Record<string, number> = {};
   registrations.forEach((r) => {
     regCountByEvent[r.eventId] = (regCountByEvent[r.eventId] || 0) + 1;
   });
@@ -245,8 +252,12 @@ function DashboardContent() {
   const published = events.filter((e) => e.status === 'PUBLISHED').length;
   const eventsWithRegs = events.filter((e) => (regCountByEvent[e.id] || 0) > 0).length;
 
-  // Total Check-ins: the backend exposes no check-in field, so the real value is 0.
-  const totalCheckins = 0;
+  // Total check-ins from the backend QR check-in field.
+  const totalCheckins = registrations.filter((r) => !!r.checkedInAt).length;
+
+  const withdrawals: WithdrawalItem[] = wdsRes ? unwrapList<WithdrawalItem>(wdsRes) : [];
+  const openWithdrawal = withdrawals.find((w) => w.status === 'REQUESTED' || w.status === 'PROCESSING') || null;
+  const paidOut = withdrawals.filter((w) => w.status === 'PAID').reduce((s, w) => s + Number(w.amount || 0), 0);
 
   const days = last7Days(registrations);
 
@@ -259,16 +270,19 @@ function DashboardContent() {
   ];
 
   if (eventsLoading || regsLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
+    return <LoadingState message="Loading dashboard…" />;
+  }
+  if (regsError) {
+    return <ErrorState message="Could not load dashboard data." />;
   }
 
   return (
     <Box>
       <Typography sx={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: '#101828' }}>
-        Good Day, {name} 👋
+        Welcome back, {name}
       </Typography>
       <Typography sx={{ fontSize: 13, color: '#667085', mb: 2.5 }}>
-        Here&apos;s how your {name} events are performing across registrations, tickets, and revenue.
+        Here&apos;s how your events are performing across registrations, check-ins, and revenue.
       </Typography>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -301,10 +315,31 @@ function DashboardContent() {
             icon={<ConfirmationNumberOutlined sx={{ fontSize: 21 }} />}
             label="Total Check-ins"
             value={String(totalCheckins)}
-            hint="Check-ins tracking not available"
+            hint={totalCheckins === 0 ? 'No check-ins yet.' : `Across ${registrations.length} registrations`}
           />
         </Grid>
       </Grid>
+
+      {/* Payout status */}
+      <Box sx={{ ...CARD_SX, p: 2.25, mb: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ flex: '1 1 220px', minWidth: 0 }}>
+          <Typography sx={{ fontSize: 14.5, fontWeight: 800, color: '#101828' }}>
+            Payouts
+          </Typography>
+          <Typography sx={{ fontSize: 12.5, color: '#667085' }}>
+            {openWithdrawal
+              ? `${formatPaise(openWithdrawal.amount)} ${openWithdrawal.status.toLowerCase()} — waiting for admin.`
+              : paidOut > 0
+                ? `${formatPaise(paidOut)} paid out to you so far.`
+                : 'No payouts yet. Withdraw collected fees from an event.'}
+          </Typography>
+        </Box>
+        {openWithdrawal && <WithdrawalStatusChip status={openWithdrawal.status} />}
+        <Button size="small" variant="outlined" component={RouterLink} to="/organizer/withdrawals"
+          sx={{ borderRadius: 999, textTransform: 'none', fontWeight: 700 }}>
+          View Withdrawals
+        </Button>
+      </Box>
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 5 }}>

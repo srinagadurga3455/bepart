@@ -4,6 +4,8 @@ import { Box, Card, CardContent, TextField, Button, Typography, Alert, Step, Ste
 import { useForm } from 'react-hook-form';
 import { authApi, isEmailIdentifier } from '../api/auth';
 import { apiErrorMessage } from '../../app/api/client';
+import { BePartMark } from '../../app/components/BePartBrand';
+import { BEPART_SUPPORT } from '../../app/config/support';
 
 function roleHome(role: string | undefined): string {
   if (role === 'ADMIN') return '/admin';
@@ -79,15 +81,21 @@ export default function LoginPage() {
   };
 
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh', px: 2 }}>
-      <Card sx={{ width: '100%', maxWidth: 440, borderRadius: 3 }}>
-        <CardContent sx={{ p: 4 }}>
-          <Typography variant="h4" gutterBottom align="center" sx={{ fontWeight: 800, letterSpacing: '-0.04em' }}>
-            BePart Login
-          </Typography>
-          <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 3 }}>
-            Organizers sign in with their registered phone number, admins with email — both via a one-time passcode.
-          </Typography>
+    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', px: 2, py: 4, bgcolor: '#F7F7F4' }}>
+      <Box sx={{ width: '100%', maxWidth: 440 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+          <RouterLink to="/" style={{ textDecoration: 'none' }} aria-label="BePart home">
+            <BePartMark />
+          </RouterLink>
+        </Box>
+        <Card sx={{ width: '100%', borderRadius: 4 }}>
+          <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+            <Typography variant="h4" gutterBottom align="center" sx={{ fontWeight: 800, letterSpacing: '-0.04em' }}>
+              Welcome to BePart
+            </Typography>
+            <Typography variant="body2" color="text.secondary" align="center" sx={{ mb: 3 }}>
+              One sign-in for everyone — organizers use their registered phone number, admins use email. We send a one-time passcode.
+            </Typography>
           <Stepper activeStep={step} sx={{ mb: 3 }}>
             <Step><StepLabel>Email or phone</StepLabel></Step>
             <Step><StepLabel>Passcode</StepLabel></Step>
@@ -137,8 +145,14 @@ export default function LoginPage() {
             Looking for events?{' '}
             <RouterLink to="/events">Browse as a participant</RouterLink>
           </Typography>
+          <Box sx={{ mt: 1.5, textAlign: 'center' }}>
+            <Typography variant="caption" color="text.secondary">
+              New organizer? Ask your admin for an account, or contact {BEPART_SUPPORT.email}.
+            </Typography>
+          </Box>
         </CardContent>
       </Card>
+      </Box>
     </Box>
   );
 }

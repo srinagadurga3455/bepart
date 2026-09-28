@@ -1,26 +1,30 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
   Alert, Avatar, Box, Button, Card, CardContent, CircularProgress, Divider,
   TextField, Typography,
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSnackbar } from 'notistack';
 import { withdrawalsApi } from '../api/withdrawals';
-import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { formatEventDate, formatPaise } from '../../../app/utils/format';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { WithdrawalStatus } from '../../../app/types';
 import AdminShell from '../../components/AdminShell';
 import ProofButton from '../../../app/components/ProofButton';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import ConfirmDialog from '../../../app/components/ConfirmDialog';
+import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 
 const OPEN: WithdrawalStatus[] = ['REQUESTED', 'PROCESSING'];
 
 function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmReject, setConfirmReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [screenshot, setScreenshot] = useState<File | null>(null);
 
@@ -36,14 +40,15 @@ function DetailContent({ id }: { id: string | undefined }) {
 
   const run = async (fn: () => Promise<unknown>, okMsg: string, failMsg: string) => {
     setError('');
-    setSuccess('');
     setBusy(true);
     try {
       await fn();
       refresh();
-      setSuccess(okMsg);
+      enqueueSnackbar(okMsg, { variant: 'success' });
     } catch (err) {
-      setError(apiErrorMessage(err, failMsg));
+      const msg = apiErrorMessage(err, failMsg);
+      setError(msg);
+      enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setBusy(false);
     }
@@ -67,10 +72,10 @@ function DetailContent({ id }: { id: string | undefined }) {
   };
 
   if (isLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
+    return <LoadingState message="Loading withdrawal…" />;
   }
   if (loadError || !w) {
-    return <Alert severity="error">Withdrawal not found.</Alert>;
+    return <ErrorState message="Withdrawal not found." />;
   }
 
   const isOpen = OPEN.includes(w.status);
@@ -78,7 +83,6 @@ function DetailContent({ id }: { id: string | undefined }) {
   return (
     <Box>
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-      {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
       <Card variant="outlined" sx={{ borderRadius: 3, mb: 3 }}>
         <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -88,35 +92,35 @@ function DetailContent({ id }: { id: string | undefined }) {
             </Avatar>
             <Box sx={{ flex: '1 1 200px' }}>
               <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}>
-                {formatINR(w.amount)}
+                {formatPaise(w.amount)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {w.event?.eventName || `Event ${w.eventId}`} · Requested {formatEventDate(w.requestedAt)}
+                {w.event?.eventName || `Event ${w.eventId}`} Â· Requested {formatEventDate(w.requestedAt)}
               </Typography>
             </Box>
             <WithdrawalStatusChip status={w.status} />
           </Box>
 
           <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Organizer</Typography>
-          <Typography variant="body2" color="text.secondary">{w.organizer?.name || '—'}</Typography>
-          <Typography variant="body2" color="text.secondary">Organizer Phone: {w.organizer?.phone || '—'}</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Organizer UPI ID: {w.organizer?.upiId || '—'}</Typography>
+          <Typography variant="body2" color="text.secondary">{w.organizer?.name || 'â€”'}</Typography>
+          <Typography variant="body2" color="text.secondary">Organizer Phone: {w.organizer?.phone || 'â€”'}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Organizer UPI ID: {w.organizer?.upiId || 'â€”'}</Typography>
 
           <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Event</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             {w.event?.eventName || `Event ${w.eventId}`}
-            {w.event?.date ? ` · ${formatEventDate(w.event.date)}` : ''}
+            {w.event?.date ? ` Â· ${formatEventDate(w.event.date)}` : ''}
           </Typography>
 
           <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Amount</Typography>
-          <Typography variant="body1" sx={{ mb: 2, fontWeight: 700 }}>{formatINR(w.amount)}</Typography>
+          <Typography variant="body1" sx={{ mb: 2, fontWeight: 700 }}>{formatPaise(w.amount)}</Typography>
 
           {w.status === 'PAID' && (
             <>
               <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Payment Record</Typography>
-              <Typography variant="body2" color="text.secondary">Transaction ID: {w.transactionId || '—'}</Typography>
+              <Typography variant="body2" color="text.secondary">Transaction ID: {w.transactionId || 'â€”'}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Paid On: {w.paidAt ? formatEventDate(w.paidAt) : '—'}
+                Paid On: {w.paidAt ? formatEventDate(w.paidAt) : 'â€”'}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Payment Proof:</Typography>
               <ProofButton withdrawalId={w.id} />
@@ -130,7 +134,7 @@ function DetailContent({ id }: { id: string | undefined }) {
           <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Payment Confirmation</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Transfer {formatINR(w.amount)} manually to UPI ID <strong>{w.organizer?.upiId || '—'}</strong>, then record the payment below.
+              Transfer {formatPaise(w.amount)} manually to UPI ID <strong>{w.organizer?.upiId || 'â€”'}</strong>, then record the payment below.
             </Typography>
             <TextField
               label="Transaction ID *"
@@ -150,7 +154,7 @@ function DetailContent({ id }: { id: string | undefined }) {
             </Box>
             <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 2 }}>
               <Button variant="contained" color="success" disabled={busy} onClick={markPaid}>
-                {busy ? 'Working…' : 'Mark as Paid'}
+                {busy ? 'Workingâ€¦' : 'Mark as Paid'}
               </Button>
               {w.status === 'REQUESTED' && (
                 <Button variant="outlined" disabled={busy} onClick={() => run(() => withdrawalsApi.process(id!), 'Marked as processing.', 'Could not update.')}>
@@ -161,21 +165,52 @@ function DetailContent({ id }: { id: string | undefined }) {
                 variant="text"
                 color="error"
                 disabled={busy}
-                onClick={() => {
-                  if (!confirmReject) { setConfirmReject(true); return; }
-                  setConfirmReject(false);
-                  run(() => withdrawalsApi.reject(id!), 'Withdrawal rejected.', 'Could not reject.');
-                }}
+                onClick={() => setConfirmReject(true)}
               >
-                {confirmReject ? 'Click again to confirm reject' : 'Reject'}
+                Reject
               </Button>
             </Box>
           </CardContent>
         </Card>
       )}
 
+      <ConfirmDialog
+        open={confirmReject}
+        title="Reject withdrawal?"
+        description={
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              The organizer will see your reason. The requested amount is released for a new request.
+            </Typography>
+            <TextField
+              label="Rejection reason *"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              fullWidth
+              size="small"
+              multiline
+              rows={2}
+              placeholder="e.g. UPI ID mismatch — update it and request again"
+            />
+          </Box>
+        }
+        confirmLabel="Reject"
+        busy={busy}
+        onCancel={() => setConfirmReject(false)}
+        onConfirm={() => {
+          if (!rejectReason.trim()) {
+            setError('Rejection reason is required.');
+            return;
+          }
+          setConfirmReject(false);
+          const reason = rejectReason.trim();
+          setRejectReason('');
+          run(() => withdrawalsApi.reject(id!, reason), 'Withdrawal rejected.', 'Could not reject.');
+        }}
+      />
+
       <Divider sx={{ my: 2 }} />
-      <Button variant="text" component={RouterLink} to="/admin/withdrawals">← Back to Withdrawal Requests</Button>
+      <Button variant="text" component={RouterLink} to="/admin/withdrawals">â† Back to Withdrawal Requests</Button>
     </Box>
   );
 }

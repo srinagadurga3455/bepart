@@ -8,12 +8,23 @@ import type {
   FormFieldType,
   FormSectionDef,
   FormStructure,
+  FormTheme,
 } from '../../../app/types';
 
 /** A stored/builder question with the builder's ephemeral React key. */
 export interface BuilderField extends FormFieldDef {
   key: string;
+  /** Optional help text shown under the question (persisted, rendered by participants). */
+  description?: string;
+  /** System participant fields (Name/Phone): fixed stored name, always
+   *  required, cannot be deleted. Labels stay editable. */
+  system?: 'name' | 'phone';
 }
+
+/** Canonical stored names for the two system fields. The ticket flow reads
+ *  top-level `phone`, and ticket display prefers `fullName`. */
+export const SYSTEM_NAME_FIELD = 'fullName';
+export const SYSTEM_PHONE_FIELD = 'phone';
 
 export interface BuilderMemberGroup {
   repeatFrom: string;
@@ -33,6 +44,8 @@ export interface BuilderForm {
   title: string;
   description: string;
   sections: BuilderSection[];
+  /** Optional visual theme (persisted on the stored formStructure). */
+  theme?: FormTheme;
 }
 
 export interface RepeatCandidate {
@@ -103,6 +116,37 @@ function groupCountFromField(field: NumericOptionsField): number {
 
 export function emptyField(): BuilderField {
   return { key: newKey(), name: '', label: '', type: 'text', required: true, options: [] };
+}
+
+function systemNameField(): BuilderField {
+  return {
+    key: newKey(), name: SYSTEM_NAME_FIELD, label: 'Name', type: 'text',
+    required: true, description: '', options: [], system: 'name',
+  };
+}
+
+function systemPhoneField(): BuilderField {
+  return {
+    key: newKey(), name: SYSTEM_PHONE_FIELD, label: 'Phone Number', type: 'tel',
+    required: true, description: '', options: [], system: 'phone',
+  };
+}
+
+/** A fresh form always starts as Section 1 "Participant Details" with the
+ *  two required system fields, so organizers never have to create them. */
+export function defaultNewForm(): BuilderForm {
+  return {
+    title: 'Untitled form',
+    description: '',
+    sections: [{
+      key: newKey(),
+      id: `section_${Date.now().toString(36)}_0`,
+      title: 'Participant Details',
+      description: '',
+      fields: [systemNameField(), systemPhoneField()],
+      memberGroup: null,
+    }],
+  };
 }
 
 export function emptySection(index = 0): BuilderSection {
@@ -194,6 +238,8 @@ export function toBuilderForm(formStructure: FormStructure | null | undefined): 
         label: stripMemberLabel(field.label, 1) || suffix,
         type: field.type,
         required: !!field.required,
+        description: (field as { description?: string }).description || '',
+        system: detectSystem(field as { name?: string; type?: string }),
         options: Array.isArray(field.options) ? [...field.options] : [],
       }));
       // find repeat source: first all-numeric dropdown in earlier sections,
@@ -217,6 +263,8 @@ export function toBuilderForm(formStructure: FormStructure | null | undefined): 
         label: f.label || '',
         type: f.type,
         required: f.required !== false,
+        description: (f as { description?: string }).description || '',
+        system: detectSystem(f as { name?: string; type?: string }),
         options: Array.isArray(f.options) ? [...f.options] : [],
       }));
   });
@@ -225,6 +273,7 @@ export function toBuilderForm(formStructure: FormStructure | null | undefined): 
     title: formStructure?.title || '',
     description: formStructure?.description || '',
     sections: builderSections,
+    theme: formStructure?.theme ? { ...formStructure.theme } : undefined,
   };
 }
 
@@ -236,9 +285,27 @@ function cleanOptions(field: NumericOptionsField): string[] {
 }
 
 function storedField(name: string, def: BuilderField, required: boolean | undefined): FormFieldDef {
-  const out: FormFieldDef = { name, label: def.label.trim(), type: def.type, required: !!required };
+  // System fields keep their canonical stored names and stay required no
+  // matter how the label was edited — the ticket flow depends on them.
+  const sysName = def.system === 'name' ? SYSTEM_NAME_FIELD : def.system === 'phone' ? SYSTEM_PHONE_FIELD : null;
+  const out: FormFieldDef = {
+    name: sysName || name,
+    label: def.label.trim(),
+    type: def.type,
+    required: def.system ? true : !!required,
+  };
   if (OPTION_TYPES.includes(def.type)) out.options = cleanOptions(def);
+  const desc = (def as { description?: string }).description?.trim();
+  if (desc) (out as { description?: string }).description = desc;
   return out;
+}
+
+/** Reattach system flags when loading a stored form: canonical Name/Phone
+ *  fields (by stored name + type) are treated as system fields. */
+export function detectSystem(def: { name?: string; type?: string }): 'name' | 'phone' | undefined {
+  if ((def.name === SYSTEM_NAME_FIELD || def.name === 'name') && def.type === 'text') return 'name';
+  if (def.name === SYSTEM_PHONE_FIELD && def.type === 'tel') return 'phone';
+  return undefined;
 }
 
 export function toFormStructure(builder: BuilderForm): FormStructure {
@@ -297,6 +364,7 @@ export function toFormStructure(builder: BuilderForm): FormStructure {
             label: `Member ${n} ${def.label.trim()}`,
             type: def.type,
             required: n === 1 ? !!def.required : false,
+            ...((def as { description?: string }).description?.trim() ? { description: (def as { description?: string }).description!.trim() } : {}),
             ...(OPTION_TYPES.includes(def.type) ? { options: cleanOptions(def) } : {}),
           });
         }
@@ -314,6 +382,7 @@ export function toFormStructure(builder: BuilderForm): FormStructure {
     title: builder.title.trim(),
     ...(builder.description?.trim() ? { description: builder.description.trim() } : {}),
     sections,
+    ...(builder.theme && Object.keys(builder.theme).length > 0 ? { theme: { ...builder.theme } } : {}),
   };
 }
 

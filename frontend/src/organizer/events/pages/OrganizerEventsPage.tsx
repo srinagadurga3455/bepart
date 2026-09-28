@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Typography } from '@mui/material';
-import { Add } from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, Chip, Typography } from '@mui/material';
+import { Add, CalendarMonthOutlined } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { eventsApi } from '../api/events';
 import { organizersApi } from '../../account/api/organizers';
@@ -21,16 +21,18 @@ import {
 } from '../../components/organizerStyles';
 import WithdrawDialog from '../../withdrawals/components/WithdrawDialog';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import EmptyState from '../../../app/components/EmptyState';
+import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 import { apiErrorMessage } from '../../../app/api/client';
 
 function EventsContent() {
   const queryClient = useQueryClient();
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [withdrawEvent, setWithdrawEvent] = useState<EventItem | null>(null);
   const [requestedMsg, setRequestedMsg] = useState('');
 
-  const { data: eventsRes, isLoading } = useQuery({
+  const { data: eventsRes, isLoading, error: loadError } = useQuery({
     queryKey: ['events', 'my'], queryFn: () => eventsApi.listMy({ page: 1, limit: 50 }),
   });
   const { data: regsRes } = useQuery({
@@ -54,7 +56,7 @@ function EventsContent() {
     queryClient.invalidateQueries({ queryKey: ['withdrawals', 'mine'] });
   };
 
-  const act = async (id: number, fn: (eid: number) => Promise<unknown>) => {
+  const act = async (id: string, fn: (eid: string) => Promise<unknown>) => {
     setError('');
     setBusyId(id);
     try {
@@ -68,7 +70,10 @@ function EventsContent() {
   };
 
   if (isLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
+    return <LoadingState message="Loading your events…" />;
+  }
+  if (loadError) {
+    return <ErrorState message="Could not load your events." />;
   }
 
   return (
@@ -100,7 +105,13 @@ function EventsContent() {
       )}
 
       {events.length === 0 ? (
-        <Alert severity="info">No events yet. Create your first event!</Alert>
+        <EmptyState
+          icon={CalendarMonthOutlined}
+          title="No events yet"
+          description="Create your first event — details, registration form, posters, then publish."
+          actionLabel="Create Event"
+          actionHref="/organizer/events/create"
+        />
       ) : (
         events.map((event) => {
           const fin = finance[event.id] || { count: 0, fee: 0, collected: 0 };

@@ -1,11 +1,19 @@
-import { Box, Container, Divider, Stack, Typography } from '@mui/material';
-import { Facebook, Instagram, X } from '@mui/icons-material';
+import { Box, Container, Divider, Link as MuiLink, Stack, Typography } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import { BePartMark } from '../../app/components/BePartBrand';
+import { BEPART_SUPPORT } from '../../app/config/support';
 
-const links = ['Terms', 'Contact', 'Help'];
-const socials = [
-  { label: 'Facebook', icon: Facebook },
-  { label: 'Instagram', icon: Instagram },
-  { label: 'X', icon: X },
+const links = [
+  { label: 'Events', to: '/events' },
+  { label: 'How ticketing works', to: '/ticketing' },
+  { label: 'Support & FAQ', to: '/support' },
+  { label: 'Contact Us', to: '/contact' },
+];
+
+const legalLinks = [
+  { label: 'Privacy Policy', to: '/privacy-policy' },
+  { label: 'Terms & Conditions', to: '/terms' },
+  { label: 'Refund Policy', to: '/refund-policy' },
 ];
 
 function Footer() {
@@ -17,84 +25,53 @@ function Footer() {
           spacing={{ xs: 3, md: 0 }}
           sx={{ alignItems: 'center', justifyContent: 'space-between' }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-            <Box
-              sx={{
-                width: 26,
-                height: 26,
-                borderRadius: '9px',
-                bgcolor: 'text.primary',
-                color: '#fff',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
+          <BePartMark size={26} fontSize={18} />
+
+          <Stack direction="row" spacing={{ xs: 2, md: 2.5 }} sx={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+            {links.map((link) => (
               <Typography
+                key={link.label}
+                component={RouterLink}
+                to={link.to}
                 sx={{
-                  fontFamily: 'Manrope, sans-serif',
-                  fontSize: 13,
-                  fontWeight: 800,
-                  lineHeight: 1,
-                  letterSpacing: '-0.08em',
+                  color: 'text.secondary',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                  '&:hover': { color: 'primary.main' },
                 }}
               >
-                b.
+                {link.label}
               </Typography>
-            </Box>
-            <Typography
-              sx={{
-                fontFamily: 'Manrope, sans-serif',
-                fontSize: 18,
-                fontWeight: 800,
-                letterSpacing: '-0.06em',
-              }}
-            >
-              BePart
-            </Typography>
-          </Box>
+            ))}
+          </Stack>
 
-          <Stack direction="row" spacing={{ xs: 3, md: 4 }} sx={{ alignItems: 'center' }}>
-            <Stack direction="row" spacing={{ xs: 2.5, md: 3.5 }}>
-              {links.map((link) => (
-                <Typography
-                  key={link}
-                  sx={{
-                    color: 'text.secondary',
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    '&:hover': { color: 'primary.main' },
-                  }}
-                >
-                  {link}
-                </Typography>
-              ))}
-            </Stack>
+          <Stack direction="row" spacing={{ xs: 2, md: 2.5 }} sx={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+            {legalLinks.map((link) => (
+              <Typography
+                key={link.label}
+                component={RouterLink}
+                to={link.to}
+                sx={{
+                  color: 'text.secondary',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                  '&:hover': { color: 'primary.main' },
+                }}
+              >
+                {link.label}
+              </Typography>
+            ))}
+          </Stack>
 
-            <Divider orientation="vertical" flexItem sx={{ height: 18, alignSelf: 'center' }} />
-
-            <Stack direction="row" spacing={1.5}>
-              {socials.map(({ label, icon: Icon }) => (
-                <Box
-                  key={label}
-                  aria-label={label}
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: 'text.secondary',
-                    cursor: 'pointer',
-                    '&:hover': { color: 'primary.main', borderColor: 'primary.main' },
-                  }}
-                >
-                  <Icon sx={{ fontSize: 16 }} />
-                </Box>
-              ))}
-            </Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 2 }} sx={{ alignItems: 'center' }}>
+            <MuiLink href={`mailto:${BEPART_SUPPORT.email}`} sx={{ fontSize: 13.5, color: 'text.secondary', textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
+              {BEPART_SUPPORT.email}
+            </MuiLink>
+            <MuiLink href={BEPART_SUPPORT.phoneHref} sx={{ fontSize: 13.5, color: 'text.secondary', textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
+              {BEPART_SUPPORT.phone}
+            </MuiLink>
           </Stack>
         </Stack>
 

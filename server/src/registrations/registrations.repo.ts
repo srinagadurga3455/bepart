@@ -38,6 +38,8 @@ export class RegistrationsRepository {
         registrationId: true,
         eventId: true,
         formData: true,
+        paymentStatus: true,
+        checkedInAt: true,
         createdAt: true,
         event: {
           select: {
@@ -49,6 +51,8 @@ export class RegistrationsRepository {
             closingTime: true,
             status: true,
             formStructure: true,
+            posterSquareUrl: true,
+            posterRectangleUrl: true,
             organizer: { select: { name: true } },
           },
         },
@@ -70,5 +74,21 @@ export class RegistrationsRepository {
 
   deleteByRegistrationId(registrationId: string) {
     return this.prisma.registration.delete({ where: { registrationId } });
+  }
+
+  markCheckedIn(registrationId: string) {
+    return this.prisma.registration.update({
+      where: { registrationId },
+      data: { checkedInAt: new Date() },
+      include: { event: { select: { id: true, eventName: true, date: true, organizerId: true } } },
+    });
+  }
+
+  clearCheckedIn(registrationId: string) {
+    return this.prisma.registration.update({
+      where: { registrationId },
+      data: { checkedInAt: null },
+      include: { event: { select: { id: true, eventName: true, date: true, organizerId: true } } },
+    });
   }
 }

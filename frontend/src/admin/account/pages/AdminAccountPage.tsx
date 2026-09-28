@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { Alert, Avatar, Box, Card, CardContent, Chip, CircularProgress, Typography } from '@mui/material';
-import { LogoutOutlined, PersonOutlined } from '@mui/icons-material';
+import { LogoutOutlined, PersonOutlined, SupportAgentOutlined } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { authApi } from '../../../auth/api/auth';
 import AdminShell from '../../components/AdminShell';
 import { logout } from '../../../auth/components/RequireRole';
+import { BEPART_SUPPORT } from '../../../app/config/support';
+import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 
 const BLUE = '#2557F5';
 const INK = '#101828';
@@ -106,9 +108,9 @@ export default function AdminAccountPage() {
               Profile
             </Typography>
             {isLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
+              <LoadingState message="Loading account…" />
             ) : error || !user ? (
-              <Alert severity="error">Could not load account.</Alert>
+              <ErrorState message="Could not load account." />
             ) : (
               <>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pb: 2.5, borderBottom: '1px solid', borderColor: CARD_BORDER }}>
@@ -132,6 +134,15 @@ export default function AdminAccountPage() {
                 <SectionTitle>Personal Details</SectionTitle>
                 <FieldRow label="Full Name" value={user.name} />
                 <FieldRow label="Role" value={roleLabel(user.role)} />
+
+                <SectionTitle>Platform Support Contact</SectionTitle>
+                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start', bgcolor: '#F8FAFF', border: '1px solid #E3EBFF', borderRadius: 2, p: 2 }}>
+                  <SupportAgentOutlined sx={{ color: '#2557F5', mt: 0.25 }} />
+                  <Box>
+                    <Typography sx={{ fontSize: 14, fontWeight: 700, color: INK }}>{BEPART_SUPPORT.email}</Typography>
+                    <Typography sx={{ fontSize: 13.5, color: MUTED }}>{BEPART_SUPPORT.phone} · {BEPART_SUPPORT.hours}</Typography>
+                  </Box>
+                </Box>
               </>
             )}
           </CardContent>

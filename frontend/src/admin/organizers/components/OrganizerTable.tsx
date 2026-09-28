@@ -2,13 +2,16 @@ import { useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  InputAdornment, Pagination, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputAdornment, InputLabel, MenuItem, Pagination, Select, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import { Add, GroupsOutlined, Search } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSnackbar } from 'notistack';
 import { organizersApi } from '../api/organizers';
 import { apiErrorMessage, unwrapList } from '../../../app/api/client';
+import { validateEmail, validatePhone, validateRequired, validateUpiId } from '../../../app/utils/validators';
+import ConfirmDialog from '../../../app/components/ConfirmDialog';
+import EmptyState from '../../../app/components/EmptyState';
 import type { OrganizerItem, OrganizerPayload } from '../../../app/types';
 
 const PAGE_SIZE = 8;
@@ -46,6 +49,7 @@ interface OrganizerFormDialogProps {
 
 function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormDialogProps) {
   const isEdit = !!initial;
+  const { enqueueSnackbar } = useSnackbar();
   const [form, setForm] = useState<OrganizerFormState>({
     name: initial?.name || '',
     email: initial?.email || initial?.user?.email || '',
@@ -61,9 +65,14 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
 
   const submit = async () => {
     setError('');
-    if (!form.name.trim()) { setError('Name is required.'); return; }
-    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) { setError('Enter a valid email.'); return; }
-    if (!form.upiId.trim()) { setError('UPI ID is required.'); return; }
+    const nameErr = validateRequired(form.name, 'Name');
+    if (nameErr) { setError(nameErr); return; }
+    const emailErr = validateEmail(form.email);
+    if (emailErr) { setError(emailErr); return; }
+    const phoneErr = validatePhone(form.phone);
+    if (phoneErr) { setError(phoneErr); return; }
+    const upiErr = validateUpiId(form.upiId);
+    if (upiErr) { setError(upiErr); return; }
     setBusy(true);
     try {
       const payload: OrganizerPayload = {
@@ -75,10 +84,14 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
       };
       if (isEdit && initial) await organizersApi.update(initial.id, payload);
       else await organizersApi.create(payload);
-      onSaved(isEdit ? 'Organizer updated successfully.' : 'Organizer created successfully.');
+      const msg = isEdit ? 'Organizer updated successfully.' : 'Organizer created successfully';
+      enqueueSnackbar(msg, { variant: 'success' });
+      onSaved(msg);
       onClose();
     } catch (err) {
-      setError(apiErrorMessage(err, `Could not ${isEdit ? 'update' : 'create'} organizer.`));
+      const msg = apiErrorMessage(err, `Could not ${isEdit ? 'update' : 'create'} organizer.`);
+      setError(msg);
+      enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setBusy(false);
     }
@@ -117,7 +130,9 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
 
 export default function OrganizerTable() {
   const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<OrganizerItem | null>(null);
@@ -132,9 +147,13 @@ export default function OrganizerTable() {
   });
   const all: OrganizerItem[] = data ? unwrapList<OrganizerItem>(data) : [];
   const q = search.trim().toLowerCase();
-  const organizers = q
-    ? all.filter((o) => (o.name || '').toLowerCase().includes(q) || (o.email || o.user?.email || '').toLowerCase().includes(q))
-    : all;
+  const organizers = all.filter((o) => {
+    if (statusFilter !== 'all' && (isOrganizerActive(o) ? 'active' : 'inactive') !== statusFilter) return false;
+    if (!q) return true;
+    return (o.name || '').toLowerCase().includes(q)
+      || (o.email || o.user?.email || '').toLowerCase().includes(q)
+      || (o.phone || '').toLowerCase().includes(q);
+  });
 
   const totalPages = Math.max(1, Math.ceil(organizers.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -163,8 +182,11 @@ export default function OrganizerTable() {
       await fn(id);
       refresh();
       setSuccess(okMsg);
+      enqueueSnackbar(okMsg, { variant: 'success' });
     } catch (err) {
-      setError(apiErrorMessage(err, failMsg));
+      const msg = apiErrorMessage(err, failMsg);
+      setError(msg);
+      enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setBusyId(null);
     }
@@ -189,18 +211,34 @@ export default function OrganizerTable() {
             placeholder="Search organizers"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search sx={{ fontSize: 17, color: '#98A2B3' }} />
-                </InputAdornment>
-              ),
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search sx={{ fontSize: 17, color: '#98A2B3' }} />
+                  </InputAdornment>
+                ),
+              },
             }}
             sx={{
               width: { xs: '100%', sm: 220 },
               '& .MuiOutlinedInput-root': { borderRadius: '9px', fontSize: 13, bgcolor: '#FFFFFF' },
             }}
           />
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 150 } }}>
+            <InputLabel id="org-status-filter">Status</InputLabel>
+            <Select
+              labelId="org-status-filter"
+              label="Status"
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value as 'all' | 'active' | 'inactive'); setPage(1); }}
+              sx={{ borderRadius: '9px', fontSize: 13, bgcolor: '#FFFFFF' }}
+            >
+              <MenuItem value="all">All statuses</MenuItem>
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="inactive">Inactive</MenuItem>
+            </Select>
+          </FormControl>
           <Button
             variant="contained"
             startIcon={<Add sx={{ fontSize: 17 }} />}
@@ -219,34 +257,17 @@ export default function OrganizerTable() {
         ) : loadError ? (
           <Alert severity="error">Could not load organizers.</Alert>
         ) : organizers.length === 0 ? (
-          <Box
-            sx={{
-              border: '1px solid #EEF1F7',
-              borderRadius: '10px',
-              py: 6,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 1.5,
-            }}
-          >
-            <Box
-              sx={{
-                width: 52,
-                height: 52,
-                borderRadius: '50%',
-                bgcolor: '#EAF1FF',
-                color: '#2557F5',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <GroupsOutlined sx={{ fontSize: 26 }} />
-            </Box>
-            <Typography sx={{ fontSize: 13.5, color: '#667085' }}>
-              {q ? 'No organizers match your search.' : 'No organizers found.'}
-            </Typography>
-          </Box>
+          <EmptyState
+            icon={GroupsOutlined}
+            title={q || statusFilter !== 'all' ? 'No organizers match your filters' : 'No organizers yet'}
+            description={
+              q || statusFilter !== 'all'
+                ? 'Try a different search term or status filter.'
+                : 'Create your first organizer to start onboarding event hosts.'
+            }
+            actionLabel={q || statusFilter !== 'all' ? undefined : 'Create Organizer'}
+            onAction={q || statusFilter !== 'all' ? undefined : () => setCreateOpen(true)}
+          />
         ) : (
           <TableContainer sx={{ overflowX: 'auto', border: '1px solid #EEF1F7', borderRadius: '10px' }}>
             <Table size="small" sx={{ minWidth: 780 }}>
@@ -323,53 +344,33 @@ export default function OrganizerTable() {
         />
       )}
 
-      <Dialog open={!!confirmDeactId} onClose={() => setConfirmDeactId(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Deactivate organizer?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            The organizer will lose access, but their data and event history are preserved. You can activate them again later.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setConfirmDeactId(null)} disabled={!!busyId}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={!!busyId}
-            onClick={() => {
-              const id = confirmDeactId;
-              setConfirmDeactId(null);
-              if (id) runStatusChange(id, (oid) => organizersApi.deactivate(oid), 'Organizer deactivated.', 'Deactivation failed.');
-            }}
-          >
-            {busyId ? 'Working…' : 'Deactivate'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={!!confirmDeactId}
+        title="Deactivate organizer?"
+        description="The organizer will lose access and their events will be hidden from participants until reactivation. Event history and data are preserved."
+        confirmLabel="Deactivate"
+        busy={!!busyId}
+        onCancel={() => setConfirmDeactId(null)}
+        onConfirm={() => {
+          const id = confirmDeactId;
+          setConfirmDeactId(null);
+          if (id) runStatusChange(id, (oid) => organizersApi.deactivate(oid), 'Organizer deactivated. Their events are now hidden.', 'Deactivation failed.');
+        }}
+      />
 
-      <Dialog open={!!confirmDeleteId} onClose={() => setConfirmDeleteId(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete organizer?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            This permanently removes the organizer and their account. This action cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button onClick={() => setConfirmDeleteId(null)} disabled={!!busyId}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={!!busyId}
-            onClick={() => {
-              const id = confirmDeleteId;
-              setConfirmDeleteId(null);
-              if (id) runStatusChange(id, (oid) => organizersApi.remove(oid), 'Organizer deleted.', 'Could not delete organizer.');
-            }}
-          >
-            {busyId ? 'Working…' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title="Delete Organizer?"
+        description="This action cannot be undone. All associated data will be affected according to the platform's deletion rules."
+        confirmLabel="Delete"
+        busy={!!busyId}
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          const id = confirmDeleteId;
+          setConfirmDeleteId(null);
+          if (id) runStatusChange(id, (oid) => organizersApi.remove(oid), 'Organizer deleted.', 'Could not delete organizer.');
+        }}
+      />
 
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
         <Pagination

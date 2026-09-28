@@ -1,14 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import type { BaseSyntheticEvent } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import type { FieldValues } from 'react-hook-form';
-import { Box, Typography, Button, Divider, Alert, Stack } from '@mui/material';
-import { KeyboardArrowLeft, KeyboardArrowRight } from '@mui/icons-material';
+import { Box, Typography, Button, Divider, Alert, Stack, Chip } from '@mui/material';
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { KeyboardArrowLeft, KeyboardArrowRight, LockOutlined } from '@mui/icons-material';
+import { useAuth } from '../../../auth/components/RequireRole';
 import ProgressIndicator from './ProgressIndicator';
 import FormSection from './FormSection';
 import ReviewStep from './ReviewStep';
 import PaymentStep from './PaymentStep';
-import SuccessState from './SuccessState';
 import {
   findCountFieldName,
   getSelectedCount,
@@ -31,22 +32,25 @@ interface RegistrationFlowProps {
   formStructure: FormStructure;
   onSubmit: (formData: FormDataRecord) => void;
   isSubmitting: boolean;
+  eventId: string;
   event?: FlowEventInfo;
-  onBackToEvent?: () => void;
+  // Organizer preview: renders the payment step as an explanation instead of
+  // calling the real payment API with a draft event.
+  previewMode?: boolean;
 }
 
 export default function RegistrationFlow({
   formStructure,
   onSubmit,
   isSubmitting,
+  eventId,
   event,
-  onBackToEvent,
+  previewMode = false,
 }: RegistrationFlowProps) {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [showReview, setShowReview] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [sectionErrors, setSectionErrors] = useState<Record<number, Record<string, string>>>({});
+  const [paidFormData, setPaidFormData] = useState<FormDataRecord | null>(null);
 
   // Paid events add a payment step after review. Amount lives on the event's
   // own formStructure (payment config), so no new model is involved.
@@ -56,6 +60,61 @@ export default function RegistrationFlow({
     : null;
 
   const methods = useForm({ mode: 'onChange' });
+
+  // Organizer-configured visual theme (optional, backward-compatible).
+  // Applied here so the builder preview AND the real participant flow render
+  // identically — one renderer, no separate fake preview.
+  const formTheme = formStructure?.theme;
+  const themeName = formTheme?.theme || 'light';
+  const muiTheme = useMemo(
+    () =>
+      createTheme({
+        palette: { mode: themeName === 'dark' ? 'dark' : 'light', primary: { main: '#2557F5' } },
+        typography: { fontFamily: '"DM Sans", sans-serif' },
+      }),
+    [themeName],
+  );
+  const FONT_STACKS: Record<string, string | undefined> = {
+    default: undefined,
+    serif: "Georgia, 'Times New Roman', serif",
+    mono: "ui-monospace, 'Cascadia Code', Menlo, monospace",
+  };
+  const SIZE_PX: Record<string, number> = { sm: 13, md: 15, lg: 17 };
+  const qFont = formTheme?.questionFont && formTheme.questionFont !== 'default' ? FONT_STACKS[formTheme.questionFont] : undefined;
+  const aFont = formTheme?.answerFont && formTheme.answerFont !== 'default' ? FONT_STACKS[formTheme.answerFont] : undefined;
+  const qSize = formTheme?.questionSize ? SIZE_PX[formTheme.questionSize] : undefined;
+  const aSize = formTheme?.answerSize ? SIZE_PX[formTheme.answerSize] : undefined;
+
+  // Account prefill (honest, minimal): participants normally register WITHOUT
+  // a BePart login (OTP login is ADMIN/ORGANIZER only), so name/mobile come
+  // from the form itself. But when the visitor IS signed in and their account
+  // has a name/phone, prefill matching empty fields and say so visibly —
+  // never silently. Values stay editable; nothing is stored twice.
+  const { user } = useAuth();
+  const [prefilled, setPrefilled] = useState<string[]>([]);
+  const prefillDone = useRef(false);
+  useEffect(() => {
+    if (prefillDone.current || !user) return;
+    const allNames = new Set<string>();
+    for (const s of formStructure?.sections || []) {
+      for (const f of s.fields || []) allNames.add(f.name);
+    }
+    const pick = (cands: string[]) => cands.find((c) => allNames.has(c));
+    const filled: string[] = [];
+    const nameField = user.name ? pick(['fullName', 'name', 'participantName', 'member1Name']) : undefined;
+    if (nameField && !methods.getValues(nameField)) {
+      methods.setValue(nameField, user.name, { shouldValidate: false });
+      filled.push(nameField);
+    }
+    const phoneField = user.phone ? pick(['phone', 'phoneNumber', 'mobile', 'mobileNumber', 'contactNumber']) : undefined;
+    if (phoneField && !methods.getValues(phoneField)) {
+      methods.setValue(phoneField, user.phone, { shouldValidate: false });
+      filled.push(phoneField);
+    }
+    prefillDone.current = true;
+    if (filled.length > 0) setPrefilled(filled);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const sections = formStructure?.sections || [];
   const totalSections = sections.length;
@@ -93,7 +152,6 @@ export default function RegistrationFlow({
       }
     }
 
-    setSectionErrors(prev => ({ ...prev, [currentSectionIndex]: errors }));
     return Object.keys(errors).length === 0;
   }, [methods, sections, currentSectionIndex, countFieldName]);
 
@@ -135,15 +193,12 @@ export default function RegistrationFlow({
     onSubmit(formData);
   };
 
-  const handleRegistrationSuccess = () => {
-    setShowSuccess(true);
-    setShowReview(false);
-  };
-
   const handleFormSubmit = (e?: BaseSyntheticEvent) => {
     // Paid events go to the payment step instead of submitting immediately.
-    // The registration is created only after a successful payment.
+    // Snapshot the reviewed answers so the payment step can send them as
+    // pendingFormData; the registration is created only after payment.
     if (isPaidEvent) {
+      setPaidFormData({ ...(methods.getValues() as FormDataRecord) });
       setShowPayment(true);
       return;
     }
@@ -161,15 +216,6 @@ export default function RegistrationFlow({
     completedSections.add(i);
   }
 
-  if (showSuccess) {
-    return (
-      <SuccessState
-        event={event}
-        onDone={onBackToEvent}
-      />
-    );
-  }
-
   if (!formStructure?.sections?.length) {
     return (
       <Alert severity="info" variant="filled" sx={{ mb: 3 }}>
@@ -179,8 +225,34 @@ export default function RegistrationFlow({
   }
 
   return (
-    <FormProvider {...methods}>
-      <Box sx={{ width: '100%' }}>
+    <ThemeProvider theme={muiTheme}>
+      <FormProvider {...methods}>
+      <Box
+        sx={{
+          width: '100%',
+          borderRadius: 2,
+          ...(themeName === 'dark'
+            ? { bgcolor: '#121212', p: { xs: 2, sm: 3 } }
+            : themeName === 'bepart'
+              ? { bgcolor: '#F4F7FF', borderTop: '4px solid', borderTopColor: 'primary.main', p: { xs: 2, sm: 3 }, borderRadius: 2 }
+              : {}),
+          ...(qFont || qSize
+            ? { '& .MuiTypography-root': { fontFamily: qFont, fontSize: qSize } }
+            : {}),
+          ...(aFont || aSize
+            ? { '& .MuiInputBase-input': { fontFamily: aFont, fontSize: aSize } }
+            : {}),
+        }}
+      >
+        {formTheme?.headerImageUrl ? (
+          <Box
+            component="img"
+            src={formTheme.headerImageUrl}
+            alt="Form header"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            sx={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 2, display: 'block', mb: 2.5 }}
+          />
+        ) : null}
         <ProgressIndicator
           sections={sections}
           currentIndex={currentSectionIndex}
@@ -188,11 +260,27 @@ export default function RegistrationFlow({
         />
 
         {showPayment ? (
-          <PaymentStep
-            event={event}
-            amount={feeAmount}
-            onBack={handleBack}
-          />
+          previewMode ? (
+            <Box sx={{ width: '100%' }}>
+              <Alert severity="info" sx={{ mb: 3 }}>
+                Paid events show a payment step here for participants (fee{feeAmount != null ? ` ${feeAmount}` : ''}, optional coupon).
+                No real payment is created in preview.
+              </Alert>
+              <Button variant="outlined" size="large" startIcon={<KeyboardArrowLeft />} onClick={handleBack}
+                sx={{ px: 4, py: 1.5, fontWeight: 600, borderRadius: 2 }}>
+                Back
+              </Button>
+            </Box>
+          ) : (
+            <PaymentStep
+              eventId={eventId}
+              event={event}
+              feeRupees={feeAmount}
+              formData={paidFormData || {}}
+              phone={typeof paidFormData?.phone === 'string' ? paidFormData.phone.trim() : ''}
+              onBack={handleBack}
+            />
+          )
         ) : showReview ? (
           <ReviewStep
             formStructure={formStructure}
@@ -222,11 +310,21 @@ export default function RegistrationFlow({
                     {currentSection.description}
                   </Typography>
                 )}
+                {prefilled.length > 0 && (
+                  <Alert severity="info" icon={<LockOutlined fontSize="small" />} sx={{ mt: 1.5 }}>
+                    Signed in as {user?.name || user?.email} — your name
+                    {prefilled.length > 1 ? ' and mobile number were' : ' was'} filled from your
+                    BePart account. You can still edit {prefilled.length > 1 ? 'them' : 'it'} below.
+                    <Box sx={{ mt: 1, display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                      <Chip size="small" icon={<LockOutlined />} label="BePart account field" variant="outlined" />
+                    </Box>
+                  </Alert>
+                )}
               </Box>
 
               <Divider sx={{ mb: 4 }} />
 
-              <Box sx={{ ml: '37.5px', borderLeft: '2px solid', borderColor: 'divider', pl: 3 }}>
+              <Box sx={{ ml: { xs: 0, sm: '37.5px' }, borderLeft: '2px solid', borderColor: 'divider', pl: { xs: 2, sm: 3 }, minWidth: 0 }}>
                 {visibleCurrentFields.map((field, fieldIndex) => (
                   <FormSection
                     key={`${currentSection.id}-${field.name}-${fieldIndex}`}
@@ -245,7 +343,7 @@ export default function RegistrationFlow({
 
             <Divider sx={{ my: 4 }} />
 
-            <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between' }}>
+            <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={2} sx={{ justifyContent: 'space-between' }}>
               <Button
                 variant="outlined"
                 size="large"
@@ -284,6 +382,7 @@ export default function RegistrationFlow({
           </>
         )}
       </Box>
-    </FormProvider>
+      </FormProvider>
+    </ThemeProvider>
   );
 }

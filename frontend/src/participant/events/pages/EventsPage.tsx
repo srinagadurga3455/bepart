@@ -1,20 +1,6 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Container,
-  Grid,
-  IconButton,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Container, FormControl, Grid, IconButton, InputLabel, MenuItem, Pagination, Select, TextField, Typography } from '@mui/material';
 import {
   AccessTime,
   ArrowForward,
@@ -23,13 +9,19 @@ import {
   CalendarMonth,
   ConfirmationNumber,
   GroupsOutlined,
-  Search,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { eventsApi } from '../api/events';
 import { unwrapList } from '../../../app/api/client';
-import { useAuth } from '../../../auth/components/RequireRole';
+import ParticipantNavbar from '../../components/ParticipantNavbar';
+import { formatINR } from '../../../app/utils/format';
+import { usePageMeta } from '../../../app/utils/pageMeta';
+import { eventPoster } from '../../../app/types';
+import EmptyState from '../../../app/components/EmptyState';
+import { SearchOffOutlined } from '@mui/icons-material';
 import type { EventItem } from '../../../app/types';
+
+const PAGE_SIZE = 9;
 
 const BLUE = '#2557F5';
 const INK = '#101828';
@@ -38,174 +30,20 @@ const CARD_BORDER = '#ECEEF4';
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return 'â€”';
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return 'â€”';
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
 function priceLabel(event: EventItem): string {
   if (!event.paymentRequired) return 'Free';
   const amount = event.formStructure?.payment?.amount;
-  return typeof amount === 'number' ? `₹${amount}` : 'Paid';
-}
-
-/** Correct BePart mark: blue circle with a white capital "B" (no dot). Local to this page. */
-function BePartMark() {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-      <Box
-        sx={{
-          width: 34,
-          height: 34,
-          borderRadius: '50%',
-          bgcolor: BLUE,
-          color: '#fff',
-          display: 'grid',
-          placeItems: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <Typography
-          sx={{
-            fontFamily: 'Manrope, sans-serif',
-            fontSize: 19,
-            fontWeight: 800,
-            lineHeight: 1,
-          }}
-        >
-          B
-        </Typography>
-      </Box>
-      <Typography
-        sx={{
-          fontFamily: 'Manrope, sans-serif',
-          fontSize: 21,
-          fontWeight: 800,
-          letterSpacing: '-0.05em',
-          color: INK,
-        }}
-      >
-        BePart
-      </Typography>
-    </Box>
-  );
-}
-
-function ExploreNavbar({
-  query,
-  onQuery,
-}: {
-  query: string;
-  onQuery: (value: string) => void;
-}) {
-  const navigate = useNavigate();
-  const { loading, user } = useAuth();
-
-  return (
-    <Box
-      component="header"
-      sx={{
-        bgcolor: '#FFFFFF',
-        borderBottom: '1px solid',
-        borderColor: CARD_BORDER,
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-      }}
-    >
-      <Container maxWidth="lg">
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: { xs: 1.5, md: 3 },
-            py: { xs: 1.5, md: 2 },
-          }}
-        >
-          <Box
-            onClick={() => navigate('/')}
-            sx={{ cursor: 'pointer', flexShrink: 0 }}
-            role="link"
-            aria-label="BePart home"
-          >
-            <BePartMark />
-          </Box>
-
-          <TextField
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            placeholder="Search for events, clubs, or keywords..."
-            size="small"
-            fullWidth
-            slotProps={{
-              input: {
-                startAdornment: <Search sx={{ fontSize: 20, color: MUTED, mr: 1 }} />,
-              },
-            }}
-            sx={{
-              maxWidth: 560,
-              mx: 'auto',
-              display: { xs: 'none', sm: 'flex' },
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 999,
-                bgcolor: '#F5F7FF',
-                fontSize: 14,
-              },
-            }}
-          />
-
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
-            {loading ? (
-              <CircularProgress size={24} />
-            ) : user ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                <Box sx={{ textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
-                  <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: INK, lineHeight: 1.2 }}>
-                    {user.name}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12, color: MUTED, lineHeight: 1.2 }}>{user.role}</Typography>
-                </Box>
-                <Avatar sx={{ width: 38, height: 38, bgcolor: BLUE, fontWeight: 800 }}>
-                  {user.name?.charAt(0)?.toUpperCase() || 'U'}
-                </Avatar>
-              </Box>
-            ) : (
-              <Button
-                variant="contained"
-                onClick={() => navigate('/login')}
-                sx={{ borderRadius: 999, boxShadow: 'none', px: 3 }}
-              >
-                Login
-              </Button>
-            )}
-          </Box>
-        </Box>
-
-        <TextField
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          placeholder="Search for events, clubs, or keywords..."
-          size="small"
-          fullWidth
-          slotProps={{
-            input: {
-              startAdornment: <Search sx={{ fontSize: 20, color: MUTED, mr: 1 }} />,
-            },
-          }}
-          sx={{
-            display: { xs: 'flex', sm: 'none' },
-            pb: 1.5,
-            '& .MuiOutlinedInput-root': { borderRadius: 999, bgcolor: '#F5F7FF', fontSize: 14 },
-          }}
-        />
-      </Container>
-    </Box>
-  );
+  return typeof amount === 'number' ? formatINR(amount) : 'Paid';
 }
 
 function HeroSection({ featured }: { featured: EventItem | null }) {
@@ -280,7 +118,7 @@ function HeroSection({ featured }: { featured: EventItem | null }) {
         </Box>
         {featured && (
           <Typography sx={{ mt: 2.5, fontSize: 13, color: MUTED }}>
-            Featured: {featured.eventName} · {formatDate(featured.date)} · {priceLabel(featured)}
+            Featured: {featured.eventName} Â· {formatDate(featured.date)} Â· {priceLabel(featured)}
           </Typography>
         )}
       </Box>
@@ -295,10 +133,10 @@ function HeroSection({ featured }: { featured: EventItem | null }) {
           boxShadow: '0 24px 60px -24px rgba(37, 87, 245, 0.28)',
         }}
       >
-        {featured?.posterUrl ? (
+        {featured && eventPoster(featured) ? (
           <Box
             component="img"
-            src={featured.posterUrl}
+            src={eventPoster(featured)!}
             alt={`${featured.eventName} poster`}
             sx={{ width: '100%', height: { xs: 220, md: 300 }, objectFit: 'cover', display: 'block' }}
           />
@@ -322,7 +160,7 @@ function HeroSection({ featured }: { featured: EventItem | null }) {
           </Typography>
           <Typography sx={{ fontSize: 13.5, color: MUTED, mt: 0.5 }}>
             {featured
-              ? `${formatDate(featured.date)} · ${formatTime(featured.date)}${featured.organizer?.name ? ` · by ${featured.organizer.name}` : ''}`
+              ? `${formatDate(featured.date)} Â· ${formatTime(featured.date)}${featured.organizer?.name ? ` Â· by ${featured.organizer.name}` : ''}`
               : 'Check back soon for upcoming campus events.'}
           </Typography>
         </Box>
@@ -331,7 +169,7 @@ function HeroSection({ featured }: { featured: EventItem | null }) {
   );
 }
 
-function EventCard({
+export function EventCard({
   event,
   saved,
   onToggleSaved,
@@ -354,10 +192,10 @@ function EventCard({
       }}
     >
       <Box sx={{ position: 'relative' }}>
-        {event.posterUrl ? (
+        {eventPoster(event) ? (
           <Box
             component="img"
-            src={event.posterUrl}
+            src={eventPoster(event)!}
             alt={`${event.eventName} poster`}
             sx={{ width: '100%', height: 170, objectFit: 'cover', display: 'block' }}
           />
@@ -433,7 +271,7 @@ function EventCard({
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <GroupsOutlined sx={{ fontSize: 16, color: MUTED }} />
           <Typography sx={{ fontSize: 13, color: MUTED }}>
-            {event.slots} slots{event.organizer?.name ? ` · by ${event.organizer.name}` : ''}
+            {event.slots} slots{event.organizer?.name ? ` Â· by ${event.organizer.name}` : ''}
           </Typography>
         </Box>
 
@@ -466,33 +304,56 @@ function EventCard({
 }
 
 export default function EventsPage() {
+  usePageMeta('Explore Events', 'Browse campus events on BePart — search, filter free and paid events, and register in minutes.');
   const [query, setQuery] = useState('');
-  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
+  const [sortOrder, setSortOrder] = useState<'soonest' | 'latest'>('soonest');
+  const [page, setPage] = useState(1);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['events'],
-    queryFn: () => eventsApi.listPublished({ page: 1, limit: 10 }),
+    queryFn: () => eventsApi.listPublished({ page: 1, limit: 50 }),
   });
 
   const events: EventItem[] = useMemo(() => (data ? unwrapList<EventItem>(data) : []), [data]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return events;
-    return events.filter((event) =>
-      [event.eventName, event.description || '', event.organizer?.name || '']
+    const list = events.filter((event) => {
+      if (priceFilter === 'free' && event.paymentRequired) return false;
+      if (priceFilter === 'paid' && !event.paymentRequired) return false;
+      if (!q) return true;
+      return [event.eventName, event.description || '', event.organizer?.name || '']
         .join(' ')
         .toLowerCase()
-        .includes(q)
-    );
-  }, [events, query]);
+        .includes(q);
+    });
+    return [...list].sort((a, b) => {
+      const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      return sortOrder === 'soonest' ? diff : -diff;
+    });
+  }, [events, query, priceFilter, sortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const resetFilters = () => {
+    setQuery('');
+    setPriceFilter('all');
+    setSortOrder('soonest');
+    setPage(1);
+  };
 
   const featured: EventItem | null = useMemo(
-    () => events.find((event) => event.posterUrl) || events[0] || null,
+    () => events.find((event) => eventPoster(event)) || events[0] || null,
     [events]
   );
 
-  const toggleSaved = (id: number) => {
+  const hasActiveFilters = query.trim() !== '' || priceFilter !== 'all' || sortOrder !== 'soonest';
+
+  const toggleSaved = (id: string) => {
     setSavedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -504,7 +365,7 @@ export default function EventsPage() {
   if (isLoading) {
     return (
       <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
-        <ExploreNavbar query={query} onQuery={setQuery} />
+        <ParticipantNavbar query={query} onQuery={setQuery} />
         <Container maxWidth="lg" sx={{ py: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
             <CircularProgress size={48} color="primary" />
@@ -517,7 +378,7 @@ export default function EventsPage() {
   if (error) {
     return (
       <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
-        <ExploreNavbar query={query} onQuery={setQuery} />
+        <ParticipantNavbar query={query} onQuery={setQuery} />
         <Container maxWidth="lg" sx={{ py: 4 }}>
           <Alert severity="error" variant="filled">
             <Typography variant="h6" gutterBottom>Failed to Load Events</Typography>
@@ -530,12 +391,12 @@ export default function EventsPage() {
 
   return (
     <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
-      <ExploreNavbar query={query} onQuery={setQuery} />
+      <ParticipantNavbar query={query} onQuery={setQuery} />
 
       <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
         <HeroSection featured={featured} />
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: { xs: 4, md: 6 }, mb: 2.5, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: { xs: 4, md: 6 }, mb: 2, flexWrap: 'wrap' }}>
           <CalendarMonth sx={{ color: BLUE }} />
           <Typography
             component="h2"
@@ -546,35 +407,66 @@ export default function EventsPage() {
           <Typography sx={{ fontSize: 13.5, color: MUTED }}>
             {filtered.length} event{filtered.length === 1 ? '' : 's'}
           </Typography>
-          {query.trim() && (
+          {hasActiveFilters && (
             <Button
               variant="text"
               size="small"
               endIcon={<ArrowForward sx={{ fontSize: 16 }} />}
-              onClick={() => setQuery('')}
+              onClick={resetFilters}
               sx={{ ml: 'auto', borderRadius: 999, color: BLUE, fontWeight: 700 }}
             >
-              View All
+              Clear filters
             </Button>
           )}
         </Box>
 
+        <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5, flexWrap: 'wrap' }}>
+          <FormControl size="small" sx={{ minWidth: 150, bgcolor: '#fff', borderRadius: 999 }}>
+            <InputLabel>Price</InputLabel>
+            <Select label="Price" value={priceFilter}
+              onChange={(e) => { setPriceFilter(e.target.value as 'all' | 'free' | 'paid'); setPage(1); }}
+              sx={{ borderRadius: 999 }}>
+              <MenuItem value="all">All prices</MenuItem>
+              <MenuItem value="free">Free</MenuItem>
+              <MenuItem value="paid">Paid</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150, bgcolor: '#fff', borderRadius: 999 }}>
+            <InputLabel>Sort by</InputLabel>
+            <Select label="Sort by" value={sortOrder}
+              onChange={(e) => { setSortOrder(e.target.value as 'soonest' | 'latest'); setPage(1); }}
+              sx={{ borderRadius: 999 }}>
+              <MenuItem value="soonest">Soonest first</MenuItem>
+              <MenuItem value="latest">Latest first</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+
         {filtered.length === 0 ? (
-          <Alert severity="info" variant="filled">
-            <Typography>
-              {events.length === 0
-                ? 'No published events available at the moment.'
-                : 'No events match your search. Try a different keyword.'}
-            </Typography>
-          </Alert>
+          <EmptyState
+            icon={events.length === 0 ? CalendarMonth : SearchOffOutlined}
+            title={events.length === 0 ? 'No published events yet' : 'No events match your search'}
+            description={events.length === 0
+              ? 'Check back soon â€” organizers are preparing upcoming campus events.'
+              : 'Try a different keyword or clear your filters.'}
+            actionLabel={events.length === 0 ? undefined : 'Clear filters'}
+            onAction={events.length === 0 ? undefined : resetFilters}
+          />
         ) : (
-          <Grid container spacing={3}>
-            {filtered.map((event) => (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={event.id}>
-                <EventCard event={event} saved={savedIds.has(event.id)} onToggleSaved={() => toggleSaved(event.id)} />
-              </Grid>
-            ))}
-          </Grid>
+          <>
+            <Grid container spacing={3}>
+              {paged.map((event) => (
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={event.id}>
+                  <EventCard event={event} saved={savedIds.has(event.id)} onToggleSaved={() => toggleSaved(event.id)} />
+                </Grid>
+              ))}
+            </Grid>
+            {totalPages > 1 && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                <Pagination count={totalPages} page={safePage} onChange={(_, v) => { setPage(v); window.scrollTo({ top: 0, behavior: 'smooth' }); }} color="primary" shape="rounded" />
+              </Box>
+            )}
+          </>
         )}
       </Container>
     </Box>

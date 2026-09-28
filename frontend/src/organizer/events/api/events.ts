@@ -16,10 +16,19 @@ export const eventsApi = {
   preview: (id: number | string) => client.post<EventItem>(`/events/${id}/preview`),
   publish: (id: number | string) => client.post<EventItem>(`/events/${id}/publish`),
   cancel: (id: number | string) => client.post<EventItem>(`/events/${id}/cancel`),
-  uploadPoster: (id: number | string, file: File) => {
+  // Event artwork uploads (backend validates aspect ratio + ownership):
+  // - rectangle (16:9 banner) and square (1:1 card) posters via R2 storage.
+  uploadPosterRectangle: (id: number | string, file: File) => {
     const form = new FormData();
     form.append('file', file);
-    return client.post<EventItem>(`/events/${id}/poster`, form, {
+    return client.post<{ message: string; posterRectangleUrl: string }>(`/storage/events/${id}/poster-rectangle`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  uploadPosterSquare: (id: number | string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return client.post<{ message: string; posterSquareUrl: string }>(`/storage/events/${id}/poster-square`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },

@@ -9,8 +9,12 @@ import {
   Add,
   CalendarMonthOutlined,
   GridViewOutlined,
+  HowToRegOutlined,
+  LocalOfferOutlined,
   LogoutOutlined,
   PersonOutlined,
+  QrCodeScannerOutlined,
+  ReceiptOutlined,
   Search,
 } from '@mui/icons-material';
 import { Link as RouterLink, NavLink, useLocation, useNavigate } from 'react-router-dom';
@@ -21,15 +25,16 @@ import { unwrapList } from '../../app/api/client';
 import type { EventItem } from '../../app/types';
 import { logout } from '../../auth/components/RequireRole';
 
-// Sidebar shell for ALL Organizer Console pages (Dashboard, Events, Withdraw,
-// Account, Event create/edit). Visual chrome only: same sidebar, page background,
-// and header language everywhere. Page content and controls stay in the pages.
-
-// Navigation mirrors organizerNav (src/organizer/events/pages/EventWizard.tsx)
-// exactly — same labels and destinations, only restyled to the dashboard reference.
+// Sidebar shell for ALL Organizer Console pages. Visual chrome only: same
+// sidebar, page background, and header language everywhere. Page content and
+// controls stay in the pages. NAV_ITEMS is the single nav definition.
 const NAV_ITEMS = [
   { label: 'Dashboard', to: '/organizer', icon: <GridViewOutlined sx={{ fontSize: 18 }} /> },
   { label: 'My Events', to: '/organizer/events', icon: <CalendarMonthOutlined sx={{ fontSize: 18 }} /> },
+  { label: 'Registrations', to: '/organizer/registrations', icon: <HowToRegOutlined sx={{ fontSize: 18 }} /> },
+  { label: 'Transactions', to: '/organizer/transactions', icon: <ReceiptOutlined sx={{ fontSize: 18 }} /> },
+  { label: 'Coupons', to: '/organizer/coupons', icon: <LocalOfferOutlined sx={{ fontSize: 18 }} /> },
+  { label: 'Check-In', to: '/organizer/checkin', icon: <QrCodeScannerOutlined sx={{ fontSize: 18 }} /> },
   { label: 'Withdrawals', to: '/organizer/withdrawals', icon: <AccountBalanceWalletOutlined sx={{ fontSize: 18 }} /> },
   { label: 'Account', to: '/organizer/account', icon: <PersonOutlined sx={{ fontSize: 18 }} /> },
 ];
@@ -77,12 +82,14 @@ function HeaderSearch() {
               navigate(`/organizer/events/${matches[0].id}`);
             }
           }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <Search sx={{ fontSize: 17, color: '#98A2B3' }} />
-              </InputAdornment>
-            ),
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search sx={{ fontSize: 17, color: '#98A2B3' }} />
+                </InputAdornment>
+              ),
+            },
           }}
           sx={{
             '& .MuiOutlinedInput-root': {

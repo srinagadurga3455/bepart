@@ -4,16 +4,18 @@ import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Divider,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography,
 } from '@mui/material';
-import { ExpandMore } from '@mui/icons-material';
+import { ExpandMore, HowToRegOutlined } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { eventsApi } from '../api/events';
 import { organizersApi } from '../../account/api/organizers';
 import { registrationsApi } from '../api/registrations';
 import { withdrawalsApi } from '../../withdrawals/api/withdrawals';
 import { unwrapList, apiErrorMessage } from '../../../app/api/client';
-import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { formatEventDate, formatINR, formatPaise, paiseToRupees } from '../../../app/utils/format';
 import { registrantName, eventFee } from '../utils/eventData';
-import type { FormDataRecord, FormStructure, RegistrationItem, WithdrawalItem } from '../../../app/types';
+import type {
+RegistrationItem, WithdrawalItem } from '../../../app/types';
+import { eventPoster } from '../../../app/types';
 import OrganizerShell from '../../components/OrganizerShell';
 import {
   orgCardSx,
@@ -26,59 +28,9 @@ import {
 } from '../../components/organizerStyles';
 import WithdrawDialog from '../../withdrawals/components/WithdrawDialog';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
-
-function isEmptyValue(v: unknown): boolean {
-  return v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && v.length === 0);
-}
-
-function formatValue(v: FormDataRecord[string]): string {
-  if (Array.isArray(v)) return v.join(', ');
-  return String(v ?? '—');
-}
-
-// Renders one registration's submitted values using the event's own form structure.
-function RegistrationFormData({
-  formStructure,
-  formData,
-}: {
-  formStructure: FormStructure | null | undefined;
-  formData: FormDataRecord | null | undefined;
-}) {
-  const sections = formStructure?.sections || [];
-  if (sections.length === 0) {
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        {Object.entries(formData || {}).map(([k, v]) => (
-          <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-            <Typography variant="body2" color="text.secondary">{k}</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>{formatValue(v)}</Typography>
-          </Box>
-        ))}
-      </Box>
-    );
-  }
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {sections.map((section) => {
-        const fields = (section.fields || []).filter((f) => !isEmptyValue(formData?.[f.name]));
-        if (fields.length === 0) return null;
-        return (
-          <Box key={section.id}>
-            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 700 }}>{section.title}</Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-              {fields.map((f) => (
-                <Box key={f.name} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-                  <Typography variant="body2" color="text.secondary">{f.label}</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>{formatValue(formData?.[f.name])}</Typography>
-                </Box>
-              ))}
-            </Box>
-          </Box>
-        );
-      })}
-    </Box>
-  );
-}
+import ConfirmDialog from '../../../app/components/ConfirmDialog';
+import EmptyState from '../../../app/components/EmptyState';
+import { RegistrationFormData } from '../../registrations/components/RegistrationDetail';
 
 function DetailContent({ id }: { id: string | undefined }) {
   const queryClient = useQueryClient();
@@ -102,7 +54,7 @@ function DetailContent({ id }: { id: string | undefined }) {
   const [requestedMsg, setRequestedMsg] = useState('');
 
   const event = eventRes?.data;
-  const eventId = parseInt(id ?? '', 10);
+  const eventId = id ?? '';
   const registrations: RegistrationItem[] = unwrapList<RegistrationItem>(regsRes).filter(
     (r) => r.eventId === eventId
   );
@@ -112,8 +64,8 @@ function DetailContent({ id }: { id: string | undefined }) {
   const fee = event ? eventFee(event) : 0;
   const collected = registrations.length * fee;
   const openWd = myWithdrawals.find((w) => ['REQUESTED', 'PROCESSING'].includes(w.status)) || null;
-  const paidTotal = myWithdrawals.filter((w) => w.status === 'PAID').reduce((s, w) => s + (Number(w.amount) || 0), 0);
-  const available = Math.max(0, collected - paidTotal - (openWd ? Number(openWd.amount) || 0 : 0));
+  const paidTotal = myWithdrawals.filter((w) => w.status === 'PAID').reduce((s, w) => s + paiseToRupees(w.amount), 0);
+  const available = Math.max(0, collected - paidTotal - (openWd ? paiseToRupees(openWd.amount) : 0));
   const canWithdraw = collected > 0 && available > 0 && !openWd && !!orgRes?.data?.upiId;
 
   const refresh = () => {
@@ -122,7 +74,7 @@ function DetailContent({ id }: { id: string | undefined }) {
     queryClient.invalidateQueries({ queryKey: ['withdrawals', 'mine'] });
   };
 
-  const act = async (fn: (eid: number) => Promise<unknown>) => {
+  const act = async (fn: (eid: string) => Promise<unknown>) => {
     setError('');
     setBusy(true);
     try {
@@ -148,8 +100,8 @@ function DetailContent({ id }: { id: string | undefined }) {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
       <Card variant="outlined" sx={{ ...orgCardSx, mb: 3 }}>
-        {event.posterUrl && (
-          <Box component="img" src={event.posterUrl} alt={`${event.eventName} poster`}
+        {eventPoster(event) && (
+          <Box component="img" src={eventPoster(event)!} alt={`${event.eventName} poster`}
             sx={{ width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: '12px 12px 0 0' }} />
         )}
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
@@ -193,7 +145,7 @@ function DetailContent({ id }: { id: string | undefined }) {
           </Box>
           {openWd && (
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {formatINR(openWd.amount)} requested on {formatEventDate(openWd.requestedAt)}. Waiting for admin payment confirmation.
+              {formatPaise(openWd.amount)} requested on {formatEventDate(openWd.requestedAt)}. Waiting for admin payment confirmation.
             </Typography>
           )}
           {canWithdraw && (
@@ -245,13 +197,9 @@ function DetailContent({ id }: { id: string | undefined }) {
                 color="error"
                 disabled={busy}
                 sx={{ ...orgSmallButtonSx }}
-                onClick={() => {
-                  if (!confirmCancel) { setConfirmCancel(true); return; }
-                  setConfirmCancel(false);
-                  act((eid) => eventsApi.cancel(eid));
-                }}
+                onClick={() => setConfirmCancel(true)}
               >
-                {confirmCancel ? 'Click again to confirm cancel' : 'Cancel Event'}
+                Cancel Event
               </Button>
             )}
           </Box>
@@ -264,7 +212,11 @@ function DetailContent({ id }: { id: string | undefined }) {
             Registrations ({registrations.length})
           </Typography>
           {registrations.length === 0 ? (
-            <Alert severity="info">No registrations yet.</Alert>
+            <EmptyState
+              icon={HowToRegOutlined}
+              title="No registrations yet"
+              description="Share your published event — participant registrations will appear here."
+            />
           ) : (
             <TableContainer sx={{ ...orgTableContainerSx }}>
               <Table size="small" sx={{ minWidth: 520 }}>
@@ -305,6 +257,18 @@ function DetailContent({ id }: { id: string | undefined }) {
           )}
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={confirmCancel}
+        title="Cancel this event?"
+        description="The event will be marked CANCELLED and participants will no longer see it. This cannot be undone."
+        confirmLabel="Cancel Event"
+        busy={busy}
+        onCancel={() => setConfirmCancel(false)}
+        onConfirm={() => {
+          setConfirmCancel(false);
+          act((eid) => eventsApi.cancel(eid));
+        }}
+      />
     </Box>
   );
 }

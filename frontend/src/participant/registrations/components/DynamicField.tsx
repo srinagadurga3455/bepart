@@ -7,15 +7,6 @@ import type { FormFieldDef } from '../../../app/types';
 
 type DynamicFieldDef = FormFieldDef & { description?: string };
 
-const typeIcons: Record<string, string> = {
-  text: 'text_fields',
-  email: 'email',
-  tel: 'phone',
-  textarea: 'description',
-  radio: 'radio_button_checked',
-  checkbox: 'check_box',
-};
-
 function DropdownArrowIcon(props: SvgIconProps) {
   return <ArrowDropDown {...props} />;
 }
@@ -24,6 +15,13 @@ interface DynamicFieldProps {
   field: DynamicFieldDef;
   register?: UseFormRegister<FieldValues>;
 }
+
+const inputSx = {
+  width: '100%',
+  maxWidth: '100%',
+  '& .MuiOutlinedInput-root': { borderRadius: 2, fontSize: 14 },
+  '& .MuiOutlinedInput-input': { minWidth: 0, textOverflow: 'ellipsis' },
+};
 
 export default function DynamicField({ field }: DynamicFieldProps) {
   const { control, formState: { errors, touchedFields } } = useFormContext();
@@ -51,15 +49,8 @@ export default function DynamicField({ field }: DynamicFieldProps) {
             helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
-                    <span>{typeIcons.text}</span>
-                  </Box>
-                ),
-              },
-            }}
+            autoComplete="off"
+            sx={inputSx}
           />
         );
       }
@@ -74,15 +65,9 @@ export default function DynamicField({ field }: DynamicFieldProps) {
             helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
-                    <span>{typeIcons.email}</span>
-                  </Box>
-                ),
-              },
-            }}
+            inputMode="email"
+            autoComplete="email"
+            sx={inputSx}
           />
         );
       }
@@ -97,15 +82,10 @@ export default function DynamicField({ field }: DynamicFieldProps) {
             helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
-                    <span>{typeIcons.tel}</span>
-                  </Box>
-                ),
-              },
-            }}
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="e.g. 9876543210"
+            sx={inputSx}
           />
         );
       }
@@ -121,21 +101,13 @@ export default function DynamicField({ field }: DynamicFieldProps) {
             helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mr: 1, color: 'text.secondary', mt: 1 }}>
-                    <span>{typeIcons.textarea}</span>
-                  </Box>
-                ),
-              },
-            }}
+            sx={inputSx}
           />
         );
       }
       case 'dropdown': {
         return (
-          <FormControl fullWidth error={!!showError} size="small" variant="outlined" required={!!field.required}>
+          <FormControl fullWidth error={showError} size="small" variant="outlined" required={!!field.required} sx={{ maxWidth: '100%' }}>
             <InputLabel shrink>{field.label}</InputLabel>
             <Select
               {...controllerField}
@@ -143,6 +115,7 @@ export default function DynamicField({ field }: DynamicFieldProps) {
               label={field.label}
               displayEmpty
               IconComponent={DropdownArrowIcon}
+              sx={{ borderRadius: 2, fontSize: 14 }}
               renderValue={(selected: unknown) =>
                 selected ? (
                   String(selected)
@@ -159,7 +132,7 @@ export default function DynamicField({ field }: DynamicFieldProps) {
                 </Typography>
               </MenuItem>
               {field.options?.map((option) => (
-                <MenuItem key={option} value={option}>{option}</MenuItem>
+                <MenuItem key={option} value={option} sx={{ whiteSpace: 'normal' }}>{option}</MenuItem>
               ))}
             </Select>
             {showError && <FormHelperText>{fieldError?.message || `${field.label} is required`}</FormHelperText>}
@@ -169,7 +142,7 @@ export default function DynamicField({ field }: DynamicFieldProps) {
       }
       case 'radio': {
         return (
-          <Box>
+          <Box sx={{ maxWidth: '100%' }}>
             <FormControl component="fieldset" fullWidth error={showError} size="small" variant="outlined">
               <Box component="legend" sx={{ fontSize: '0.875rem', fontWeight: 500, color: 'text.primary', mb: 1 }}>
                 {field.label}
@@ -177,17 +150,16 @@ export default function DynamicField({ field }: DynamicFieldProps) {
               </Box>
               <RadioGroup
                 {...controllerField}
-                row
-                sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, px: 1, py: 1 }}
+                sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', gap: { xs: 0, sm: 2 } }}
               >
                 {field.options?.map((option) => (
                   <FormControlLabel
                     key={option}
                     value={option}
                     control={<Radio color="primary" />}
-                    label={option}
+                    label={<Typography sx={{ fontSize: 14, overflowWrap: 'anywhere' }}>{option}</Typography>}
                     labelPlacement="end"
-                    sx={{ minWidth: '180px', cursor: 'pointer' }}
+                    sx={{ mr: 2, maxWidth: '100%' }}
                   />
                 ))}
               </RadioGroup>
@@ -199,12 +171,12 @@ export default function DynamicField({ field }: DynamicFieldProps) {
       }
       case 'checkbox': {
         return (
-          <Box>
+          <Box sx={{ maxWidth: '100%' }}>
             <Typography variant="body2" color="text.primary" gutterBottom sx={{ fontWeight: 500 }}>
               {field.label}
               {field.required && <Typography component="span" variant="caption" color="error" sx={{ ml: 0.5 }}>*</Typography>}
             </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, ml: 1 }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', gap: { xs: 0, sm: 2 } }}>
               {field.options?.map((option) => (
                 <FormControlLabel
                   key={option}
@@ -223,9 +195,9 @@ export default function DynamicField({ field }: DynamicFieldProps) {
                       checked={(controllerField.value || []).includes(option)}
                     />
                   }
-                  label={option}
+                  label={<Typography sx={{ fontSize: 14, overflowWrap: 'anywhere' }}>{option}</Typography>}
                   labelPlacement="end"
-                  sx={{ minWidth: '180px', cursor: 'pointer' }}
+                  sx={{ mr: 2, maxWidth: '100%' }}
                 />
               ))}
             </Box>
@@ -244,6 +216,7 @@ export default function DynamicField({ field }: DynamicFieldProps) {
             helperText={showError ? fieldError?.message : field.description}
             size="small"
             variant="outlined"
+            sx={inputSx}
           />
         );
       }
@@ -251,7 +224,7 @@ export default function DynamicField({ field }: DynamicFieldProps) {
   };
 
   return (
-    <Box sx={{ mb: 3 }}>
+    <Box sx={{ mb: 3, maxWidth: '100%', minWidth: 0 }}>
       {renderInput()}
     </Box>
   );

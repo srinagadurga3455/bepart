@@ -66,6 +66,15 @@ export class PaymentsController {
     return this.paymentsService.create(registrationId, dto, user);
   }
 
+  @Get('mine')
+  @Roles(Role.ORGANIZER, Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'List my transactions', description: 'ORGANIZER sees payments for own events, ADMIN sees all. Used by the transactions page.' })
+  @ApiResponse({ status: 200, description: 'Payment array with event/registration/coupon' })
+  findMine(@CurrentUser() user: RequestUser) {
+    return this.paymentsService.findMine(user.userId || user.id, user.role);
+  }
+
   @Get('registration/:registrationId')
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get payment by registrationId', description: 'Returns payment associated with that registration (requires JWT)' })

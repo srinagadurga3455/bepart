@@ -35,11 +35,11 @@ export default function FormSection({ section, index, register }: FormSectionPro
         </Typography>
       </Box>
       {section.description && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, ml: '37.5px' }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3, ml: { xs: 0, sm: '37.5px' } }}>
           {section.description}
         </Typography>
       )}
-      <Box sx={{ ml: '37.5px', borderLeft: '2px solid', borderColor: 'divider', pl: 3 }}>
+      <Box sx={{ ml: { xs: 0, sm: '37.5px' }, borderLeft: '2px solid', borderColor: 'divider', pl: { xs: 2, sm: 3 }, minWidth: 0 }}>
         {section.fields?.map((field, fieldIndex) => (
           <DynamicField key={`${section.id}-${field.name}-${fieldIndex}`} field={field} register={register} />
         ))}

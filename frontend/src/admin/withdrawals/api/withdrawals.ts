@@ -5,7 +5,8 @@ export const withdrawalsApi = {
   list: () => client.get<WithdrawalListResponse>('/withdrawals'),
   get: (id: string) => client.get<WithdrawalItem>(`/withdrawals/${id}`),
   process: (id: string) => client.patch<WithdrawalItem>(`/withdrawals/${id}/process`),
-  reject: (id: string) => client.patch<WithdrawalItem>(`/withdrawals/${id}/reject`),
+  reject: (id: string, reason: string) =>
+    client.patch<WithdrawalItem>(`/withdrawals/${id}/reject`, { reason }),
   confirmPaid: (id: string, { transactionId, screenshot }: ConfirmPaidPayload) => {
     const form = new FormData();
     form.append('transactionId', transactionId);

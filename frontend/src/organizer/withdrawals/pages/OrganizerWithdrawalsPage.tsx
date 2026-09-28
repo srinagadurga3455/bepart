@@ -1,11 +1,12 @@
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, CardContent, CircularProgress, Typography,
+  Alert, Box, Button, Card, CardContent, Typography,
 } from '@mui/material';
+import { AccountBalanceWalletOutlined } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { withdrawalsApi } from '../api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
-import { formatEventDate, formatINR } from '../../../app/utils/format';
+import { formatEventDate, formatPaise } from '../../../app/utils/format';
 import type { WithdrawalItem } from '../../../app/types';
 import OrganizerShell from '../../components/OrganizerShell';
 import {
@@ -16,6 +17,8 @@ import {
 } from '../../components/organizerStyles';
 import ProofButton from '../../../app/components/ProofButton';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
+import EmptyState from '../../../app/components/EmptyState';
+import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 
 function WithdrawalsContent() {
   const { data, isLoading, error } = useQuery({
@@ -24,7 +27,11 @@ function WithdrawalsContent() {
   const withdrawals: WithdrawalItem[] = unwrapList<WithdrawalItem>(data);
 
   if (isLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
+    return <LoadingState message="Loading withdrawals…" />;
+  }
+
+  if (error) {
+    return <ErrorState message="Could not load withdrawals." />;
   }
 
   return (
@@ -37,7 +44,13 @@ function WithdrawalsContent() {
       {error && <Alert severity="error" sx={{ mb: 2 }}>Could not load withdrawals.</Alert>}
 
       {withdrawals.length === 0 ? (
-        <Alert severity="info">No withdrawals yet. Open an event and request a withdrawal of collected fees.</Alert>
+        <EmptyState
+          icon={AccountBalanceWalletOutlined}
+          title="No withdrawals yet"
+          description="Open an event with collected fees and request your first payout."
+          actionLabel="View My Events"
+          actionHref="/organizer/events"
+        />
       ) : (
         withdrawals.map((w) => (
           <Card key={w.id} variant="outlined" sx={{ ...orgCardSx, mb: 2 }}>
@@ -45,7 +58,7 @@ function WithdrawalsContent() {
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 1 }}>
                 <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
                   <Typography noWrap sx={{ fontWeight: 700 }}>{w.event?.eventName || `Event ${w.eventId}`}</Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatINR(w.amount)}</Typography>
+                  <Typography variant="h6" sx={{ fontWeight: 800 }}>{formatPaise(w.amount)}</Typography>
                 </Box>
                 <WithdrawalStatusChip status={w.status} />
               </Box>
@@ -62,6 +75,9 @@ function WithdrawalsContent() {
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   Waiting for admin payment confirmation.
                 </Typography>
+              )}
+              {w.status === 'REJECTED' && w.rejectionReason && (
+                <Alert severity="error" sx={{ mt: 1.5 }}>Rejected: {w.rejectionReason}</Alert>
               )}
               <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
                 <Button size="small" variant="outlined" component={RouterLink} to={`/organizer/events/${w.eventId}`} sx={{ ...orgSmallButtonSx }}>

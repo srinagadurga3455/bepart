@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RegistrationsService } from './registrations.service';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
 
 @ApiTags('registrations')
@@ -57,5 +59,27 @@ export class RegistrationsController {
   @ApiResponse({ status: 200, description: 'Registration cancelled' })
   cancel(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.service.cancel(id, user.userId || user.id, user.role);
+  }
+
+  @Post(':id/check-in')
+  @Roles(Role.ORGANIZER, Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Check in a ticket (QR scan)', description: 'ORGANIZER for own events, ADMIN for any event. Already-checked-in tickets are reported, not double-counted.' })
+  @ApiParam({ name: 'id', description: 'registrationId (ticket ID)' })
+  @ApiResponse({ status: 200, description: 'Check-in result with participant/event details' })
+  @ApiResponse({ status: 403, description: 'Not your event' })
+  @ApiResponse({ status: 404, description: 'Ticket not found' })
+  checkIn(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.service.checkIn(id, user.userId || user.id, user.role);
+  }
+
+  @Delete(':id/check-in')
+  @Roles(Role.ORGANIZER, Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Revert a ticket check-in' })
+  @ApiParam({ name: 'id', description: 'registrationId (ticket ID)' })
+  @ApiResponse({ status: 200, description: 'Check-in reverted' })
+  undoCheckIn(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.service.undoCheckIn(id, user.userId || user.id, user.role);
   }
 }

@@ -4,6 +4,10 @@ import RequireRole from '../auth/components/RequireRole';
 import DashboardPage from './dashboard/pages/DashboardPage';
 import OrganizerEventsPage from './events/pages/OrganizerEventsPage';
 import OrganizerEventDetailPage from './events/pages/OrganizerEventDetailPage';
+import OrganizerRegistrationsPage from './registrations/pages/OrganizerRegistrationsPage';
+import OrganizerTransactionsPage from './transactions/pages/OrganizerTransactionsPage';
+import OrganizerCouponsPage from './coupons/pages/OrganizerCouponsPage';
+import OrganizerCheckInPage from './checkin/pages/OrganizerCheckInPage';
 import OrganizerWithdrawalsPage from './withdrawals/pages/OrganizerWithdrawalsPage';
 import OrganizerAccountPage from './account/pages/OrganizerAccountPage';
 import { EventCreatePage, EventEditPage } from './events/pages/EventWizard';
@@ -17,6 +21,10 @@ const routes: RouteObject[] = [
   { path: '/organizer/events/create', element: org(<EventCreatePage />) },
   { path: '/organizer/events/:id/edit', element: org(<EventEditPage />) },
   { path: '/organizer/events/:id', element: org(<OrganizerEventDetailPage />) },
+  { path: '/organizer/registrations', element: org(<OrganizerRegistrationsPage />) },
+  { path: '/organizer/transactions', element: org(<OrganizerTransactionsPage />) },
+  { path: '/organizer/coupons', element: org(<OrganizerCouponsPage />) },
+  { path: '/organizer/checkin', element: org(<OrganizerCheckInPage />) },
   { path: '/organizer/withdrawals', element: org(<OrganizerWithdrawalsPage />) },
   { path: '/organizer/account', element: org(<OrganizerAccountPage />) },
 ];

@@ -1,9 +1,15 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Avatar, Box, Card, CardContent, Chip, CircularProgress, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, TextField, Typography } from '@mui/material';
 import { LogoutOutlined, PersonOutlined } from '@mui/icons-material';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSnackbar } from 'notistack';
 import OrganizerShell from '../../components/OrganizerShell';
 import { useOrganizerIdentity } from '../../components/useOrganizerIdentity';
+import { organizersApi } from '../api/organizers';
 import { logout } from '../../../auth/components/RequireRole';
+import { apiErrorMessage } from '../../../app/api/client';
+import { validateEmail, validatePhone, validateRequired, validateUpiId } from '../../../app/utils/validators';
 
 const BLUE = '#2557F5';
 const INK = '#101828';
@@ -29,12 +35,75 @@ function SectionTitle({ children }: { children: string }) {
 
 export default function OrganizerAccountPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const { organizer, user, isLoading } = useOrganizerIdentity();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [form, setForm] = useState({ name: '', email: '', phone: '', upiId: '', description: '' });
+
+  useEffect(() => {
+    if (organizer && !editing) {
+      setForm({
+        name: organizer.name || '',
+        email: organizer.email || organizer.user?.email || '',
+        phone: organizer.phone || '',
+        upiId: organizer.upiId || '',
+        description: organizer.description || '',
+      });
+    }
+  }, [organizer, editing]);
 
   const profileName = organizer?.name || user?.name || '—';
   const profileEmail = organizer?.email || organizer?.user?.email || user?.email || '—';
   const profilePhone = organizer?.phone || user?.phone || '—';
   const profileInitial = profileName.charAt(0)?.toUpperCase() || 'O';
+
+  const startEdit = () => {
+    if (!organizer) return;
+    setForm({
+      name: organizer.name || '',
+      email: organizer.email || organizer.user?.email || '',
+      phone: organizer.phone || '',
+      upiId: organizer.upiId || '',
+      description: organizer.description || '',
+    });
+    setFormError('');
+    setEditing(true);
+  };
+
+  const save = async () => {
+    setFormError('');
+    const nameErr = validateRequired(form.name, 'Name');
+    if (nameErr) { setFormError(nameErr); return; }
+    const emailErr = validateEmail(form.email);
+    if (emailErr) { setFormError(emailErr); return; }
+    const phoneErr = validatePhone(form.phone);
+    if (phoneErr) { setFormError(phoneErr); return; }
+    const upiErr = validateUpiId(form.upiId, false);
+    if (upiErr) { setFormError(upiErr); return; }
+    setSaving(true);
+    try {
+      await organizersApi.updateMe({
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim() || undefined,
+        upiId: form.upiId.trim() || undefined,
+        description: form.description.trim() || undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ['organizer', 'me'] });
+      queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
+      setEditing(false);
+      enqueueSnackbar('Account updated successfully.', { variant: 'success' });
+    } catch (err) {
+      const msg = apiErrorMessage(err, 'Could not update account.');
+      setFormError(msg);
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <OrganizerShell hideSearch hideCreate>
@@ -105,8 +174,29 @@ export default function OrganizerAccountPage() {
             {isLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
             ) : organizer ? (
+              editing ? (
+                <>
+                  {formError && <Alert severity="error" sx={{ mb: 2 }}>{formError}</Alert>}
+                  <TextField label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    fullWidth size="small" sx={{ mb: 2 }} />
+                  <TextField label="Email Address" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    fullWidth size="small" sx={{ mb: 2 }} helperText="Used for OTP sign-in" />
+                  <TextField label="Phone Number" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    fullWidth size="small" sx={{ mb: 2 }} placeholder="+91 9876543210" />
+                  <TextField label="UPI ID" value={form.upiId} onChange={(e) => setForm({ ...form, upiId: e.target.value })}
+                    fullWidth size="small" sx={{ mb: 2 }} placeholder="club@okhdfc" helperText="Used for payout settlements" />
+                  <TextField label="About" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    fullWidth size="small" multiline rows={3} sx={{ mb: 2 }} />
+                  <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end' }}>
+                    <Button onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
+                    <Button variant="contained" onClick={save} disabled={saving} sx={{ boxShadow: 'none' }}>
+                      {saving ? 'Saving…' : 'Save Changes'}
+                    </Button>
+                  </Box>
+                </>
+              ) : (
               <>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pb: 2.5, borderBottom: '1px solid', borderColor: CARD_BORDER }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, pb: 2.5, borderBottom: '1px solid', borderColor: CARD_BORDER, flexWrap: 'wrap' }}>
                   <Avatar sx={{ width: 64, height: 64, bgcolor: BLUE, fontWeight: 800, fontSize: 26 }}>
                     {profileInitial}
                   </Avatar>
@@ -116,7 +206,12 @@ export default function OrganizerAccountPage() {
                     </Typography>
                     <Typography variant="body2" color="text.secondary">Organizer</Typography>
                   </Box>
-                  <Chip label={organizer.status} size="small" variant="outlined" color="success" sx={{ ml: 'auto' }} />
+                  <Box sx={{ ml: 'auto', display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Chip label={organizer.status} size="small" variant="outlined" color="success" />
+                    <Button size="small" variant="outlined" onClick={startEdit} sx={{ borderRadius: 999 }}>
+                      Edit Profile
+                    </Button>
+                  </Box>
                 </Box>
 
                 <SectionTitle>Account Details</SectionTitle>
@@ -130,6 +225,7 @@ export default function OrganizerAccountPage() {
                 <FieldRow label="Role" value="Organizer" />
                 {organizer.description && <FieldRow label="About" value={organizer.description} />}
               </>
+              )
             ) : user ? (
               <>
                 <Alert severity="info" sx={{ mb: 2 }}>

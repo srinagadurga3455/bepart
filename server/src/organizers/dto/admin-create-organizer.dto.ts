@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { PHONE_MESSAGE, PHONE_REGEX, UPI_ID_MESSAGE, UPI_ID_REGEX } from '../../common/constants/validation';
 
 export class AdminCreateOrganizerDto {
   @ApiProperty({ example: 'Tech Club', description: 'Organizer/club name' })
@@ -23,11 +24,13 @@ export class AdminCreateOrganizerDto {
   @IsOptional()
   @IsString()
   @MaxLength(20)
+  @Matches(PHONE_REGEX, { message: PHONE_MESSAGE })
   phone?: string;
 
   @ApiProperty({ example: 'techclub@upi', description: 'UPI ID for settlements (required)' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
+  @Matches(UPI_ID_REGEX, { message: UPI_ID_MESSAGE })
   upiId: string;
 }

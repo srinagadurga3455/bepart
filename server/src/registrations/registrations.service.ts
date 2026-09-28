@@ -27,6 +27,7 @@ export class RegistrationsService {
       const event = await tx.event.findUnique({ where: { id: dto.eventId } });
       if (!event) throw new NotFoundException('Event not found');
       if ((event as any).status !== 'PUBLISHED') throw new BadRequestException('Event is not published / registration closed');
+      if ((event as any).isActive === false) throw new BadRequestException('Registrations are closed for this event');
       const now = new Date();
       if (event.closingTime && now > event.closingTime) throw new BadRequestException('Registration closed (closingTime passed)');
       if (event.formStructure) validateFormData(event.formStructure, dto.formData);
@@ -299,5 +300,37 @@ export class RegistrationsService {
     }
     await this.registrationsRepo.deleteByRegistrationId(registrationId);
     return { message: 'Registration cancelled', registrationId };
+  }
+
+  // QR / ticket check-in at event entry. ORGANIZER may only check in tickets
+  // for their own events; ADMIN may check in any ticket. An already-checked-in
+  // ticket is reported (not double-counted) so scanners show the prior time.
+  private async assertCheckInStaff(reg: { eventId: string }, userId: string, role: string) {
+    if (role === 'ADMIN') return;
+    if (role !== 'ORGANIZER') throw new ForbiddenException('Only organizers or admins can check in tickets');
+    const org = await this.registrationsRepo.findOrganizerByUserId(userId);
+    const ev = await this.registrationsRepo.findEventById(reg.eventId);
+    if (!org || !ev || ev.organizerId !== org.id) {
+      throw new ForbiddenException('You can only check in tickets for your own events');
+    }
+  }
+
+  async checkIn(registrationId: string, userId: string, role: string) {
+    const reg = await this.registrationsRepo.findByRegistrationId(registrationId);
+    if (!reg) throw new NotFoundException('Ticket not found');
+    await this.assertCheckInStaff(reg, userId, role);
+    if ((reg as any).checkedInAt) {
+      return { ...(reg as any), alreadyCheckedIn: true, message: 'Ticket already checked in' };
+    }
+    const updated = await this.registrationsRepo.markCheckedIn(registrationId);
+    return { ...updated, alreadyCheckedIn: false, message: 'Check-in successful' };
+  }
+
+  async undoCheckIn(registrationId: string, userId: string, role: string) {
+    const reg = await this.registrationsRepo.findByRegistrationId(registrationId);
+    if (!reg) throw new NotFoundException('Ticket not found');
+    await this.assertCheckInStaff(reg, userId, role);
+    const updated = await this.registrationsRepo.clearCheckedIn(registrationId);
+    return { ...updated, message: 'Check-in reverted' };
   }
 }

@@ -80,6 +80,10 @@ export class OrganizersRepository {
     return this.prisma.user.update({ where: { id }, data: { phone } });
   }
 
+  updateUserEmail(id: string, email: string) {
+    return this.prisma.user.update({ where: { id }, data: { email } });
+  }
+
   // Admin queries
   findAdminById(id: string) {
     return this.prisma.admin.findUnique({ where: { id } });
@@ -144,15 +148,33 @@ export class OrganizersRepository {
     });
   }
 
-  // Transaction for deactivate (organizer REJECTED + user isActive false)
+  // Transaction for deactivate (organizer REJECTED + isActive false + user
+  // login disabled + ALL organizer events hidden). Public listing and
+  // registration only include isActive events, so this is the enforced
+  // backend cascade: a deactivated organizer's events disappear for participants.
   deactivateTransaction(organizerId: string, userId: string) {
     return this.prisma.$transaction([
       this.prisma.organizer.update({
         where: { id: organizerId },
-        data: { status: OrganizerStatus.REJECTED },
+        data: { status: OrganizerStatus.REJECTED, isActive: false },
         include: { user: { select: { id: true, name: true, email: true, role: true } } },
       }),
       this.prisma.user.update({ where: { id: userId }, data: { isActive: false } }),
+      this.prisma.event.updateMany({ where: { organizerId }, data: { isActive: false } }),
+    ]);
+  }
+
+  // Transaction for reactivate (organizer APPROVED + isActive true + user
+  // login restored + events visible again).
+  reactivateTransaction(organizerId: string, userId: string) {
+    return this.prisma.$transaction([
+      this.prisma.organizer.update({
+        where: { id: organizerId },
+        data: { status: OrganizerStatus.APPROVED, isActive: true },
+        include: { user: { select: { id: true, name: true, email: true, role: true } } },
+      }),
+      this.prisma.user.update({ where: { id: userId }, data: { isActive: true } }),
+      this.prisma.event.updateMany({ where: { organizerId }, data: { isActive: true } }),
     ]);
   }
 }

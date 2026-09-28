@@ -14,8 +14,8 @@ export function isEmailIdentifier(identifier: string): boolean {
 }
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    client.post<AuthResponse>('/auth/login', { email, password }),
+  // NOTE: password login is disabled on the backend (POST /auth/login
+  // returns 400). OTP is the single sign-in method for all roles.
   requestOtp: (identifier: string) =>
     client.post<{ message: string; expiresAt: string }>('/auth/request-otp', toIdentifierBody(identifier)),
   verifyOtp: (identifier: string, otp: string) =>

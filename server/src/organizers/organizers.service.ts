@@ -123,6 +123,39 @@ export class OrganizersService {
     return org;
   }
 
+  // Organizer self-service profile update. Email changes sync the login User
+  // (OTP identity) with uniqueness checks on both tables; status is immutable.
+  async updateMy(userId: string, dto: import('./dto/update-my-organizer.dto').UpdateMyOrganizerDto) {
+    const org = await this.getOrganizerByUserId(userId);
+    if (!org) throw new NotFoundException('Organizer profile not found');
+    const data: any = {};
+    if (dto.name !== undefined) {
+      if (!dto.name.trim()) throw new ConflictException('Name cannot be empty');
+      data.name = dto.name.trim();
+    }
+    if (dto.description !== undefined) data.description = dto.description?.trim();
+    if (dto.phone !== undefined) data.phone = dto.phone ? normalizePhone(dto.phone) : dto.phone;
+    if (dto.upiId !== undefined) data.upiId = dto.upiId?.trim();
+    if (dto.email !== undefined) {
+      const normalizedEmail = dto.email.toLowerCase().trim();
+      if (normalizedEmail !== (org.email || '').toLowerCase()) {
+        const userTaken = await this.organizersRepo.findUserByEmail(normalizedEmail).catch(() => null);
+        if (userTaken && userTaken.id !== userId) throw new ConflictException('Email already registered');
+        const orgTaken = await this.organizersRepo.findOrganizerByEmail(normalizedEmail).catch(() => null);
+        if (orgTaken && (orgTaken as any).id !== org.id) throw new ConflictException('Organizer email already used');
+        data.email = normalizedEmail;
+      }
+    }
+    const updated = await this.organizersRepo.updateOrganizer(org.id, data);
+    if (dto.phone !== undefined) {
+      await this.organizersRepo.updateUserPhone(userId, dto.phone ? normalizePhone(dto.phone) : null);
+    }
+    if (data.email) {
+      await this.organizersRepo.updateUserEmail(userId, data.email);
+    }
+    return updated;
+  }
+
   async findOne(id: string, requesterId: string, requesterRole: string) {
     const org = await this.getOrganizerOrFail(id);
     if (requesterRole !== Role.ADMIN && org.userId !== requesterId) {
@@ -165,12 +198,16 @@ export class OrganizersService {
 
   async approve(id: string) {
     const org = await this.getOrganizerOrFail(id);
-    if (org.status === OrganizerStatus.APPROVED) return org;
-    const updated = await this.organizersRepo.updateOrganizerStatus(id, OrganizerStatus.APPROVED, true);
-    // Reactivate login: deactivation disables the linked user, so activation must restore it.
-    const userId = (updated as any)?.userId || (org as any)?.userId;
-    if (userId) await this.organizersRepo.updateUserActive(userId, true);
-    return updated;
+    if (org.status === OrganizerStatus.APPROVED && (org as any).isActive !== false) return org;
+    // Reactivation restores login AND event visibility (reverse of the
+    // deactivation cascade). New approvals are active by default.
+    const userId = (org as any)?.userId;
+    if (!userId) {
+      const updated = await this.organizersRepo.updateOrganizerStatus(id, OrganizerStatus.APPROVED, true);
+      return updated;
+    }
+    const [updatedOrg] = await this.organizersRepo.reactivateTransaction(id, userId);
+    return updatedOrg;
   }
 
   async reject(id: string, reason?: string) {
@@ -182,6 +219,7 @@ export class OrganizersService {
     const org = await this.organizersRepo.findOrganizerByUserId(userId);
     if (!org) throw new NotFoundException('Organizer profile not found');
     if (org.status !== OrganizerStatus.APPROVED) throw new ForbiddenException(`Organizer not approved (status: ${org.status}). Only APPROVED organizers can manage events.`);
+    if ((org as any).isActive === false) throw new ForbiddenException('Organizer account is deactivated. Contact support to reactivate.');
     return org;
   }
 }

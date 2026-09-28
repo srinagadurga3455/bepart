@@ -92,8 +92,11 @@ export default function MemberGroupCard({
         <GroupAdd sx={{ color: 'primary.main', fontSize: 22 }} />
         <Typography sx={{ fontSize: 15, fontWeight: 700 }}>Team Member Group</Typography>
       </Box>
-      <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 1.5 }}>
-        Define the fields once. Participants see one group per team member they select.
+      <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 0.5 }}>
+        Define the fields once — participants automatically see one set per team member they select.
+      </Typography>
+      <Typography sx={{ fontSize: 12.5, color: 'primary.main', mb: 1.5 }}>
+        Uses your existing “number of members” dropdown question above.
       </Typography>
 
       <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>

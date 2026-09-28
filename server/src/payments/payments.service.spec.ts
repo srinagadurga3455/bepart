@@ -18,6 +18,8 @@ const mockPaymentsRepo: any = {
   findPendingPaymentByPhoneAndEvent: jest.fn(),
   findRegistrationByPhoneAndEvent: jest.fn(),
   createPendingPayment: jest.fn(),
+  findByOrganizerId: jest.fn(),
+  findAllPayments: jest.fn(),
 };
 
 const mockCouponsRepo: any = {
@@ -460,8 +462,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
 
-  it('should charge full price with zero discount when no coupon is provided', async () => {
-    const eventId = '550e8400-e29b-41d4-a716-446655440091';
+  it('should charge full price with zero discount when no coupon is provided', async () => {    const eventId = '550e8400-e29b-41d4-a716-446655440091';
     pendingEvent(eventId);
     const res: any = await service.createPending({ eventId, phone: '9123456789', amount: 100000 } as any);
     expect(mockCouponsService.priceQuote).not.toHaveBeenCalled();
@@ -469,5 +470,25 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       expect.objectContaining({ amount: 100000, originalAmount: 100000, discountAmount: 0 }),
     );
     expect(res.amount).toBe(100000);
+  });
+
+  it('should list own-event transactions for findMine (ORGANIZER)', async () => {
+    mockPaymentsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'orgUser1' });
+    mockPaymentsRepo.findByOrganizerId.mockResolvedValue([{ id: 'pay1', amount: 45000, status: PaymentStatus.PAID }]);
+    const res: any = await service.findMine('orgUser1', 'ORGANIZER');
+    expect(mockPaymentsRepo.findByOrganizerId).toHaveBeenCalledWith('org1');
+    expect(res).toHaveLength(1);
+  });
+
+  it('should return [] for findMine when organizer profile is missing', async () => {
+    mockPaymentsRepo.findOrganizerByUserId.mockResolvedValue(null);
+    await expect(service.findMine('nouser', 'ORGANIZER')).resolves.toEqual([]);
+  });
+
+  it('should list all payments for findMine (ADMIN)', async () => {
+    mockPaymentsRepo.findAllPayments.mockResolvedValue([{ id: 'pay1' }, { id: 'pay2' }]);
+    const res: any = await service.findMine('admin1', 'ADMIN');
+    expect(mockPaymentsRepo.findAllPayments).toHaveBeenCalled();
+    expect(res).toHaveLength(2);
   });
 });
