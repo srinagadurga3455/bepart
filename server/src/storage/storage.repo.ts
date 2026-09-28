@@ -1,3 +1,4 @@
+
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
@@ -7,23 +8,28 @@ export class StorageRepository {
 
   // Event — R2 square/rectangle only
   findEventById(id: string) {
-  return this.prisma.event.findUnique({ where: { id: Number(id) } });
-}
+    return this.prisma.event.findUnique({
+      where: { id },
+    });
+  }
 
   findOrganizerByUserId(userId: string) {
-    return this.prisma.organizer.findUnique({ where: { userId } });
+    return this.prisma.organizer.findUnique({
+      where: { userId },
+    });
   }
 
   updateEventPosterSquare(id: string, posterSquareUrl: string) {
-  return this.prisma.event.update({
-    where: { id: Number(id) },
-    data: { posterSquareUrl },
-  });
-}
+    return this.prisma.event.update({
+      where: { id },
+      data: { posterSquareUrl },
+    });
+  }
+
   updateEventPosterRectangle(id: string, posterRectangleUrl: string) {
-  return this.prisma.event.update({
-    where: { id: Number(id) },
-    data: { posterRectangleUrl },
-  });
-}
+    return this.prisma.event.update({
+      where: { id },
+      data: { posterRectangleUrl },
+    });
+  }
 }
