@@ -1,13 +1,23 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import { Container, Typography, Box, Button, Card, CardContent, Alert, Chip, Avatar, CircularProgress, Stack, Divider } from '@mui/material';
+import {
+  Container,
+  Typography,
+  Box,
+  Button,
+  Alert,
+  CircularProgress,
+  Paper,
+} from '@mui/material';
+import { ArrowBack, CheckCircleOutlined, ConfirmationNumber, ErrorOutlined } from '@mui/icons-material';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { eventsApi } from '../../events/api/events';
 import { registrationsApi } from '../api/registrations';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { FormDataRecord } from '../../../app/types';
-import { eventPoster } from '../../../app/types';
 import RegistrationFlow from '../components/RegistrationFlow';
+
+const BLUE = '#2557F5';
 
 interface RegisterVariables {
   phone: string;
@@ -40,11 +50,12 @@ export default function RegisterPage() {
   const createRegistration = useMutation({
     // Backend requires phone BOTH top-level and inside formData (validated against formStructure).
     // Keep the full dynamic formData intact; only add the top-level phone from it.
-    mutationFn: (values: RegisterVariables) => registrationsApi.create({
-      eventId: eventId!,
-      phone: values.phone,
-      formData: { ...values } as FormDataRecord,
-    }),
+    mutationFn: (values: RegisterVariables) =>
+      registrationsApi.create({
+        eventId: eventId!,
+        phone: values.phone,
+        formData: { ...values } as FormDataRecord,
+      }),
     onSuccess: (res) => {
       setTicketId(res?.data?.registrationId || null);
       setSuccess(true);
@@ -55,26 +66,63 @@ export default function RegisterPage() {
     },
   });
 
+  /* ── Loading state ───────────────────────────────────────────── */
   if (eventLoading || formLoading) {
     return (
-      <Container maxWidth="md" sx={{ py: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <CircularProgress size={48} color="primary" />
-      </Container>
+      <Box
+        sx={{
+          minHeight: '100vh',
+          bgcolor: '#F0F4FF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <CircularProgress size={48} sx={{ color: BLUE }} />
+      </Box>
     );
   }
 
+  /* ── Event not found ─────────────────────────────────────────── */
   if (eventError || !event) {
     return (
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Alert severity="error" variant="filled">
-          <Typography variant="h6" gutterBottom>Event Not Found</Typography>
-          <Typography>The event you are looking for does not exist or is not available for registration.</Typography>
-          <Button variant="contained" component={Link} to="/events" sx={{ mt: 2 }}>Back to Events</Button>
-        </Alert>
-      </Container>
+      <Box sx={{ minHeight: '100vh', bgcolor: '#F0F4FF', py: 6 }}>
+        <Container maxWidth="sm">
+          <Paper
+            elevation={0}
+            sx={{ borderRadius: 4, p: { xs: 3, sm: 5 }, border: '1px solid #E2E8F0' }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+              <ErrorOutlined sx={{ color: '#EF4444', fontSize: 28 }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1E293B' }}>
+                Event Not Found
+              </Typography>
+            </Box>
+            <Typography sx={{ color: '#64748B', mb: 3 }}>
+              The event you are looking for does not exist or is not available for registration.
+            </Typography>
+            <Button
+              variant="contained"
+              component={Link}
+              to="/events"
+              startIcon={<ArrowBack />}
+              sx={{
+                bgcolor: BLUE,
+                borderRadius: 2.5,
+                fontWeight: 700,
+                textTransform: 'none',
+                '&:hover': { bgcolor: '#1D46C8' },
+              }}
+            >
+              Back to Events
+            </Button>
+          </Paper>
+        </Container>
+      </Box>
     );
   }
 
+  /* ── Submit handler ──────────────────────────────────────────── */
   const handleFormSubmit = (formData: FormDataRecord) => {
     const phoneValue = formData.phone;
     const phone = typeof phoneValue === 'string' ? phoneValue.trim() : '';
@@ -87,97 +135,171 @@ export default function RegisterPage() {
 
   const isFormEmpty = !formStructure?.sections?.length;
 
+  /* ── Main page ───────────────────────────────────────────────── */
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Stack direction="column" spacing={3} sx={{ maxWidth: 800, mx: 'auto', width: '100%' }}>
-        <Link to="/events">
-          <Box component="span" sx={{ fontSize: 20 }}>←</Box>
-          Back to Events
-        </Link>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#F0F4FF' }}>
+      <Container maxWidth="sm" sx={{ py: { xs: 3, sm: 5 } }}>
+        {/* Back navigation */}
+        <Box sx={{ mb: 3 }}>
+          <Button
+            component={Link}
+            to={`/events/${eventId}`}
+            startIcon={<ArrowBack sx={{ fontSize: 18 }} />}
+            sx={{
+              color: BLUE,
+              fontWeight: 600,
+              fontSize: 14,
+              textTransform: 'none',
+              p: 0,
+              '&:hover': { bgcolor: 'transparent', textDecoration: 'underline' },
+            }}
+          >
+            Back to Event
+          </Button>
+        </Box>
 
-        <Card elevation={0} variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
-          {eventPoster(event) && (
+        {/* Registration card */}
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: 4,
+            border: '1px solid #E2E8F0',
+            bgcolor: '#FFFFFF',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Card header strip */}
+          <Box
+            sx={{
+              bgcolor: BLUE,
+              px: { xs: 3, sm: 4 },
+              py: 3,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
             <Box
-              component="img"
-              src={eventPoster(event)!}
-              alt={`${event.eventName} banner`}
-              sx={{ width: '100%', maxHeight: 280, objectFit: 'cover', display: 'block' }}
-            />
-          )}
-          <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-            <Stack direction="column" spacing={2} sx={{ mb: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-                <Box>
-                  <Chip label={event.status} color="success" variant="outlined" size="small" sx={{ mb: 1.5 }} />
-                  <Typography variant="h4" color="text.primary" sx={{ lineHeight: 1.2, fontWeight: 700 }}>
-                    {event.eventName}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: 'text.secondary' }}>
-                    <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
-                      {event.organizer?.name?.charAt(0) || 'E'}
-                    </Avatar>
-                    <Typography variant="body2">{event.organizer?.name}</Typography>
-                  </Box>
-                </Box>
-              </Box>
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                bgcolor: 'rgba(255,255,255,0.18)',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <ConfirmationNumber sx={{ fontSize: 26, color: '#FFFFFF' }} />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+            <Typography
+              sx={{
+                fontFamily: '"DM Sans", sans-serif',
+                fontWeight: 800,
+                fontSize: { xs: '1.35rem', sm: '1.6rem' },
+                color: '#FFFFFF',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Registration Form
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: 13.5,
+                color: 'rgba(255,255,255,0.75)',
+                mt: 0.5,
+                fontFamily: '"DM Sans", sans-serif',
+              }}
+            >
+              {event.eventName}
+            </Typography>
+            </Box>
+          </Box>
 
-              {event.description && (
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>{event.description}</Typography>
-              )}
-
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 1, md: 3 }, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
-                  <span style={{ fontSize: 18 }}>📅</span>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Event Date</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{new Date(event.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Typography>
-                  </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
-                  <span style={{ fontSize: 18 }}>⏰</span>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Registration Closes</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{new Date(event.closingTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</Typography>
-                  </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
-                  <span style={{ fontSize: 18 }}>🎟️</span>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Available Slots</Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{event.slots}</Typography>
-                  </Box>
-                </Box>
-              </Box>
-            </Stack>
-
-            <Divider sx={{ my: 2 }} />
-
+          {/* Card body */}
+          <Box sx={{ px: { xs: 3, sm: 4 }, py: { xs: 3, sm: 4 } }}>
+            {/* Success state */}
             {success && (
-              <Alert severity="success" variant="filled" icon={<span style={{ fontSize: 24 }}>✓</span>} sx={{ mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom>Registration Successful!</Typography>
-                <Typography>Your registration for <strong>{event.eventName}</strong> has been confirmed. You will receive a confirmation shortly.</Typography>
-                <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap' }}>
+              <Box
+                sx={{
+                  textAlign: 'center',
+                  py: 4,
+                  px: 2,
+                }}
+              >
+                <CheckCircleOutlined sx={{ fontSize: 64, color: '#22C55E', mb: 2 }} />
+                <Typography
+                  sx={{
+                    fontWeight: 800,
+                    fontSize: '1.35rem',
+                    color: '#1E293B',
+                    mb: 1,
+                    fontFamily: '"DM Sans", sans-serif',
+                  }}
+                >
+                  Registration Successful!
+                </Typography>
+                <Typography sx={{ color: '#64748B', fontSize: 14.5, mb: 3.5 }}>
+                  Your registration for{' '}
+                  <Box component="span" sx={{ fontWeight: 700, color: '#1E293B' }}>
+                    {event.eventName}
+                  </Box>{' '}
+                  has been confirmed.
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
                   {ticketId && (
-                    <Button variant="contained" color="success" onClick={() => navigate(`/ticket/${ticketId}`)}>
+                    <Button
+                      variant="contained"
+                      onClick={() => navigate(`/ticket/${ticketId}`)}
+                      sx={{
+                        bgcolor: BLUE,
+                        borderRadius: 2.5,
+                        px: 3.5,
+                        py: 1.25,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        fontSize: 14.5,
+                        '&:hover': { bgcolor: '#1D46C8' },
+                      }}
+                    >
                       View Ticket
                     </Button>
                   )}
-                  <Button variant="outlined" component={Link} to="/events" sx={{ color: 'success.main', borderColor: 'success.main' }}>
+                  <Button
+                    variant="outlined"
+                    component={Link}
+                    to="/events"
+                    sx={{
+                      borderColor: BLUE,
+                      color: BLUE,
+                      borderRadius: 2.5,
+                      px: 3.5,
+                      py: 1.25,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      fontSize: 14.5,
+                      '&:hover': { bgcolor: '#EEF2FF' },
+                    }}
+                  >
                     Browse More Events
                   </Button>
                 </Box>
-              </Alert>
+              </Box>
             )}
 
+            {/* Error banner */}
             {error && !success && (
-              <Alert severity="error" variant="filled" icon={<span style={{ fontSize: 24 }}>✕</span>} sx={{ mb: 3, borderRadius: 2 }}>
-                <Typography variant="h6" gutterBottom>Registration Failed</Typography>
-                <Typography>{error}</Typography>
+              <Alert
+                severity="error"
+                sx={{ mb: 3, borderRadius: 2.5, fontSize: 14 }}
+                onClose={() => setError('')}
+              >
+                {error}
               </Alert>
             )}
 
+            {/* Registration form */}
             {!success && !isFormEmpty && formStructure && (
               <RegistrationFlow
                 formStructure={formStructure}
@@ -188,9 +310,13 @@ export default function RegisterPage() {
               />
             )}
 
+            {/* No-form fallback */}
             {isFormEmpty && !success && (
-              <Alert severity="info" variant="filled" sx={{ mt: 2 }}>
-                <Typography variant="body1">This event doesn't have a custom registration form configured. The organizer will collect your details separately.</Typography>
+              <Box sx={{ textAlign: 'center', py: 3 }}>
+                <Typography sx={{ color: '#64748B', mb: 3, fontSize: 14.5 }}>
+                  This event doesn't have a custom registration form. The organizer will collect
+                  your details separately.
+                </Typography>
                 <Button
                   variant="contained"
                   onClick={() => {
@@ -198,15 +324,25 @@ export default function RegisterPage() {
                     createRegistration.mutate({ phone: '', eventId: eventId!, formData: {} });
                   }}
                   disabled={createRegistration.isPending}
-                  sx={{ mt: 1.5 }}
+                  sx={{
+                    bgcolor: BLUE,
+                    borderRadius: 2.5,
+                    px: 4,
+                    py: 1.25,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    fontSize: 14.5,
+                    '&:hover': { bgcolor: '#1D46C8' },
+                    '&:disabled': { bgcolor: '#93A8F4' },
+                  }}
                 >
-                  {createRegistration.isPending ? 'Registering...' : 'Register Anyway'}
+                  {createRegistration.isPending ? 'Registering…' : 'Register Anyway'}
                 </Button>
-              </Alert>
+              </Box>
             )}
-          </CardContent>
-        </Card>
-      </Stack>
-    </Container>
+          </Box>
+        </Paper>
+      </Container>
+    </Box>
   );
 }

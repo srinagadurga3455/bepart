@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Req } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { CreatePendingPaymentDto } from './dto/create-pending-payment.dto';
@@ -30,8 +30,8 @@ export class PaymentsController {
   }
 
   @Post('verify')
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Verify Razorpay payment signature', description: 'Verifies HMAC_SHA256(razorpay_order_id|razorpay_payment_id) with the Razorpay key secret and marks the linked payment PAID.' })
+  @Public()
+  @ApiOperation({ summary: 'Verify Razorpay payment signature (public guest checkout)', description: 'Verifies HMAC_SHA256(razorpay_order_id|razorpay_payment_id) with the Razorpay key secret and marks the linked payment PAID. Public so students without login can complete checkout; the Razorpay signature itself authorizes the call.' })
   @ApiBody({ type: VerifyPaymentDto })
   @ApiResponse({ status: 200, description: 'Payment verified' })
   @ApiResponse({ status: 400, description: 'Invalid signature' })
@@ -41,8 +41,8 @@ export class PaymentsController {
   }
 
   @Post('init')
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Initiate payment for paid event (before registration)', description: 'Creates Payment with status PENDING for a paid event. Requires phone and eventId. No Registration created yet. Payment must become PAID before registration can be submitted.' })
+  @Public()
+  @ApiOperation({ summary: 'Initiate payment for paid event (public guest checkout)', description: 'Creates Payment with status PENDING for a paid event. Requires phone and eventId. No Registration created yet. Payment must become PAID before registration can be submitted. Public so students without login can pay; amount authority stays server-side via coupon quote.' })
   @ApiBody({ type: CreatePendingPaymentDto })
   @ApiResponse({ status: 201, description: 'Pending payment created' })
   @ApiResponse({ status: 400, description: 'Invalid amount or event not requiring payment' })
@@ -70,9 +70,13 @@ export class PaymentsController {
   @Roles(Role.ORGANIZER, Role.ADMIN)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'List my transactions', description: 'ORGANIZER sees payments for own events, ADMIN sees all. Used by the transactions page.' })
-  @ApiResponse({ status: 200, description: 'Payment array with event/registration/coupon' })
-  findMine(@CurrentUser() user: RequestUser) {
-    return this.paymentsService.findMine(user.userId || user.id, user.role);
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  @ApiResponse({ status: 200, description: 'Payment array (or { data, meta } for ADMIN when page param provided)' })
+  findMine(@CurrentUser() user: RequestUser, @Query('page') page?: string, @Query('limit') limit?: string) {
+    const p = page !== undefined ? Math.max(1, parseInt(page, 10) || 1) : undefined;
+    const l = limit !== undefined ? Math.min(50, Math.max(1, parseInt(limit, 10) || 10)) : undefined;
+    return this.paymentsService.findMine(user.userId || user.id, user.role, p, l);
   }
 
   @Get('registration/:registrationId')
@@ -100,7 +104,7 @@ export class PaymentsController {
   @Patch(':id/status')
   @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'ORGANIZER: update payment status', description: 'Only the organizer who owns the payment event can manually change status (e.g. confirm an offline collection). Synchronizes Registration.paymentStatus atomically via transaction. Allowed: PENDING, PAID, FAILED' })
+  @ApiOperation({ summary: 'ORGANIZER: update payment status', description: 'Only the organizer who owns the payment event can manually change status (e.g. confirm an offline collection). Synchronizes Registration.paymentStatus atomically via transaction. Allowed: PENDING, PAID, FAILED, REFUNDED' })
   @ApiParam({ name: 'id', description: 'Payment ID' })
   @ApiBody({ type: UpdatePaymentStatusDto })
   @ApiResponse({ status: 200, description: 'Payment status updated' })

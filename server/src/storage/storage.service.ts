@@ -41,6 +41,21 @@ export class StorageService {
     }
   }
 
+  // R2 S3 endpoint must be account-level, WITHOUT any bucket/path suffix:
+  // correct:   https://<accountId>.r2.cloudflarestorage.com
+  // incorrect: https://<accountId>.r2.cloudflarestorage.com/<bucket>
+  // A suffixed endpoint makes the SDK request /<bucket>/<bucket>/<key>,
+  // so uploads land under a stray "<bucket>/" prefix and later reads 404.
+  // Normalize defensively so a misconfigured env value cannot corrupt keys.
+  private normalizeR2Endpoint(endpoint: string, bucket: string): string {
+    let normalized = (endpoint || '').trim().replace(/\/+$/, '');
+    const suffix = `/${bucket}`;
+    if (normalized.toLowerCase().endsWith(suffix.toLowerCase())) {
+      normalized = normalized.slice(0, -suffix.length);
+    }
+    return normalized;
+  }
+
   private getR2Client(): S3Client | null {
     if (this.s3Client) return this.s3Client;
     const accountId = this.configService?.get<string>('R2_ACCOUNT_ID');
@@ -56,7 +71,7 @@ export class StorageService {
       const resolvedEndpoint = envEndpoint || `https://${envAccount}.r2.cloudflarestorage.com`;
       this.s3Client = new S3Client({
         region: 'auto',
-        endpoint: resolvedEndpoint,
+        endpoint: this.normalizeR2Endpoint(resolvedEndpoint, this.getR2Bucket()),
         credentials: { accessKeyId: envKey, secretAccessKey: envSecret },
       });
       return this.s3Client;
@@ -64,7 +79,7 @@ export class StorageService {
     const resolvedEndpoint = endpoint || `https://${accountId}.r2.cloudflarestorage.com`;
     this.s3Client = new S3Client({
       region: 'auto',
-      endpoint: resolvedEndpoint,
+      endpoint: this.normalizeR2Endpoint(resolvedEndpoint, this.getR2Bucket()),
       credentials: { accessKeyId, secretAccessKey },
     });
     return this.s3Client;
@@ -83,10 +98,13 @@ export class StorageService {
     if (publicUrl) {
       return `${publicUrl.replace(/\/$/, '')}/${key}`;
     }
-    const endpoint = this.configService?.get<string>('R2_ENDPOINT') || process.env.R2_ENDPOINT || '';
+    // Fallback only when R2_PUBLIC_URL is unset: the S3 API endpoint is NOT
+    // publicly readable, so also normalize it (never append the bucket twice).
+    const rawEndpoint = this.configService?.get<string>('R2_ENDPOINT') || process.env.R2_ENDPOINT || '';
     const bucket = this.getR2Bucket();
+    const endpoint = this.normalizeR2Endpoint(rawEndpoint, bucket);
     if (endpoint) {
-      return `${endpoint.replace(/\/$/, '')}/${bucket}/${key}`;
+      return `${endpoint}/${bucket}/${key}`;
     }
     return key;
   }

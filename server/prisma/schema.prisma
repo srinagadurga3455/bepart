@@ -45,6 +45,7 @@ enum PaymentStatus {
   PENDING
   PAID
   FAILED
+  REFUNDED
 }
 
 enum WithdrawalStatus {
@@ -84,6 +85,7 @@ model User {
 enum OtpPurpose {
   ADMIN_LOGIN
   ORGANIZER_LOGIN
+  STUDENT_LOGIN
 }
 
 model OtpVerification {
@@ -176,8 +178,8 @@ model Event {
 
   @@index([organizerId])
   @@index([status])
-  @@index([isActive])
   @@index([date])
+  @@index([isActive])
   @@map("events")
 }
 
@@ -224,6 +226,9 @@ model Withdrawal {
   transactionId   String?
   proofUrl        String?
   rejectionReason String?
+  // Admin review audit: who reviewed and when (set on process/reject/pay).
+  reviewedBy      String?
+  reviewedAt      DateTime?
   requestedAt     DateTime         @default(now())
   paidAt          DateTime?
   createdAt       DateTime         @default(now())
@@ -272,6 +277,40 @@ model Payment {
   @@index([couponId])
   @@index([razorpayOrderId])
   @@map("payments")
+}
+
+// Notification delivery audit log. Notification failures must NEVER roll
+// back payments, tickets or settlements — they are retried independently.
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationLog {
+  id                String              @id @default(uuid())
+  type              String
+  channel           NotificationChannel
+  recipient         String
+  status            NotificationStatus  @default(PENDING)
+  entityType        String?
+  entityId          String?
+  error             String?             @db.Text
+  providerMessageId String?
+  retryCount        Int                 @default(0)
+  sentAt            DateTime?
+  createdAt         DateTime            @default(now())
+
+  @@index([type, entityId, status])
+  @@index([recipient])
+  @@index([createdAt])
+  @@map("notification_logs")
 }
 
 model Coupon {

@@ -30,33 +30,48 @@ export class RegistrationsRepository {
     return this.prisma.registration.findUnique({ where: { registrationId }, include: { event: true } });
   }
 
+  // Ticket-safe select shared by public lookups (one registration + its
+  // event, without the top-level phone). No new model, no new logic.
+  private readonly ticketSelect = {
+    registrationId: true,
+    eventId: true,
+    formData: true,
+    paymentStatus: true,
+    checkedInAt: true,
+    createdAt: true,
+    event: {
+      select: {
+        id: true,
+        eventName: true,
+        description: true,
+        date: true,
+        slots: true,
+        closingTime: true,
+        status: true,
+        formStructure: true,
+        posterSquareUrl: true,
+        posterRectangleUrl: true,
+        organizer: { select: { name: true } },
+      },
+    },
+  } as const;
+
   // Public ticket lookup: one registration + its event, without the top-level phone.
   findTicketWithEvent(registrationId: string) {
     return this.prisma.registration.findUnique({
       where: { registrationId },
-      select: {
-        registrationId: true,
-        eventId: true,
-        formData: true,
-        paymentStatus: true,
-        checkedInAt: true,
-        createdAt: true,
-        event: {
-          select: {
-            id: true,
-            eventName: true,
-            description: true,
-            date: true,
-            slots: true,
-            closingTime: true,
-            status: true,
-            formStructure: true,
-            posterSquareUrl: true,
-            posterRectangleUrl: true,
-            organizer: { select: { name: true } },
-          },
-        },
-      },
+      select: this.ticketSelect,
+    });
+  }
+
+  // Public "my tickets" lookup: ALL registrations for a canonical phone,
+  // newest first. Same ticket-safe shape as findTicketWithEvent.
+  findTicketsByPhone(phone: string) {
+    return this.prisma.registration.findMany({
+      where: { phone },
+      select: this.ticketSelect,
+      orderBy: { createdAt: 'desc' },
+      take: 50,
     });
   }
 

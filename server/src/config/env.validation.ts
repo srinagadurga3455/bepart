@@ -23,11 +23,36 @@ export const envValidationSchema = Joi.object({
   AZURE_STORAGE_CONNECTION_STRING: Joi.string().allow('').optional(),
   AZURE_STORAGE_CONTAINER: Joi.string().default('event-posters'),
 
+  // Cloudflare R2 event posters (optional; uploads fall back to mock URLs when unset).
+  // R2_ENDPOINT must be account-level with NO bucket suffix:
+  // https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
+  R2_ACCOUNT_ID: Joi.string().allow('').optional(),
+  R2_ACCESS_KEY_ID: Joi.string().allow('').optional(),
+  R2_SECRET_ACCESS_KEY: Joi.string().allow('').optional(),
+  R2_BUCKET_NAME: Joi.string().default('bepart'),
+  R2_ENDPOINT: Joi.string().uri().allow('').optional().description('Account-level R2 S3 endpoint, no bucket suffix'),
+  R2_PUBLIC_URL: Joi.string().uri().allow('').optional().description('Public base URL serving the R2 bucket (r2.dev or custom domain)'),
+
   // Razorpay (optional until Razorpay is enabled; required at runtime for order/webhook flows)
   RAZORPAY_KEY_ID: Joi.string().allow('').optional().description('Razorpay Key ID'),
   RAZORPAY_KEY_SECRET: Joi.string().allow('').optional().description('Razorpay Key Secret'),
   RAZORPAY_SECRET: Joi.string().allow('').optional().description('Legacy alias for RAZORPAY_KEY_SECRET'),
   RAZORPAY_WEBHOOK_SECRET: Joi.string().allow('').optional().description('Razorpay Webhook Secret'),
+
+  // Amazon SES transactional email (optional; sends are skipped with a warning when unset)
+  AWS_REGION: Joi.string().allow('').optional().description('AWS region for SES, e.g. ap-south-1'),
+  AWS_ACCESS_KEY_ID: Joi.string().allow('').optional(),
+  AWS_SECRET_ACCESS_KEY: Joi.string().allow('').optional(),
+  SES_FROM_EMAIL: Joi.string().email().allow('').optional().description('Verified SES sender identity'),
+
+  // Meta WhatsApp Cloud API (optional; sends are skipped with a warning when unset)
+  WHATSAPP_ACCESS_TOKEN: Joi.string().allow('').optional().description('Meta WhatsApp Cloud API access token'),
+  WHATSAPP_PHONE_NUMBER_ID: Joi.string().allow('').optional(),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: Joi.string().allow('').optional(),
+  WHATSAPP_API_VERSION: Joi.string().default('v26.0'),
+
+  // Admin notifications for settlement requests (optional; skipped when unset)
+  ADMIN_WHATSAPP_NUMBER: Joi.string().allow('').optional().description('Admin mobile in international format for settlement alerts'),
 });
 
 export type EnvConfig = {

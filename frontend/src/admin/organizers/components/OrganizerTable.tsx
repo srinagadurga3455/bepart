@@ -1,23 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputAdornment, InputLabel, MenuItem, Pagination, Select, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography,
+  Alert, Box, Button, Chip,
+  Dialog, DialogActions, DialogContent, DialogTitle,
+  FormControl, InputAdornment, InputLabel, MenuItem,
+  Pagination, Select, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import { Add, GroupsOutlined, Search } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSnackbar } from 'notistack';
 import { organizersApi } from '../api/organizers';
 import { apiErrorMessage, unwrapList } from '../../../app/api/client';
-import { validateEmail, validatePhone, validateRequired, validateUpiId } from '../../../app/utils/validators';
+import {
+  validateEmail, validatePhone, validateRequired, validateUpiId,
+} from '../../../app/utils/validators';
 import ConfirmDialog from '../../../app/components/ConfirmDialog';
 import EmptyState from '../../../app/components/EmptyState';
 import type { OrganizerItem, OrganizerPayload } from '../../../app/types';
 
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 8; // kept for backward compat; OrganizerTable uses ORG_PAGE_SIZE
 
+// ─── Status helpers ────────────────────────────────────────────────────────────
+
+/**
+ * An organizer is "active" when isActive is true AND status is APPROVED.
+ * deactivateTransaction sets isActive=false + status=REJECTED.
+ * reactivateTransaction (approve) sets isActive=true + status=APPROVED.
+ * We read isActive as the primary runtime gate; APPROVED confirms full access.
+ */
 export function isOrganizerActive(o: OrganizerItem | null | undefined): boolean {
-  return o?.status === 'APPROVED';
+  if (!o) return false;
+  if (o.isActive === false) return false;
+  return o.status === 'APPROVED';
 }
 
 export function OrganizerStatusChip({ organizer }: { organizer: OrganizerItem }) {
@@ -32,12 +48,21 @@ export function OrganizerStatusChip({ organizer }: { organizer: OrganizerItem })
   );
 }
 
+// ─── Create / Edit dialog ──────────────────────────────────────────────────────
+
 interface OrganizerFormState {
   name: string;
   email: string;
   phone: string;
   upiId: string;
   description: string;
+}
+
+interface OrganizerFormErrors {
+  name?: string;
+  email?: string;
+  phone?: string;
+  upiId?: string;
 }
 
 interface OrganizerFormDialogProps {
@@ -57,22 +82,35 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
     upiId: initial?.upiId || '',
     description: initial?.description || '',
   });
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<OrganizerFormErrors>({});
+  const [submitError, setSubmitError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const set = (k: keyof OrganizerFormState) => (e: ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof OrganizerFormState) => (e: ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [k]: e.target.value }));
+    setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
+
+  const validate = (): OrganizerFormErrors => {
+    const errors: OrganizerFormErrors = {};
+    const nameErr = validateRequired(form.name, 'Name');
+    if (nameErr) errors.name = nameErr;
+    const emailErr = validateEmail(form.email);
+    if (emailErr) errors.email = emailErr;
+    const phoneErr = validatePhone(form.phone);
+    if (phoneErr) errors.phone = phoneErr;
+    const upiErr = validateUpiId(form.upiId);
+    if (upiErr) errors.upiId = upiErr;
+    return errors;
+  };
 
   const submit = async () => {
-    setError('');
-    const nameErr = validateRequired(form.name, 'Name');
-    if (nameErr) { setError(nameErr); return; }
-    const emailErr = validateEmail(form.email);
-    if (emailErr) { setError(emailErr); return; }
-    const phoneErr = validatePhone(form.phone);
-    if (phoneErr) { setError(phoneErr); return; }
-    const upiErr = validateUpiId(form.upiId);
-    if (upiErr) { setError(upiErr); return; }
+    setSubmitError('');
+    const errors = validate();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
     setBusy(true);
     try {
       const payload: OrganizerPayload = {
@@ -90,7 +128,7 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
       onClose();
     } catch (err) {
       const msg = apiErrorMessage(err, `Could not ${isEdit ? 'update' : 'create'} organizer.`);
-      setError(msg);
+      setSubmitError(msg);
       enqueueSnackbar(msg, { variant: 'error' });
     } finally {
       setBusy(false);
@@ -98,23 +136,43 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" fullScreen={false} sx={{ '& .MuiDialog-paper': { m: { xs: 1.5 } } }}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="sm"
+      sx={{ '& .MuiDialog-paper': { m: { xs: 1.5 } } }}
+    >
       <DialogTitle>{isEdit ? 'Edit Organizer' : 'Create Organizer'}</DialogTitle>
       <DialogContent>
         {!isEdit && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            The organizer is created with role <strong>Organizer</strong> and signs in with the existing OTP login.
+            The organizer is created with role <strong>Organizer</strong> and signs in with the
+            existing OTP login.
           </Typography>
         )}
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <TextField label="Name *" placeholder="e.g. Sample Tech Club" value={form.name} onChange={set('name')}
-          fullWidth size="small" sx={{ mb: 2, mt: 0.5 }} />
-        <TextField label="Email *" placeholder="organizer@example.com" type="email" value={form.email} onChange={set('email')}
-          fullWidth size="small" sx={{ mb: 2 }} />
-        <TextField label="Phone" placeholder="+91 9876543210" value={form.phone} onChange={set('phone')}
-          fullWidth size="small" sx={{ mb: 2 }} />
-        <TextField label="UPI ID *" placeholder="club@upi" value={form.upiId} onChange={set('upiId')}
-          fullWidth size="small" sx={{ mb: 2 }} />
+        {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+        <TextField
+          label="Name *" placeholder="e.g. Sample Tech Club" value={form.name}
+          onChange={set('name')} fullWidth size="small" sx={{ mb: 2, mt: 0.5 }}
+          error={!!fieldErrors.name} helperText={fieldErrors.name}
+        />
+        <TextField
+          label="Email *" placeholder="organizer@example.com" type="email"
+          value={form.email} onChange={set('email')} fullWidth size="small" sx={{ mb: 2 }}
+          error={!!fieldErrors.email} helperText={fieldErrors.email}
+        />
+        <TextField
+          label="Phone" placeholder="+91 9876543210" value={form.phone}
+          onChange={set('phone')} fullWidth size="small" sx={{ mb: 2 }}
+          error={!!fieldErrors.phone} helperText={fieldErrors.phone}
+        />
+        <TextField
+          label="UPI ID *" placeholder="clubname@okhdfc" value={form.upiId}
+          onChange={set('upiId')} fullWidth size="small" sx={{ mb: 2 }}
+          error={!!fieldErrors.upiId}
+          helperText={fieldErrors.upiId || 'Format: handle@bank  (e.g. club@okhdfc, 9876543210@upi)'}
+        />
         <TextField label="Description" value={form.description} onChange={set('description')}
           fullWidth size="small" multiline rows={2} />
       </DialogContent>
@@ -128,7 +186,12 @@ function OrganizerFormDialog({ open, initial, onClose, onSaved }: OrganizerFormD
   );
 }
 
+// ─── Main OrganizerTable ───────────────────────────────────────────────────────
+
+const ORG_PAGE_SIZE = 10;
+
 export default function OrganizerTable() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const [search, setSearch] = useState('');
@@ -142,27 +205,75 @@ export default function OrganizerTable() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Auto-dismiss success banner after 3 s — no X button needed.
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => setSuccess(''), 3000);
+    return () => clearTimeout(t);
+  }, [success]);
+
+  // When search or filter is active: fetch all (no page param) so search
+  // works across the full dataset. When neither is active: use server-side
+  // pagination to avoid loading the entire list.
+  const isFiltering = search.trim().length > 0 || statusFilter !== 'all';
+
   const { data, isLoading, error: loadError, refetch } = useQuery({
-    queryKey: ['admin', 'organizers'], queryFn: () => organizersApi.list(),
-  });
-  const all: OrganizerItem[] = data ? unwrapList<OrganizerItem>(data) : [];
-  const q = search.trim().toLowerCase();
-  const organizers = all.filter((o) => {
-    if (statusFilter !== 'all' && (isOrganizerActive(o) ? 'active' : 'inactive') !== statusFilter) return false;
-    if (!q) return true;
-    return (o.name || '').toLowerCase().includes(q)
-      || (o.email || o.user?.email || '').toLowerCase().includes(q)
-      || (o.phone || '').toLowerCase().includes(q);
+    queryKey: ['admin', 'organizers', isFiltering ? 'all' : page, ORG_PAGE_SIZE],
+    queryFn: () =>
+      isFiltering
+        ? organizersApi.list()
+        : organizersApi.list({ page, limit: ORG_PAGE_SIZE }),
   });
 
-  const totalPages = Math.max(1, Math.ceil(organizers.length / PAGE_SIZE));
+  // When filtering: unwrap and filter client-side
+  // When paginating: the backend already sliced the data
+  const rawData = data?.data;
+  const pagedMeta = !isFiltering && rawData && !Array.isArray(rawData) && 'meta' in rawData
+    ? (rawData as { data: OrganizerItem[]; meta: { total: number; page: number; limit: number; totalPages: number } }).meta
+    : null;
+  const allItems: OrganizerItem[] = data ? unwrapList<OrganizerItem>(data) : [];
+
+  const q = search.trim().toLowerCase();
+  const organizers = isFiltering
+    ? allItems.filter((o) => {
+        if (statusFilter !== 'all' && (isOrganizerActive(o) ? 'active' : 'inactive') !== statusFilter)
+          return false;
+        if (!q) return true;
+        return (
+          (o.name || '').toLowerCase().includes(q) ||
+          (o.email || o.user?.email || '').toLowerCase().includes(q) ||
+          (o.phone || '').toLowerCase().includes(q)
+        );
+      })
+    : allItems;
+
+  // totalPages: from server meta when not filtering, computed locally when filtering
+  const serverTotalPages = pagedMeta?.totalPages ?? 1;
+  const clientTotalPages = Math.max(1, Math.ceil(organizers.length / ORG_PAGE_SIZE));
+  const totalPages = isFiltering ? clientTotalPages : serverTotalPages;
+
   const safePage = Math.min(page, totalPages);
-  const paged = organizers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // When filtering client-side, also slice locally
+  const paged = isFiltering
+    ? organizers.slice((safePage - 1) * ORG_PAGE_SIZE, safePage * ORG_PAGE_SIZE)
+    : organizers; // backend already returned correct slice
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['admin', 'organizers'] });
     queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
-    refetch();
+    queryClient.invalidateQueries({ queryKey: ['admin', 'organizer-overview'] });
+    refetch().then((res) => {
+      // If deletion emptied the current page, move to last valid page
+      const meta = res?.data?.data &&
+        !Array.isArray(res.data.data) &&
+        'meta' in (res.data.data as object)
+          ? (res.data.data as any).meta
+          : null;
+      if (meta && page > meta.totalPages && meta.totalPages > 0) {
+        setPage(meta.totalPages);
+      }
+    });
   };
 
   const saved = (msg: string) => {
@@ -174,7 +285,7 @@ export default function OrganizerTable() {
     id: string,
     fn: (oid: string) => Promise<unknown>,
     okMsg: string,
-    failMsg: string
+    failMsg: string,
   ) => {
     setError('');
     setBusyId(id);
@@ -202,8 +313,17 @@ export default function OrganizerTable() {
           p: { xs: 2, md: 2.5 },
         }}
       >
+        {/* Toolbar */}
         <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Typography sx={{ mr: 'auto', fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', color: '#101828' }}>
+          <Typography
+            sx={{
+              mr: 'auto',
+              fontSize: 17,
+              fontWeight: 800,
+              letterSpacing: '-0.01em',
+              color: '#101828',
+            }}
+          >
             Organizers
           </Typography>
           <TextField
@@ -249,9 +369,11 @@ export default function OrganizerTable() {
           </Button>
         </Box>
 
-        {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
+        {/* Banners */}
+        {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
         {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
+        {/* Table */}
         {isLoading ? (
           <Alert severity="info">Loading organizers…</Alert>
         ) : loadError ? (
@@ -273,18 +395,17 @@ export default function OrganizerTable() {
             <Table size="small" sx={{ minWidth: 780 }}>
               <TableHead>
                 <TableRow sx={{ bgcolor: '#F4F7FF', '& .MuiTableCell-head': { borderBottom: '1px solid #EEF1F7' } }}>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>Name</TableCell>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>Email</TableCell>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>Phone</TableCell>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>UPI ID</TableCell>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>Status</TableCell>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>Events</TableCell>
-                  <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>Actions</TableCell>
+                  {['Name', 'Email', 'Phone', 'UPI ID', 'Status', 'Events', 'Actions'].map((h) => (
+                    <TableCell key={h} sx={{ fontSize: 12, fontWeight: 600, color: '#667085' }}>{h}</TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {paged.map((o) => (
-                  <TableRow key={o.id} sx={{ '& .MuiTableCell-body': { fontSize: 13, borderBottom: '1px solid #F2F4F8' } }}>
+                  <TableRow
+                    key={o.id}
+                    sx={{ '& .MuiTableCell-body': { fontSize: 13, borderBottom: '1px solid #F2F4F8' } }}
+                  >
                     <TableCell sx={{ fontWeight: 600, color: '#101828' }}>{o.name}</TableCell>
                     <TableCell sx={{ color: '#344054' }}>{o.email || o.user?.email || '—'}</TableCell>
                     <TableCell sx={{ color: '#344054' }}>{o.phone || '—'}</TableCell>
@@ -292,35 +413,47 @@ export default function OrganizerTable() {
                     <TableCell><OrganizerStatusChip organizer={o} /></TableCell>
                     <TableCell sx={{ color: '#344054' }}>{o._count?.events ?? '—'}</TableCell>
                     <TableCell>
-                      <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
-                        <Button size="small" variant="outlined" component={RouterLink} to={`/admin/organizers/${o.id}`}
-                          sx={{ fontSize: 12, textTransform: 'none', borderRadius: '7px' }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        {/* Row 1: View + Edit */}
+                        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'nowrap' }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => navigate(`/admin/organizers/${o.id}`)}
+                          sx={{ fontSize: 12, textTransform: 'none', borderRadius: '7px' }}
+                        >
                           View
                         </Button>
-                        <Button size="small" variant="outlined" onClick={() => setEditTarget(o)}
-                          sx={{ fontSize: 12, textTransform: 'none', borderRadius: '7px' }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setEditTarget(o)}
+                          sx={{ fontSize: 12, textTransform: 'none', borderRadius: '7px' }}
+                        >
                           Edit
                         </Button>
+                        </Box>
+                        {/* Row 2: Activate/Deactivate + Delete — always on same line */}
+                        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'nowrap' }}>
                         {isOrganizerActive(o) ? (
-                          <Button size="small" color="error" disabled={busyId === o.id} onClick={() => setConfirmDeactId(o.id)}
+                          <Button size="small" color="error" disabled={busyId === o.id}
+                            onClick={() => setConfirmDeactId(o.id)}
                             sx={{ fontSize: 12, textTransform: 'none' }}>
                             {busyId === o.id ? 'Working…' : 'Deactivate'}
                           </Button>
                         ) : (
-                          <Button
-                            size="small"
-                            color="success"
-                            disabled={busyId === o.id}
+                          <Button size="small" color="success" disabled={busyId === o.id}
                             onClick={() => runStatusChange(o.id, (oid) => organizersApi.approve(oid), 'Organizer activated.', 'Activation failed.')}
-                            sx={{ fontSize: 12, textTransform: 'none' }}
-                          >
+                            sx={{ fontSize: 12, textTransform: 'none' }}>
                             {busyId === o.id ? 'Working…' : 'Activate'}
                           </Button>
                         )}
-                        <Button size="small" color="error" disabled={busyId === o.id} onClick={() => setConfirmDeleteId(o.id)}
+                        <Button size="small" color="error" disabled={busyId === o.id}
+                          onClick={() => setConfirmDeleteId(o.id)}
                           sx={{ fontSize: 12, textTransform: 'none' }}>
                           Delete
                         </Button>
+                        </Box>
                       </Box>
                     </TableCell>
                   </TableRow>
@@ -331,6 +464,7 @@ export default function OrganizerTable() {
         )}
       </Box>
 
+      {/* Create / Edit dialogs */}
       {createOpen && (
         <OrganizerFormDialog open onClose={() => setCreateOpen(false)} onSaved={saved} />
       )}
@@ -344,6 +478,7 @@ export default function OrganizerTable() {
         />
       )}
 
+      {/* Confirm: Deactivate */}
       <ConfirmDialog
         open={!!confirmDeactId}
         title="Deactivate organizer?"
@@ -354,37 +489,45 @@ export default function OrganizerTable() {
         onConfirm={() => {
           const id = confirmDeactId;
           setConfirmDeactId(null);
-          if (id) runStatusChange(id, (oid) => organizersApi.deactivate(oid), 'Organizer deactivated. Their events are now hidden.', 'Deactivation failed.');
+          if (id)
+            runStatusChange(id, (oid) => organizersApi.deactivate(oid),
+              'Organizer deactivated. Their events are now hidden.', 'Deactivation failed.');
         }}
       />
 
+      {/* Confirm: Delete */}
       <ConfirmDialog
         open={!!confirmDeleteId}
         title="Delete Organizer?"
-        description="This action cannot be undone. All associated data will be affected according to the platform's deletion rules."
+        description="This action cannot be undone. All associated events and registrations will be permanently removed."
         confirmLabel="Delete"
         busy={!!busyId}
         onCancel={() => setConfirmDeleteId(null)}
         onConfirm={() => {
           const id = confirmDeleteId;
           setConfirmDeleteId(null);
-          if (id) runStatusChange(id, (oid) => organizersApi.remove(oid), 'Organizer deleted.', 'Could not delete organizer.');
+          if (id)
+            runStatusChange(id, (oid) => organizersApi.remove(oid),
+              'Organizer deleted.', 'Could not delete organizer.');
         }}
       />
 
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-        <Pagination
-          count={totalPages}
-          page={safePage}
-          onChange={(_, value) => setPage(value)}
-          size="small"
-          shape="rounded"
-          sx={{
-            '& .MuiPaginationItem-root': { fontSize: 12.5, color: '#667085' },
-            '& .Mui-selected': { bgcolor: '#EAF1FF !important', color: '#2557F5', fontWeight: 700 },
-          }}
-        />
-      </Box>
+      {/* Pagination — only show when more than one page exists */}
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+          <Pagination
+            count={totalPages}
+            page={safePage}
+            onChange={(_, value) => setPage(value)}
+            size="small"
+            shape="rounded"
+            sx={{
+              '& .MuiPaginationItem-root': { fontSize: 12.5, color: '#667085' },
+              '& .Mui-selected': { bgcolor: '#EAF1FF !important', color: '#2557F5', fontWeight: 700 },
+            }}
+          />
+        </Box>
+      )}
     </Box>
   );
 }

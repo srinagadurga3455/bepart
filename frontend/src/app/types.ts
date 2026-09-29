@@ -302,3 +302,32 @@ export interface EventQueryParams {
   search?: string;
   status?: string;
 }
+
+// ─── Admin organizer overview ──────────────────────────────────────────────────
+// Returned by GET /organizers/:id/overview (ADMIN only).
+
+export interface OrganizerOverviewEvent {
+  id: string;
+  eventName: string;
+  date: string;
+  status: EventStatus;
+  isActive: boolean;
+  paymentRequired: boolean;
+  slots: number;
+  registrationCount: number;
+  /** Revenue in paise (Int). 0 for free events. Only PAID payments counted. */
+  revenuePaise: number;
+  /** True when the event's date has already passed. */
+  isCompleted: boolean;
+}
+
+export interface OrganizerOverview {
+  organizer: OrganizerItem;
+  totalEvents: number;
+  upcomingEvents: number;
+  completedEvents: number;
+  totalRegistrations: number;
+  /** Total revenue across all events in paise. */
+  totalRevenuePaise: number;
+  events: OrganizerOverviewEvent[];
+}

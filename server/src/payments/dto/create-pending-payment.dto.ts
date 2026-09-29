@@ -1,11 +1,12 @@
-import { IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsEventId } from '../../common/validators/event-id.validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreatePendingPaymentDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID) for paid event' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID or legacy numeric ID) for paid event' })
   @IsString()
-  @IsUUID()
+  @IsEventId()
   eventId: string;
 
   @ApiProperty({ example: '+91 9876543210', description: 'Phone for payment' })

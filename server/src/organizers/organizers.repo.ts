@@ -29,6 +29,23 @@ export class OrganizersRepository {
     });
   }
 
+  async findAllOrganizersPaged(page: number, limit: number) {
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      this.prisma.organizer.findMany({
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+          _count: { select: { events: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.organizer.count(),
+    ]);
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
   createOrganizer(data: { userId: string; name: string; description?: string; phone?: string; email?: string; upiId?: string; status: OrganizerStatus }) {
     return this.prisma.organizer.create({
       data: {
@@ -109,6 +126,76 @@ export class OrganizersRepository {
 
   countEvents(where: any) {
     return this.prisma.event.count({ where });
+  }
+
+  // Overview: events with registration count and PAID revenue per event.
+  // Used by GET /organizers/:id/overview (ADMIN only).
+  async getOrganizerOverview(organizerId: string) {
+    const organizer = await this.prisma.organizer.findUnique({
+      where: { id: organizerId },
+      include: { user: { select: { id: true, name: true, email: true, role: true } } },
+    });
+    if (!organizer) return null;
+
+    const events = await this.prisma.event.findMany({
+      where: { organizerId },
+      orderBy: { date: 'desc' },
+      include: {
+        _count: { select: { registrations: true } },
+      },
+    });
+
+    // Collect all event IDs for this organizer
+    const eventIds = events.map((e) => e.id);
+
+    // Revenue: sum PAID payments per event (amount is in paise)
+    const paidPayments = eventIds.length > 0
+      ? await this.prisma.payment.findMany({
+          where: {
+            status: 'PAID',
+            OR: [
+              { eventId: { in: eventIds } },
+              { registration: { eventId: { in: eventIds } } },
+            ],
+          },
+          select: { id: true, amount: true, eventId: true, registrationId: true, registration: { select: { eventId: true } } },
+        })
+      : [];
+
+    // Build per-event revenue map (paise)
+    const revenueByEvent = new Map<string, number>();
+    for (const p of paidPayments) {
+      const eid = p.eventId || (p.registration as any)?.eventId;
+      if (!eid) continue;
+      revenueByEvent.set(eid, (revenueByEvent.get(eid) ?? 0) + p.amount);
+    }
+
+    const totalRegistrations = events.reduce((sum, e) => sum + e._count.registrations, 0);
+    const totalRevenuePaise = [...revenueByEvent.values()].reduce((s, v) => s + v, 0);
+    const now = new Date();
+
+    const eventSummaries = events.map((e) => ({
+      id: e.id,
+      eventName: e.eventName,
+      date: e.date,
+      status: e.status,
+      isActive: e.isActive,
+      paymentRequired: e.paymentRequired,
+      slots: e.slots,
+      registrationCount: e._count.registrations,
+      revenuePaise: revenueByEvent.get(e.id) ?? 0,
+      isCompleted: e.date <= now,
+    }));
+
+    return {
+      organizer,
+      totalEvents: events.length,
+      upcomingEvents: eventSummaries.filter((e) => !e.isCompleted && e.status === 'PUBLISHED').length,
+      completedEvents: eventSummaries.filter((e) => e.isCompleted || e.status === 'COMPLETED' || e.status === 'CANCELLED').length,
+      totalRegistrations,
+      totalRevenuePaise,
+      events: eventSummaries,
+    };
   }
 
   // OTP

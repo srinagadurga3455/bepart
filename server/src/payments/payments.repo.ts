@@ -104,6 +104,38 @@ export class PaymentsRepository {
     return this.attachEvents(payments);
   }
 
+  async findAllPaymentsPaged(page: number, limit: number) {
+    const skip = (page - 1) * limit;
+    const [payments, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        include: this.paymentListInclude(),
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.payment.count(),
+    ]);
+    // Totals for summary cards (over the FULL dataset, not just current page)
+    const [totalPaidAgg, pendingCount, failedCount] = await Promise.all([
+      this.prisma.payment.aggregate({ _sum: { amount: true }, where: { status: 'PAID' } }),
+      this.prisma.payment.count({ where: { status: 'PENDING' } }),
+      this.prisma.payment.count({ where: { status: 'FAILED' } }),
+    ]);
+    const data = await this.attachEvents(payments);
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        totalPaidPaise: totalPaidAgg._sum.amount ?? 0,
+        pendingCount,
+        failedCount,
+      },
+    };
+  }
+
   createPendingPayment(data: { phone: string;  eventId: string; amount: number; status?: PaymentStatus; couponId?: string | null; couponCode?: string | null; originalAmount?: number | null; discountAmount?: number | null; pendingFormData?: any }) {
     return this.prisma.payment.create({
       data: {
@@ -134,6 +166,13 @@ export class PaymentsRepository {
   findPaymentByRazorpayOrderId(razorpayOrderId: string) {
     return this.prisma.payment.findFirst({
       where: { razorpayOrderId },
+      include: { registration: true },
+    });
+  }
+
+  findPaymentByRazorpayPaymentId(razorpayPaymentId: string) {
+    return this.prisma.payment.findFirst({
+      where: { razorpayPaymentId },
       include: { registration: true },
     });
   }

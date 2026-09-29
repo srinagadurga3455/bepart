@@ -294,37 +294,83 @@ export default function RegistrationFlow({
           />
         ) : (
           <>
+            {/* ── Section header ──────────────────────────────── */}
             <Box
               key={currentSection.id}
-              sx={{
-                animation: 'fadeIn 0.3s ease',
-                minHeight: 300,
-              }}
+              sx={{ animation: 'fadeIn 0.3s ease' }}
             >
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="h6" color="text.primary" gutterBottom sx={{ fontWeight: 600 }}>
-                  {currentSection.title}
-                </Typography>
-                {currentSection.description && (
-                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                    {currentSection.description}
-                  </Typography>
-                )}
-                {prefilled.length > 0 && (
-                  <Alert severity="info" icon={<LockOutlined fontSize="small" />} sx={{ mt: 1.5 }}>
-                    Signed in as {user?.name || user?.email} — your name
-                    {prefilled.length > 1 ? ' and mobile number were' : ' was'} filled from your
-                    BePart account. You can still edit {prefilled.length > 1 ? 'them' : 'it'} below.
+              {/* Section title & description */}
+              {(currentSection.title || currentSection.description) && (
+                <Box sx={{ mb: 2.5 }}>
+                  {currentSection.title && (
+                    <Typography
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: '1rem',
+                        color: '#1E293B',
+                        letterSpacing: '-0.01em',
+                        fontFamily: '"DM Sans", sans-serif',
+                      }}
+                    >
+                      {currentSection.title}
+                    </Typography>
+                  )}
+                  {currentSection.description && (
+                    <Typography
+                      sx={{ fontSize: 13.5, color: '#64748B', mt: 0.5, lineHeight: 1.55 }}
+                    >
+                      {currentSection.description}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+
+              {/* Account prefill notice */}
+              {prefilled.length > 0 && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 1.5,
+                    bgcolor: '#EEF2FF',
+                    border: '1px solid #C7D5FD',
+                    borderRadius: 2.5,
+                    px: 2,
+                    py: 1.5,
+                    mb: 3,
+                  }}
+                >
+                  <LockOutlined sx={{ fontSize: 18, color: '#2557F5', mt: 0.15, flexShrink: 0 }} />
+                  <Box>
+                    <Typography sx={{ fontSize: 13.5, color: '#1E293B', fontWeight: 600, lineHeight: 1.4 }}>
+                      Signed in as {user?.name || user?.email}
+                    </Typography>
+                    <Typography sx={{ fontSize: 13, color: '#4B5563', mt: 0.25, lineHeight: 1.5 }}>
+                      Your {prefilled.length > 1 ? 'name and mobile number were' : 'name was'} filled
+                      from your BePart account. You can still edit{' '}
+                      {prefilled.length > 1 ? 'them' : 'it'} below.
+                    </Typography>
                     <Box sx={{ mt: 1, display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
-                      <Chip size="small" icon={<LockOutlined />} label="BePart account field" variant="outlined" />
+                      <Chip
+                        size="small"
+                        icon={<LockOutlined style={{ fontSize: 12 }} />}
+                        label="BePart account field"
+                        variant="outlined"
+                        sx={{
+                          fontSize: 11.5,
+                          height: 22,
+                          borderColor: '#2557F5',
+                          color: '#2557F5',
+                          '& .MuiChip-icon': { color: '#2557F5' },
+                        }}
+                      />
                     </Box>
-                  </Alert>
-                )}
-              </Box>
+                  </Box>
+                </Box>
+              )}
 
-              <Divider sx={{ mb: 4 }} />
-
-              <Box sx={{ ml: { xs: 0, sm: '37.5px' }, borderLeft: '2px solid', borderColor: 'divider', pl: { xs: 2, sm: 3 }, minWidth: 0 }}>
+              {/* Fields */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 {visibleCurrentFields.map((field, fieldIndex) => (
                   <FormSection
                     key={`${currentSection.id}-${field.name}-${fieldIndex}`}
@@ -334,27 +380,46 @@ export default function RegistrationFlow({
                   />
                 ))}
                 {teamMode && visibleCurrentFields.length === 0 && (
-                  <Alert severity="info" sx={{ mb: 3 }}>
-                    Select the number of team members in the previous section to see the member fields.
-                  </Alert>
+                  <Box
+                    sx={{
+                      bgcolor: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 2.5,
+                      px: 2.5,
+                      py: 2,
+                      mb: 2,
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13.5, color: '#64748B' }}>
+                      Select the number of team members in the previous section to see the member
+                      fields.
+                    </Typography>
+                  </Box>
                 )}
               </Box>
             </Box>
 
-            <Divider sx={{ my: 4 }} />
+            <Divider sx={{ my: 3.5 }} />
 
-            <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={2} sx={{ justifyContent: 'space-between' }}>
+            {/* ── Navigation buttons ──────────────────────────── */}
+            <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5}>
               <Button
                 variant="outlined"
                 size="large"
                 startIcon={<KeyboardArrowLeft />}
                 onClick={handleBack}
                 disabled={currentSectionIndex === 0 && !showReview}
+                fullWidth
                 sx={{
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 600,
-                  borderRadius: 2,
+                  py: 1.4,
+                  fontWeight: 700,
+                  fontSize: 15,
+                  borderRadius: 2.5,
+                  textTransform: 'none',
+                  borderColor: '#CBD5E1',
+                  color: '#475569',
+                  '&:hover': { borderColor: '#2557F5', color: '#2557F5', bgcolor: '#EEF2FF' },
+                  '&.Mui-disabled': { borderColor: '#E2E8F0', color: '#CBD5E1' },
                 }}
               >
                 Back
@@ -366,14 +431,20 @@ export default function RegistrationFlow({
                 endIcon={<KeyboardArrowRight />}
                 onClick={handleContinue}
                 disabled={isSubmitting}
+                fullWidth
                 sx={{
-                  px: 4,
-                  py: 1.5,
-                  fontWeight: 600,
-                  borderRadius: 2,
-                  bgcolor: 'primary.main',
-                  '&:hover': { bgcolor: 'primary.dark' },
-                  '&:disabled': { bgcolor: 'action.disabledBackground' },
+                  py: 1.4,
+                  fontWeight: 700,
+                  fontSize: 15,
+                  borderRadius: 2.5,
+                  textTransform: 'none',
+                  bgcolor: '#2557F5',
+                  boxShadow: 'none',
+                  '&:hover': {
+                    bgcolor: '#1D46C8',
+                    boxShadow: '0 8px 20px -8px rgba(37,87,245,0.55)',
+                  },
+                  '&.Mui-disabled': { bgcolor: '#93A8F4', boxShadow: 'none' },
                 }}
               >
                 {isLastSection ? 'Review & Register' : 'Continue'}

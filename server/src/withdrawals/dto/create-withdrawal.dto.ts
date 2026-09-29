@@ -1,13 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsEventId } from '../../common/validators/event-id.validator';
+import { UPI_ID_REGEX, UPI_ID_MESSAGE } from '../../common/constants/validation';
 
-export const UPI_ID_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9.-]{2,64}$/;
+/** @deprecated — use UPI_ID_REGEX from common/constants/validation instead. */
+export const UPI_ID_PATTERN = UPI_ID_REGEX;
 
 export class CreateWithdrawalDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID, must belong to the organizer)' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID or legacy numeric ID, must belong to the organizer)' })
   @IsString()
-  @IsUUID()
+  @IsEventId()
   eventId: string;
 
   @ApiProperty({ example: 2500000, description: 'Amount in paise (2500000 = ₹25,000.00). Must not exceed available balance.' })
@@ -20,6 +23,6 @@ export class CreateWithdrawalDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
-  @Matches(UPI_ID_PATTERN, { message: 'upiId must be a valid UPI ID (e.g. name@bank)' })
+  @Matches(UPI_ID_REGEX, { message: UPI_ID_MESSAGE })
   upiId?: string;
 }

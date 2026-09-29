@@ -6,6 +6,7 @@ import AdminOrganizersPage from './organizers/pages/AdminOrganizersPage';
 import AdminOrganizerDetailPage from './organizers/pages/AdminOrganizerDetailPage';
 import AdminWithdrawalsPage from './withdrawals/pages/AdminWithdrawalsPage';
 import AdminWithdrawalDetailPage from './withdrawals/pages/AdminWithdrawalDetailPage';
+import AdminTransactionsPage from './transactions/pages/AdminTransactionsPage';
 import AdminAccountPage from './account/pages/AdminAccountPage';
 
 export interface NavItem {
@@ -16,8 +17,8 @@ export interface NavItem {
 
 export const adminNav: NavItem[] = [
   { label: 'Dashboard', to: '/admin', end: true },
-  { label: 'Organizers', to: '/admin/organizers' },
   { label: 'Withdrawals', to: '/admin/withdrawals' },
+  { label: 'Transactions', to: '/admin/transactions' },
   { label: 'Account', to: '/admin/account' },
 ];
 
@@ -30,6 +31,7 @@ const routes: RouteObject[] = [
   { path: '/admin/organizers/:id', element: admin(<AdminOrganizerDetailPage />) },
   { path: '/admin/withdrawals', element: admin(<AdminWithdrawalsPage />) },
   { path: '/admin/withdrawals/:id', element: admin(<AdminWithdrawalDetailPage />) },
+  { path: '/admin/transactions', element: admin(<AdminTransactionsPage />) },
   { path: '/admin/account', element: admin(<AdminAccountPage />) },
 ];
 

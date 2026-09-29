@@ -13,6 +13,8 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     findByOrganizerId: jest.fn(),
     findByPhone: jest.fn(),
     findByRegistrationId: jest.fn(),
+    findTicketWithEvent: jest.fn(),
+    findTicketsByPhone: jest.fn(),
     findOrganizerByUserId: jest.fn(),
     findEventById: jest.fn(),
     findUserById: jest.fn(),
@@ -306,5 +308,53 @@ describe('RegistrationsService - QR check-in', () => {
     const undone: any = await service.undoCheckIn('r1', 'admin1', 'ADMIN');
     expect(mockRepo.clearCheckedIn).toHaveBeenCalledWith('r1');
     expect(undone.checkedInAt).toBeNull();
+  });
+});
+
+describe('RegistrationsService - findTicketsByPhone', () => {
+  let service: RegistrationsService;
+  const mockRepo: any = {
+    findTicketsByPhone: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const mod: TestingModule = await Test.createTestingModule({
+      providers: [
+        RegistrationsService,
+        { provide: RegistrationsRepository, useValue: mockRepo },
+        { provide: require('../coupons/coupons.service').CouponsService, useValue: {} },
+      ],
+    }).compile();
+    service = mod.get(RegistrationsService);
+  });
+
+  it('should reject empty phone', async () => {
+    await expect(service.findTicketsByPhone('')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.findTicketsByPhone('   ')).rejects.toBeInstanceOf(BadRequestException);
+    expect(mockRepo.findTicketsByPhone).not.toHaveBeenCalled();
+  });
+
+  it('should reject too-short phone', async () => {
+    await expect(service.findTicketsByPhone('12345')).rejects.toBeInstanceOf(BadRequestException);
+    expect(mockRepo.findTicketsByPhone).not.toHaveBeenCalled();
+  });
+
+  it('should canonicalize +91 phone and attach ticketUrl to every registration', async () => {
+    mockRepo.findTicketsByPhone.mockResolvedValue([
+      { registrationId: 'r1', eventId: 'ev1' },
+      { registrationId: 'r2', eventId: 'ev2' },
+    ]);
+    const res: any = await service.findTicketsByPhone('+91 98765 43210');
+    expect(mockRepo.findTicketsByPhone).toHaveBeenCalledWith('9876543210');
+    expect(res).toHaveLength(2);
+    expect(res[0].ticketUrl).toContain('/ticket/r1');
+    expect(res[1].ticketUrl).toContain('/ticket/r2');
+  });
+
+  it('should return empty array when no registrations match', async () => {
+    mockRepo.findTicketsByPhone.mockResolvedValue([]);
+    const res = await service.findTicketsByPhone('9876543210');
+    expect(res).toEqual([]);
   });
 });

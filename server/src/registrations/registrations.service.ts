@@ -5,6 +5,7 @@ import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { validateFormData } from '../common/validators/form-structure.validator';
 import { canonicalPhone } from '../common/utils/phone';
 import { CouponsService } from '../coupons/coupons.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RegistrationsService {
@@ -14,6 +15,7 @@ export class RegistrationsService {
     private readonly registrationsRepo: RegistrationsRepository,
     private readonly couponsService: CouponsService,
     @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async create(dto: CreateRegistrationDto, userId?: string) {
@@ -158,6 +160,16 @@ export class RegistrationsService {
 
     // Post-registration ticket flow: console confirmation + ticket URL (no new model).
     this.logRegistrationConfirmation(registration, (registration as any)?.event, dto.formData);
+    // Student confirmation email + WhatsApp ticket, best-effort and deduped
+    // per registration. Failures never roll back the registration.
+    try {
+      await this.notifications?.sendTicketNotifications({
+        registrationId: (registration as any)?.registrationId,
+        kind: 'confirmation',
+      });
+    } catch (err) {
+      this.logger.warn(`Post-registration notification failed: ${(err as Error)?.message}`);
+    }
     const pricing = {
       originalAmount: (registration as any)?.originalAmount ?? 0,
       discountAmount: (registration as any)?.discountAmount ?? 0,
@@ -172,6 +184,17 @@ export class RegistrationsService {
     const reg = await this.registrationsRepo.findTicketWithEvent(registrationId);
     if (!reg) throw new NotFoundException('Ticket not found');
     return { ...reg, ticketUrl: this.ticketUrl(reg.registrationId) };
+  }
+
+  // Public "my tickets" lookup by registered mobile number (no OTP, no auth).
+  // Returns ALL registrations for the canonical phone, newest first. Reuses
+  // the existing Registration model + ticket select + ticketUrl builder.
+  async findTicketsByPhone(phone: string) {
+    const raw = (phone ?? '').trim();
+    if (!raw) throw new BadRequestException('Mobile number is required');
+    if (raw.replace(/\D/g, '').length < 10) throw new BadRequestException('Enter a valid 10-digit mobile number');
+    const regs = await this.registrationsRepo.findTicketsByPhone(canonicalPhone(raw));
+    return regs.map((reg: any) => ({ ...reg, ticketUrl: this.ticketUrl(reg.registrationId) }));
   }
 
   private ticketUrl(registrationId: string): string {

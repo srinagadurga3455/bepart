@@ -110,6 +110,23 @@ export class WithdrawalsRepository {
     });
   }
 
+  async findAllPaged(page: number, limit: number): Promise<{
+    data: WithdrawalDetail[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      this.prisma.withdrawal.findMany({
+        include: withdrawalDetailInclude,
+        orderBy: { requestedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.withdrawal.count(),
+    ]);
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
   findById(id: string): Promise<WithdrawalDetail | null> {
     return this.prisma.withdrawal.findUnique({
       where: { id },

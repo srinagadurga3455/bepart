@@ -9,6 +9,7 @@ import { RequestUser } from '../common/types/jwt-payload';
 import { canonicalPhone } from '../common/utils/phone';
 import { CouponsRepository } from '../coupons/coupons.repo';
 import { CouponsService } from '../coupons/coupons.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as crypto from 'crypto';
 // Razorpay SDK has no bundled types; require keeps build green without @types.
  // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -24,6 +25,7 @@ export class PaymentsService {
     private readonly couponsRepo: CouponsRepository,
     private readonly couponsService: CouponsService,
     @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {
     const keyId = this.configService?.get<string>('RAZORPAY_KEY_ID');
     const keySecret = this.getRazorpayKeySecret();
@@ -238,7 +240,18 @@ export class PaymentsService {
       return { success: true, paymentId: (payment as any).id, alreadyPaid: true };
     }
 
-    await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpay_payment_id);
+    const updated = await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpay_payment_id);
+    // Ticket fulfillment: the atomic update auto-creates the registration for
+    // the pending-payment flow. Notify best-effort (never throws, deduped).
+    try {
+      const withReg: any = updated as any;
+      const registrationId = withReg?.registration?.registrationId ?? withReg?.registrationId ?? null;
+      if (registrationId) {
+        await this.notifications?.sendTicketNotifications({ registrationId, kind: 'ticket' });
+      }
+    } catch (err) {
+      this.logger.warn(`Post-verify ticket notification failed: ${(err as Error)?.message}`);
+    }
     return { success: true, paymentId: (payment as any).id, orderId: razorpay_order_id, paymentIdRazorpay: razorpay_payment_id };
   }
 
@@ -295,6 +308,9 @@ export class PaymentsService {
     if (eventType === 'payment.failed') {
       return this.handleFailedWebhookPayment(event);
     }
+    if (eventType === 'refund.processed') {
+      return this.handleRefundWebhookPayment(event);
+    }
 
     // Acknowledge unhandled events so Razorpay does not retry.
     this.logger.log(`Ignoring unsupported webhook event: ${eventType}`);
@@ -314,7 +330,16 @@ export class PaymentsService {
       return { received: true, processed: false, message: 'Payment already marked as PAID' };
     }
 
-    await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpayPaymentId ?? undefined);
+    const updated: any = await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpayPaymentId ?? undefined);
+    // Ticket fulfillment notification, best-effort and deduped.
+    try {
+      const registrationId = updated?.registration?.registrationId ?? updated?.registrationId ?? null;
+      if (registrationId) {
+        await this.notifications?.sendTicketNotifications({ registrationId, kind: 'ticket' });
+      }
+    } catch (err) {
+      this.logger.warn(`Post-webhook ticket notification failed: ${(err as Error)?.message}`);
+    }
     return { received: true, processed: true, paymentId: (payment as any).id };
   }
 
@@ -337,6 +362,30 @@ export class PaymentsService {
     return { received: true, processed: true, paymentId: (payment as any).id, status: 'FAILED' };
   }
 
+  /**
+   * Refund webhook (refund.processed): move a PAID payment to REFUNDED so
+   * organizer revenue (which sums PAID only) drops automatically.
+   * Idempotent: already-REFUNDED acks without reprocessing; never moves a
+   * non-PAID payment and never creates tickets.
+   */
+  private async handleRefundWebhookPayment(event: any) {
+    const refundEntity = event.payload?.refund?.entity;
+    const razorpayPaymentId = refundEntity?.payment_id;
+    if (!razorpayPaymentId) return { received: true, processed: false, message: 'No payment ID in refund payload' };
+
+    const payment = await this.paymentsRepo.findPaymentByRazorpayPaymentId(razorpayPaymentId);
+    if (!payment) return { received: true, processed: false, message: 'Payment not found for refund' };
+    if ((payment as any).status === PaymentStatus.REFUNDED) {
+      return { received: true, processed: false, message: 'Payment already marked as REFUNDED' };
+    }
+    if ((payment as any).status !== PaymentStatus.PAID) {
+      return { received: true, processed: false, message: `Refund ignored for payment in status ${(payment as any).status}` };
+    }
+
+    await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.REFUNDED);
+    return { received: true, processed: true, paymentId: (payment as any).id, status: 'REFUNDED' };
+  }
+
   async getById(id: string) {
     const payment = await this.paymentsRepo.findPaymentById(id);
     if (!payment) throw new NotFoundException('Payment not found');
@@ -350,8 +399,13 @@ export class PaymentsService {
   }
 
   // Transaction listing: ADMIN sees all, ORGANIZER sees own events' payments.
-  async findMine(userId: string, role: string) {
-    if (role === 'ADMIN') return this.paymentsRepo.findAllPayments();
+  async findMine(userId: string, role: string, page?: number, limit?: number) {
+    if (role === 'ADMIN') {
+      if (page !== undefined && limit !== undefined) {
+        return this.paymentsRepo.findAllPaymentsPaged(page, limit);
+      }
+      return this.paymentsRepo.findAllPayments();
+    }
     const organizer = await this.paymentsRepo.findOrganizerByUserId(userId);
     if (!organizer) return [];
     return this.paymentsRepo.findByOrganizerId(organizer.id);
@@ -361,7 +415,7 @@ export class PaymentsService {
     const existing = await this.paymentsRepo.findPaymentById(id);
     if (!existing) throw new NotFoundException('Payment not found');
     if (!Object.values(PaymentStatus).includes(dto.status as PaymentStatus)) {
-      throw new BadRequestException(`Invalid status: ${dto.status}. Allowed: PENDING, PAID, FAILED`);
+      throw new BadRequestException(`Invalid status: ${dto.status}. Allowed: PENDING, PAID, FAILED, REFUNDED`);
     }
     // Ownership: only the organizer who owns the payment's event may change
     // its status (organizers collect offline payments for their own events).

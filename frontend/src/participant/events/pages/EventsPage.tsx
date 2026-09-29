@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Container, FormControl, Grid, IconButton, InputLabel, MenuItem, Pagination, Select, TextField, Typography } from '@mui/material';
 import {
@@ -14,7 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { eventsApi } from '../api/events';
 import { unwrapList } from '../../../app/api/client';
 import ParticipantNavbar from '../../components/ParticipantNavbar';
-import { formatINR } from '../../../app/utils/format';
+import { formatINR, isEventCompleted } from '../../../app/utils/format';
 import { usePageMeta } from '../../../app/utils/pageMeta';
 import { eventPoster } from '../../../app/types';
 import EmptyState from '../../../app/components/EmptyState';
@@ -22,6 +22,9 @@ import { SearchOffOutlined } from '@mui/icons-material';
 import type { EventItem } from '../../../app/types';
 
 const PAGE_SIZE = 9;
+
+// Pause between auto-slides: slow enough to read, not distracting.
+const CAROUSEL_AUTOPLAY_MS = 5000;
 
 const BLUE = '#2557F5';
 const INK = '#101828';
@@ -46,8 +49,22 @@ function priceLabel(event: EventItem): string {
   return typeof amount === 'number' ? formatINR(amount) : 'Paid';
 }
 
-function HeroSection({ featured }: { featured: EventItem | null }) {
+function HeroSection({ events }: { events: EventItem[] }) {
   const navigate = useNavigate();
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const count = events.length;
+  const safeIndex = count === 0 ? 0 : index % count;
+  const current = count === 0 ? null : events[safeIndex];
+
+  // Fully automatic carousel: advances every few seconds, looping last ->
+  // first. No manual controls — the dots below are display-only indicators.
+  // Hovering the card pauses rotation; it resumes on mouse leave.
+  useEffect(() => {
+    if (paused || count <= 1) return;
+    const t = setTimeout(() => setIndex((i) => (i + 1) % count), CAROUSEL_AUTOPLAY_MS);
+    return () => clearTimeout(t);
+  }, [paused, count, safeIndex]);
 
   return (
     <Box
@@ -98,32 +115,34 @@ function HeroSection({ featured }: { featured: EventItem | null }) {
             size="large"
             endIcon={<ArrowForward />}
             onClick={() => {
-              if (featured) navigate(`/events/${featured.id}`);
+              if (current) navigate(`/events/${current.id}`);
             }}
-            disabled={!featured}
+            disabled={!current}
             sx={{ borderRadius: 999, px: 3.5, boxShadow: 'none' }}
           >
-            {featured ? 'View featured event' : 'No featured event'}
+            {current ? 'View featured event' : 'No featured event'}
           </Button>
-          {featured && (
+          {current && (
             <Button
               variant="outlined"
               size="large"
-              onClick={() => navigate(`/register/${featured.id}`)}
+              onClick={() => navigate(`/register/${current.id}`)}
               sx={{ borderRadius: 999, px: 3.5, borderColor: BLUE, color: BLUE }}
             >
               Register
             </Button>
           )}
         </Box>
-        {featured && (
+        {current && (
           <Typography sx={{ mt: 2.5, fontSize: 13, color: MUTED }}>
-            Featured: {featured.eventName} Â· {formatDate(featured.date)} Â· {priceLabel(featured)}
+            Featured: {current.eventName} · {formatDate(current.date)} · {priceLabel(current)}
           </Typography>
         )}
       </Box>
 
       <Box
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
         sx={{
           bgcolor: '#fff',
           border: '1px solid',
@@ -133,34 +152,93 @@ function HeroSection({ featured }: { featured: EventItem | null }) {
           boxShadow: '0 24px 60px -24px rgba(37, 87, 245, 0.28)',
         }}
       >
-        {featured && eventPoster(featured) ? (
-          <Box
-            component="img"
-            src={eventPoster(featured)!}
-            alt={`${featured.eventName} poster`}
-            sx={{ width: '100%', height: { xs: 220, md: 300 }, objectFit: 'cover', display: 'block' }}
-          />
-        ) : (
-          <Box
-            sx={{
-              width: '100%',
-              height: { xs: 220, md: 300 },
-              display: 'grid',
-              placeItems: 'center',
-              bgcolor: '#EDF2FF',
-              color: BLUE,
-            }}
-          >
-            <ConfirmationNumber sx={{ fontSize: 56 }} />
-          </Box>
-        )}
+        <Box sx={{ position: 'relative', height: { xs: 220, md: 300 }, overflow: 'hidden', bgcolor: '#EDF2FF' }}>
+          {current ? (
+            <Box
+              sx={{
+                display: 'flex',
+                height: '100%',
+                transform: `translateX(-${safeIndex * 100}%)`,
+                transition: 'transform 0.5s ease',
+              }}
+            >
+              {events.map((event) => (
+                <Box key={event.id} sx={{ minWidth: '100%', height: '100%' }}>
+                  {eventPoster(event) ? (
+                    <Box
+                      component="img"
+                      src={eventPoster(event)!}
+                      alt={`${event.eventName} poster`}
+                      sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : (
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'grid',
+                        placeItems: 'center',
+                        bgcolor: '#EDF2FF',
+                        color: BLUE,
+                      }}
+                    >
+                      <ConfirmationNumber sx={{ fontSize: 56 }} />
+                    </Box>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                width: '100%',
+                height: '100%',
+                display: 'grid',
+                placeItems: 'center',
+                bgcolor: '#EDF2FF',
+                color: BLUE,
+              }}
+            >
+              <ConfirmationNumber sx={{ fontSize: 56 }} />
+            </Box>
+          )}
+          {count > 1 && (
+            <Box
+              aria-hidden="true"
+              sx={{
+                position: 'absolute',
+                bottom: 10,
+                left: 0,
+                right: 0,
+                display: 'flex',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+                gap: 0.75,
+                px: 6,
+              }}
+            >
+              {events.map((event, i) => (
+                <Box
+                  key={event.id}
+                  sx={{
+                    width: i === safeIndex ? 20 : 8,
+                    height: 8,
+                    borderRadius: 999,
+                    bgcolor: i === safeIndex ? '#fff' : 'rgba(255,255,255,0.6)',
+                    transition: 'all 0.3s ease',
+                  }}
+                />
+              ))}
+            </Box>
+          )}
+        </Box>
         <Box sx={{ p: 2.5 }}>
           <Typography sx={{ fontWeight: 800, color: INK, fontSize: 17 }}>
-            {featured?.eventName || 'No events published yet'}
+            {current?.eventName || 'No events published yet'}
           </Typography>
           <Typography sx={{ fontSize: 13.5, color: MUTED, mt: 0.5 }}>
-            {featured
-              ? `${formatDate(featured.date)} Â· ${formatTime(featured.date)}${featured.organizer?.name ? ` Â· by ${featured.organizer.name}` : ''}`
+            {current
+              ? `${formatDate(current.date)} · ${formatTime(current.date)}${current.organizer?.name ? ` · by ${current.organizer.name}` : ''}`
               : 'Check back soon for upcoming campus events.'}
           </Typography>
         </Box>
@@ -178,8 +256,13 @@ export function EventCard({
   saved: boolean;
   onToggleSaved: () => void;
 }) {
+  // Completed = scheduled conducting date/time (`date`) has passed. Never
+  // uses `closingTime` (registration deadline). No end time exists in the
+  // model, so the scheduled instant itself is the cutoff.
+  const completed = isEventCompleted(event.date);
   return (
     <Card
+      aria-disabled={completed || undefined}
       sx={{
         height: '100%',
         display: 'flex',
@@ -189,6 +272,7 @@ export function EventCard({
         borderColor: CARD_BORDER,
         boxShadow: '0 10px 28px -18px rgba(16, 24, 40, 0.25)',
         overflow: 'hidden',
+        ...(completed && { opacity: 0.65, bgcolor: '#F2F4F7' }),
       }}
     >
       <Box sx={{ position: 'relative' }}>
@@ -197,7 +281,7 @@ export function EventCard({
             component="img"
             src={eventPoster(event)!}
             alt={`${event.eventName} poster`}
-            sx={{ width: '100%', height: 170, objectFit: 'cover', display: 'block' }}
+            sx={{ width: '100%', height: 170, objectFit: 'cover', display: 'block', ...(completed && { filter: 'grayscale(1)' }) }}
           />
         ) : (
           <Box
@@ -247,10 +331,16 @@ export function EventCard({
 
       <CardContent sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 1, flexGrow: 1 }}>
         <Chip
-          label={event.status}
+          label={completed ? 'Event Completed' : event.status}
           size="small"
-          variant="outlined"
-          sx={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, borderRadius: 999 }}
+          variant={completed ? 'filled' : 'outlined'}
+          sx={{
+            alignSelf: 'flex-start',
+            fontSize: 11,
+            fontWeight: 700,
+            borderRadius: 999,
+            ...(completed && { bgcolor: '#EAECF0', color: MUTED }),
+          }}
         />
         <Typography sx={{ fontWeight: 800, color: INK, fontSize: 16.5, lineHeight: 1.3 }}>
           {event.eventName}
@@ -292,6 +382,8 @@ export function EventCard({
               size="small"
               component={RouterLink}
               to={`/register/${event.id}`}
+              disabled={completed}
+              title={completed ? 'Event completed' : undefined}
               sx={{ borderRadius: 999, px: 2.25, boxShadow: 'none' }}
             >
               Register
@@ -329,10 +421,17 @@ export default function EventsPage() {
         .toLowerCase()
         .includes(q);
     });
-    return [...list].sort((a, b) => {
+    // Completed events stay visible but sink below upcoming ones; relative
+    // order within each group follows the selected sort. Future events are
+    // unaffected.
+    const byDate = (a: EventItem, b: EventItem) => {
       const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
       return sortOrder === 'soonest' ? diff : -diff;
-    });
+    };
+    return [
+      ...list.filter((event) => !isEventCompleted(event.date)).sort(byDate),
+      ...list.filter((event) => isEventCompleted(event.date)).sort(byDate),
+    ];
   }, [events, query, priceFilter, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -346,9 +445,11 @@ export default function EventsPage() {
     setPage(1);
   };
 
-  const featured: EventItem | null = useMemo(
-    () => events.find((event) => eventPoster(event)) || events[0] || null,
-    [events]
+  // Carousel source: upcoming events only (completed stay in the list below
+  // in disabled mode but never headline the hero). API order is date-asc.
+  const heroEvents: EventItem[] = useMemo(
+    () => events.filter((event) => !isEventCompleted(event.date)),
+    [events],
   );
 
   const hasActiveFilters = query.trim() !== '' || priceFilter !== 'all' || sortOrder !== 'soonest';
@@ -394,7 +495,7 @@ export default function EventsPage() {
       <ParticipantNavbar query={query} onQuery={setQuery} />
 
       <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
-        <HeroSection featured={featured} />
+        <HeroSection events={heroEvents} />
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: { xs: 4, md: 6 }, mb: 2, flexWrap: 'wrap' }}>
           <CalendarMonth sx={{ color: BLUE }} />
@@ -447,7 +548,7 @@ export default function EventsPage() {
             icon={events.length === 0 ? CalendarMonth : SearchOffOutlined}
             title={events.length === 0 ? 'No published events yet' : 'No events match your search'}
             description={events.length === 0
-              ? 'Check back soon â€” organizers are preparing upcoming campus events.'
+              ? 'Check back soon — organizers are preparing upcoming campus events.'
               : 'Try a different keyword or clear your filters.'}
             actionLabel={events.length === 0 ? undefined : 'Clear filters'}
             onAction={events.length === 0 ? undefined : resetFilters}

@@ -3,8 +3,13 @@
 
 export const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 export const PHONE_REGEX = /^\+?[0-9\s\-()]{7,20}$/;
-// Mirrors server CreateWithdrawalDto.UPI_ID_PATTERN.
-export const UPI_ID_REGEX = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9.-]{2,64}$/;
+
+// UPI VPA format: <handle>@<bank>
+// handle: 3–256 chars, alphanumeric plus . _ - (no leading/trailing or consecutive special chars)
+// bank:   2–64 chars, alphanumeric plus . - (no leading/trailing dots/hyphens)
+// Mirrors server/src/common/constants/validation.ts UPI_ID_REGEX.
+export const UPI_ID_REGEX =
+  /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,254}[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}[a-zA-Z0-9]$/;
 
 export function validateEmail(value: string): string | null {
   if (!value.trim()) return 'Email is required';

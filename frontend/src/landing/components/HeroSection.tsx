@@ -12,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import { Box, Button, Chip, Container, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import type { ElementType } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { eventsApi } from '../../participant/events/api/events';
@@ -47,9 +48,46 @@ function formatShortDate(iso: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-// Live preview of the product: real published events rendered in the actual
-// event-card style. Falls back gracefully when the API is unreachable.
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+// Featured-event autoplay interval: 4.5s (within the required 4–5s window).
+const FEATURED_AUTOPLAY_MS = 4500;
+
+// R2 poster with graceful degradation: the project's existing placeholder is
+// shown when the event has no poster OR when the stored R2 URL cannot be
+// loaded by the browser (e.g. bucket public access disabled, stale key).
+// The stored public URL itself is always used directly — never hardcoded.
+function CarouselPoster({ src, alt }: { src: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  if (!src || failed) {
+    return (
+      <Box sx={{ height: '100%', bgcolor: '#EDF2FF', display: 'grid', placeItems: 'center' }}>
+        <ConfirmationNumber sx={{ fontSize: 28, color: '#8EA3F7' }} />
+      </Box>
+    );
+  }
+  return (
+    <Box
+      component="img"
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      sx={{ height: '100%', width: '100%', objectFit: 'cover', display: 'block' }}
+    />
+  );
+}
+
+// Live preview of the product: real published events rendered as an automatic
+// featured-event carousel using the existing R2 poster URLs. Falls back
+// gracefully when the API is unreachable.
 function DashboardIllustration() {
+  const navigate = useNavigate();
   const { data } = useQuery({
     queryKey: ['landing', 'preview-events'],
     queryFn: () => eventsApi.listPublished({ page: 1, limit: 4 }),
@@ -57,6 +95,19 @@ function DashboardIllustration() {
     staleTime: 60_000,
   });
   const events: EventItem[] = data ? unwrapList<EventItem>(data) : [];
+  const count = events.length;
+  const [index, setIndex] = useState(0);
+  const safeIndex = count === 0 ? 0 : index % count;
+  const current = count === 0 ? null : events[safeIndex];
+
+  // Automatic carousel: advance every 4.5s, looping last -> first.
+  // No arrows; dots below are display-only indicators. Single event (or none)
+  // never animates.
+  useEffect(() => {
+    if (count <= 1) return;
+    const t = setTimeout(() => setIndex((i) => (i + 1) % count), FEATURED_AUTOPLAY_MS);
+    return () => clearTimeout(t);
+  }, [count, safeIndex]);
 
   return (
     <Box sx={{ position: 'relative' }}>
@@ -265,49 +316,64 @@ function DashboardIllustration() {
               <Typography sx={{ fontSize: 11, color: '#A3A3A3' }}>Search events</Typography>
             </Box>
 
-            <Box
-              sx={{
-                mt: 2,
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                gap: 1.5,
-              }}
-            >
-              {events.length === 0 ? (
-                <Box sx={{ gridColumn: '1 / -1', border: '1px dashed', borderColor: 'divider', borderRadius: '14px', p: 2.5, textAlign: 'center' }}>
+            <Box sx={{ mt: 2 }}>
+              {count === 0 ? (
+                <Box sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: '14px', p: 2.5, textAlign: 'center' }}>
                   <Typography sx={{ fontSize: 12, fontWeight: 700 }}>No published events right now</Typography>
                   <Typography sx={{ fontSize: 11, color: '#A3A3A3', mt: 0.5 }}>
                     New events appear here automatically once organizers publish them.
                   </Typography>
                 </Box>
               ) : (
-                events.map((event) => {
-                  const poster = eventPoster(event);
-                  return (
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '14px', p: 1.4, bgcolor: '#fff', minWidth: 0 }}>
+                  <Box sx={{ position: 'relative', height: { xs: 150, sm: 180 }, overflow: 'hidden', borderRadius: '10px', bgcolor: '#EDF2FF' }}>
                     <Box
-                      key={event.id}
-                      sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '14px', p: 1.4, bgcolor: '#fff', minWidth: 0 }}
+                      sx={{
+                        display: 'flex',
+                        height: '100%',
+                        transform: count > 1 ? `translateX(-${safeIndex * 100}%)` : 'none',
+                        transition: count > 1 ? 'transform 0.5s ease' : 'none',
+                      }}
                     >
-                      {poster ? (
-                        <Box component="img" src={poster} alt="" sx={{ height: { xs: 54, sm: 66 }, width: '100%', objectFit: 'cover', borderRadius: '10px', display: 'block' }} />
-                      ) : (
-                        <Box sx={{ height: { xs: 54, sm: 66 }, borderRadius: '10px', bgcolor: '#EDF2FF', display: 'grid', placeItems: 'center' }}>
-                          <ConfirmationNumber sx={{ fontSize: 22, color: '#8EA3F7' }} />
-                        </Box>
-                      )}
-                      <Box sx={{ mt: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography noWrap sx={{ fontSize: 12, fontWeight: 700 }}>
-                            {event.eventName}
-                          </Typography>
-                          <Typography noWrap sx={{ fontSize: 10, color: '#A3A3A3', mt: 0.25 }}>
-                            {formatShortDate(event.date)}{event.organizer?.name ? ` · ${event.organizer.name}` : ''}
-                          </Typography>
-                        </Box>
+                      {events.map((event) => {
+                        const poster = eventPoster(event);
+                        return (
+                          <Box key={event.id} sx={{ minWidth: '100%', height: '100%' }}>
+                            <CarouselPoster src={poster} alt={`${event.eventName} poster`} />
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                    {count > 1 && (
+                      <Box
+                        aria-hidden="true"
+                        sx={{ position: 'absolute', bottom: 8, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 0.75 }}
+                      >
+                        {events.map((event, i) => (
+                          <Box
+                            key={event.id}
+                            sx={{
+                              width: i === safeIndex ? 18 : 7,
+                              height: 7,
+                              borderRadius: 999,
+                              bgcolor: i === safeIndex ? '#fff' : 'rgba(255,255,255,0.65)',
+                              transition: 'all 0.3s ease',
+                            }}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                  <Box sx={{ mt: 1.25 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Typography noWrap sx={{ fontSize: 13, fontWeight: 800 }}>
+                        {current?.eventName}
+                      </Typography>
+                      {current && (
                         <Box
                           sx={{
-                            bgcolor: event.paymentRequired ? '#EDF2FF' : '#E7F7EE',
-                            color: event.paymentRequired ? 'primary.main' : '#15803D',
+                            bgcolor: current.paymentRequired ? '#EDF2FF' : '#E7F7EE',
+                            color: current.paymentRequired ? 'primary.main' : '#15803D',
                             borderRadius: 999,
                             px: 1.1,
                             py: 0.4,
@@ -316,12 +382,40 @@ function DashboardIllustration() {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {priceLabel(event)}
+                          {priceLabel(current)}
                         </Box>
-                      </Box>
+                      )}
                     </Box>
-                  );
-                })
+                    <Typography noWrap sx={{ fontSize: 11, color: '#A3A3A3', mt: 0.25 }}>
+                      {current
+                        ? `${formatShortDate(current.date)} · ${formatTime(current.date)}${current.organizer?.name ? ` · by ${current.organizer.name}` : ''}`
+                        : ''}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, mt: 1.25, flexWrap: 'wrap' }}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={() => {
+                          if (current) navigate(`/events/${current.id}`);
+                        }}
+                        disabled={!current}
+                        sx={{ borderRadius: 999, px: 2, boxShadow: 'none', fontSize: 11.5, fontWeight: 700 }}
+                      >
+                        {current ? 'View featured event' : 'No featured event'}
+                      </Button>
+                      {current && (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => navigate(`/register/${current.id}`)}
+                          sx={{ borderRadius: 999, px: 2, fontSize: 11.5, fontWeight: 700 }}
+                        >
+                          Register
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
               )}
             </Box>
 
@@ -399,11 +493,12 @@ function HeroSection() {
               <Button
                 variant="outlined"
                 size="large"
-                component="a"
-                href="#organizers"
+                onClick={() => {
+                  document.getElementById('find-my-ticket')?.scrollIntoView({ behavior: 'smooth' });
+                }}
                 sx={{ px: 3, py: 1.3, fontSize: 15, borderRadius: 999 }}
               >
-                I&apos;m an Organizer
+                Find My Ticket
               </Button>
             </Box>
 

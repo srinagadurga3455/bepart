@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
-import { Box, Typography, Button, Card, CardContent, Divider, List, ListItem, ListItemText, Accordion, AccordionSummary, AccordionDetails, IconButton } from '@mui/material';
-import { ExpandMore, Edit, CheckCircle } from '@mui/icons-material';
+import { Box, Typography, Button, Divider } from '@mui/material';
+import { Edit, CheckCircle } from '@mui/icons-material';
 import { findCountFieldName, getSelectedCount, getVisibleFields, withDynamicRequired, getMemberGroupIndex } from '../utils/memberGroups';
 import type { FormDataRecord, FormStructure } from '../../../app/types';
 
@@ -14,6 +14,12 @@ interface ReviewStepProps {
   confirmLabel?: string;
   feeAmount?: number | null;
 }
+
+const BLUE = '#2557F5';
+const BLUE_DARK = '#1D46C8';
+const INK = '#1E293B';
+const MUTED = '#64748B';
+const HAIRLINE = '#F1F5F9';
 
 export default function ReviewStep({ formStructure, formData, onBack, onEdit, onConfirm, isSubmitting, confirmLabel, feeAmount }: ReviewStepProps) {
   const sections = formStructure?.sections || [];
@@ -33,88 +39,143 @@ export default function ReviewStep({ formStructure, formData, onBack, onEdit, on
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" color="text.primary" gutterBottom sx={{ fontWeight: 600 }}>
-          Review Your Registration
-        </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-          Please verify all information before submitting.
-        </Typography>
-      </Box>
+      {/* ── Heading ─────────────────────────────────────────── */}
+      <Typography
+        sx={{
+          fontFamily: '"DM Sans", sans-serif',
+          fontWeight: 800,
+          fontSize: { xs: '1.2rem', sm: '1.35rem' },
+          color: INK,
+          letterSpacing: '-0.02em',
+        }}
+      >
+        Review Your Registration
+      </Typography>
+      <Typography sx={{ fontSize: 14, color: MUTED, mt: 0.5, lineHeight: 1.6 }}>
+        Please verify all information before submitting.
+      </Typography>
 
-      <Divider sx={{ mb: 4 }} />
+      {/* ── Registration details ────────────────────────────── */}
+      <Typography
+        sx={{
+          fontFamily: '"DM Sans", sans-serif',
+          fontWeight: 800,
+          fontSize: 16,
+          color: INK,
+          mt: 3.5,
+        }}
+      >
+        Registration Details
+      </Typography>
+      <Divider sx={{ mt: 1, mb: 0.5, borderColor: '#E2E8F0' }} />
 
-      <List sx={{ mb: 3 }}>
-        {sections.map((section, sectionIndex) => (
-          <Box key={section.id} sx={{ mb: 3 }}>
-            <Typography variant="h6" color="text.primary" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 600 }}>
-              <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'primary.main', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 600 }}>
-                {String(sectionIndex + 1).padStart(2, '0')}
-              </span>
-              {section.title}
-            </Typography>
-            <Accordion defaultExpanded>
-              <AccordionSummary
-                expandIcon={<ExpandMore />}
-                sx={{ minHeight: 48, '&.Mui-expanded': { minHeight: 48 } }}
-              >
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="body1" color="text.secondary">
-                    Click to review details
-                  </Typography>
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                  {(() => {
-                    let lastGroup = 0;
-                    return getVisibleFields(section, selectedCount).map((rawField, fieldIndex) => {
-                      const field = withDynamicRequired(rawField, selectedCount);
-                      const group = getMemberGroupIndex(field.name);
-                      const header = group > 0 && group !== lastGroup ? (
-                        <Typography variant="subtitle2" color="text.primary" sx={{ mt: fieldIndex === 0 ? 0 : 1, fontWeight: 600 }}>
-                          Member {group}
-                        </Typography>
-                      ) : null;
-                      lastGroup = group;
-                      return (
-                        <Fragment key={`${section.id}-${field.name}-${fieldIndex}`}>
-                          {header}
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                              {field.label} {field.required && <span color="error">*</span>}
-                            </Typography>
-                            <Typography variant="body1" color="text.primary" sx={{ fontFamily: 'monospace', background: 'grey.50', p: 1.5, borderRadius: 1 }}>
-                              {getFieldValue(field.name)}
-                            </Typography>
-                          </Box>
-                        </Fragment>
-                      );
-                    });
-                  })()}
-                </Box>
-              </AccordionDetails>
-            </Accordion>
+      {sections.map((section) => {
+        const fields = getVisibleFields(section, selectedCount);
+        if (fields.length === 0) return null;
+        let lastGroup = 0;
+        return (
+          <Box key={section.id}>
+            {sections.length > 1 && section.title && (
+              <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: INK, mt: 2.5, mb: 0.5 }}>
+                {section.title}
+              </Typography>
+            )}
+            {fields.map((rawField, fieldIndex) => {
+              const field = withDynamicRequired(rawField, selectedCount);
+              const group = getMemberGroupIndex(field.name);
+              const header = group > 0 && group !== lastGroup ? (
+                <Typography sx={{ fontSize: 13, fontWeight: 800, color: INK, mt: fieldIndex === 0 ? 1.5 : 2 }}>
+                  Member {group}
+                </Typography>
+              ) : null;
+              lastGroup = group;
+              const isLast = fieldIndex === fields.length - 1;
+              return (
+                <Fragment key={`${section.id}-${field.name}-${fieldIndex}`}>
+                  {header}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 0.25,
+                      py: 1.5,
+                      ...(isLast ? {} : { borderBottom: '1px solid', borderColor: HAIRLINE }),
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: MUTED }}>
+                      {field.label}{' '}
+                      {field.required && (
+                        <Box component="span" sx={{ color: '#DC2626' }}>
+                          *
+                        </Box>
+                      )}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: INK,
+                        lineHeight: 1.55,
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {getFieldValue(field.name)}
+                    </Typography>
+                  </Box>
+                </Fragment>
+              );
+            })}
           </Box>
-        ))}
-      </List>
+        );
+      })}
 
       {feeAmount !== null && feeAmount !== undefined && (
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 3, p: 2, borderRadius: 2, bgcolor: 'grey.100' }}>
-          <Typography variant="body1" sx={{ fontWeight: 600 }}>Registration Fee</Typography>
-          <Typography variant="h6" sx={{ fontWeight: 800 }}>₹{feeAmount}</Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            mt: 2.5,
+            p: 2,
+            borderRadius: 2.5,
+            bgcolor: '#EEF2FF',
+            border: '1px solid #C7D5FD',
+          }}
+        >
+          <Typography sx={{ fontSize: 14.5, fontWeight: 700, color: INK }}>Registration Fee</Typography>
+          <Typography sx={{ fontSize: '1.1rem', fontWeight: 800, color: INK }}>₹{feeAmount}</Typography>
         </Box>
       )}
 
-      <Divider sx={{ my: 4 }} />
-
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+      {/* ── Action bar ──────────────────────────────────────── */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 1.5,
+          mt: 3.5,
+          flexDirection: { xs: 'column', sm: 'row' },
+        }}
+      >
         <Button
           variant="outlined"
           size="large"
           startIcon={<Edit />}
           onClick={onBack}
-          sx={{ px: 4, py: 1.5, fontWeight: 600, borderRadius: 2 }}
+          sx={{
+            px: 4,
+            py: 1.4,
+            fontWeight: 700,
+            fontSize: 15,
+            borderRadius: 2.5,
+            textTransform: 'none',
+            width: { xs: '100%', sm: 'auto' },
+            borderColor: BLUE,
+            color: BLUE,
+            '&:hover': { borderColor: BLUE_DARK, color: BLUE_DARK, bgcolor: '#EEF2FF' },
+          }}
         >
           Edit
         </Button>
@@ -125,7 +186,19 @@ export default function ReviewStep({ formStructure, formData, onBack, onEdit, on
           endIcon={<CheckCircle />}
           onClick={onConfirm}
           disabled={isSubmitting}
-          sx={{ px: 4, py: 1.5, fontWeight: 600, borderRadius: 2, bgcolor: 'success.main', '&:hover': { bgcolor: 'success.dark' } }}
+          sx={{
+            px: 4,
+            py: 1.4,
+            fontWeight: 700,
+            fontSize: 15,
+            borderRadius: 2.5,
+            textTransform: 'none',
+            width: { xs: '100%', sm: 'auto' },
+            bgcolor: BLUE,
+            boxShadow: 'none',
+            '&:hover': { bgcolor: BLUE_DARK, boxShadow: '0 8px 20px -8px rgba(37,87,245,0.55)' },
+            '&.Mui-disabled': { bgcolor: '#93A8F4', color: '#fff' },
+          }}
         >
           {isSubmitting ? 'Confirming...' : (confirmLabel || 'Confirm Registration')}
         </Button>

@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Controller,
   Param,
-  ParseUUIDPipe,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -11,6 +10,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StorageService } from './storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
@@ -45,7 +45,7 @@ export class StorageController {
   @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
   @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
   async uploadEventPosterSquare(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {
@@ -66,7 +66,7 @@ export class StorageController {
   @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
   @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
   async uploadEventPosterRectangle(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {

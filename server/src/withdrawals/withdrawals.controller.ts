@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { WithdrawalsService } from './withdrawals.service';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
@@ -11,6 +11,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
+import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 
 @ApiTags('withdrawals')
 @ApiBearerAuth('JWT-auth')
@@ -40,15 +41,29 @@ export class WithdrawalsController {
   @Get('admin/all')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'All withdrawal requests (ADMIN)', description: 'Every organizer withdrawal with organizer + event' })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiResponse({ status: 403, description: 'ADMIN only' })
-  findAllAdmin() {
+  findAllAdmin(@Query('page') page?: string, @Query('limit') limit?: string) {
+    if (page !== undefined) {
+      const p = Math.max(1, parseInt(page, 10) || 1);
+      const l = Math.min(50, Math.max(1, parseInt(limit || '10', 10) || 10));
+      return this.service.findAllPaged(p, l);
+    }
     return this.service.findAll();
   }
 
   @Get()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'All withdrawal requests (ADMIN, legacy)', description: 'Alias of admin/all' })
-  findAll() {
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
+    if (page !== undefined) {
+      const p = Math.max(1, parseInt(page, 10) || 1);
+      const l = Math.min(50, Math.max(1, parseInt(limit || '10', 10) || 10));
+      return this.service.findAllPaged(p, l);
+    }
     return this.service.findAll();
   }
 
@@ -68,7 +83,7 @@ export class WithdrawalsController {
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   findByEvent(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.findByEvent(eventId, user.userId || user.id, user.role);
@@ -102,8 +117,8 @@ export class WithdrawalsController {
   @ApiOperation({ summary: 'Mark withdrawal PROCESSING (ADMIN)', description: 'Only REQUESTED → PROCESSING. All other transitions rejected.' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 400, description: 'Invalid transition (e.g. already PROCESSING/PAID/REJECTED)' })
-  process(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.process(id);
+  process(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.service.process(id, user.userId || user.id);
   }
 
   @Patch(':id/reject')
@@ -112,8 +127,8 @@ export class WithdrawalsController {
   @ApiParam({ name: 'id' })
   @ApiBody({ type: RejectWithdrawalDto })
   @ApiResponse({ status: 400, description: 'Missing reason / invalid transition' })
-  reject(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectWithdrawalDto) {
-    return this.service.reject(id, dto?.reason);
+  reject(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectWithdrawalDto, @CurrentUser() user: RequestUser) {
+    return this.service.reject(id, dto?.reason, user.userId || user.id);
   }
 
   @Patch(':id/pay')
@@ -123,8 +138,8 @@ export class WithdrawalsController {
   @ApiBody({ type: PayWithdrawalDto })
   @ApiResponse({ status: 400, description: 'Missing transactionId/proof / invalid transition' })
   @ApiResponse({ status: 409, description: 'Duplicate transaction ID' })
-  pay(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PayWithdrawalDto) {
-    return this.service.pay(id, dto?.transactionId, dto?.proofUrl);
+  pay(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PayWithdrawalDto, @CurrentUser() user: RequestUser) {
+    return this.service.pay(id, dto?.transactionId, dto?.proofUrl, user.userId || user.id);
   }
 
   @Post(':id/confirm')
@@ -148,7 +163,8 @@ export class WithdrawalsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ConfirmPaidDto,
     @UploadedFile() screenshot: Express.Multer.File,
+    @CurrentUser() user: RequestUser,
   ) {
-    return this.service.confirmPaid(id, dto?.transactionId, screenshot);
+    return this.service.confirmPaid(id, dto?.transactionId, screenshot, user.userId || user.id);
   }
 }

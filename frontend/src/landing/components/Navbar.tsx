@@ -68,26 +68,6 @@ function Navbar() {
             >
               Login
             </Button>
-          <Button
-            variant="contained"
-            onClick={() => navigate('/login')}
-            sx={{
-              bgcolor: 'text.primary',
-              color: '#fff',
-              px: 2.5,
-              py: 0.85,
-              fontSize: 13.5,
-              borderColor: 'text.primary',
-              boxShadow: 'none',
-              '&:hover': {
-                bgcolor: 'primary.main',
-                borderColor: 'primary.main',
-                boxShadow: 'none',
-              },
-            }}
-          >
-            Get Started
-          </Button>
             <IconButton
               aria-label="Open navigation menu"
               onClick={(e) => setMenuAnchor(e.currentTarget)}

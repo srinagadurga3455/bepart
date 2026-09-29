@@ -35,6 +35,21 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      # ---- Cloudflare R2 event posters — set values in Render Dashboard (never commit) ----
+      # Without these, uploads store mock-r2 URLs that browsers cannot load.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: bepart
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
 
 # Database — use Render PostgreSQL (or external Neon/Supabase)
 # If using Render Postgres, add:

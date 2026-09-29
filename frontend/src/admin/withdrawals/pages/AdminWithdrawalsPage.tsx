@@ -10,25 +10,45 @@ import { useQuery } from '@tanstack/react-query';
 import { withdrawalsApi } from '../api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
 import { formatEventDate, formatPaise } from '../../../app/utils/format';
-import type { WithdrawalItem, WithdrawalStatus } from '../../../app/types';
+import type { PageMeta, WithdrawalItem, WithdrawalStatus } from '../../../app/types';
 import AdminShell from '../../components/AdminShell';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
 import EmptyState from '../../../app/components/EmptyState';
 import { ErrorState, LoadingState } from '../../../app/components/Feedback';
 
 const PAGE_SIZE = 10;
+const MUTED = '#667085';
+const BLUE = '#2557F5';
 
 export default function AdminWithdrawalsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | WithdrawalStatus>('all');
   const [page, setPage] = useState(1);
 
+  // When search/filter is active, fetch all so results span the full dataset.
+  // When neither is active, use server-side pagination.
+  const isFiltering = search.trim().length > 0 || statusFilter !== 'all';
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['admin', 'withdrawals'], queryFn: () => withdrawalsApi.list(),
+    queryKey: ['admin', 'withdrawals', isFiltering ? 'all' : page, PAGE_SIZE],
+    queryFn: () =>
+      isFiltering
+        ? withdrawalsApi.list()
+        : withdrawalsApi.list({ page, limit: PAGE_SIZE }),
   });
+
+  // Extract server meta when present (paged response)
+  const body = data?.data;
+  const pagedMeta: PageMeta | null =
+    body && !Array.isArray(body) && typeof body === 'object' && 'meta' in body
+      ? (body as { data: WithdrawalItem[]; meta: PageMeta }).meta
+      : null;
+
   const all: WithdrawalItem[] = useMemo(() => (data ? unwrapList<WithdrawalItem>(data) : []), [data]);
 
+  // Client-side filter when searching/filtering (operates on current page rows)
   const filtered = useMemo(() => {
+    if (!isFiltering) return all; // no client filter needed; server already sliced
     const q = search.trim().toLowerCase();
     return all.filter((w) => {
       if (statusFilter !== 'all' && w.status !== statusFilter) return false;
@@ -36,25 +56,46 @@ export default function AdminWithdrawalsPage() {
       return [w.organizer?.name || '', w.event?.eventName || '', w.upiId || '', w.transactionId || '']
         .join(' ').toLowerCase().includes(q);
     });
-  }, [all, search, statusFilter]);
+  }, [all, search, statusFilter, isFiltering]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-  const pending = all.filter((w) => w.status === 'REQUESTED' || w.status === 'PROCESSING').length;
+  // Pagination logic
+  const serverTotalPages = pagedMeta?.totalPages ?? 1;
+  const clientTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = isFiltering ? clientTotalPages : serverTotalPages;
+  const safePage = Math.min(page, Math.max(1, totalPages));
+
+  // When filtering, slice client-side too; otherwise backend already sliced
+  const paged = isFiltering
+    ? filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+    : filtered;
+
+  // Pending count for subtitle — from full server total when not filtering
+  const totalAll = pagedMeta?.total ?? all.length;
+  const pendingOnPage = all.filter((w) => w.status === 'REQUESTED' || w.status === 'PROCESSING').length;
 
   return (
-    <AdminShell title="Withdrawal Requests" subtitle={`Review and settle organizer payouts${pending ? ` · ${pending} pending` : ''}.`}>
+    <AdminShell
+      title="Withdrawal Requests"
+      subtitle={`Review and settle organizer payouts${pendingOnPage ? ` · ${pendingOnPage} pending on this page` : ''}.`}
+      hideBrand
+    >
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
           <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
-            <TextField size="small" placeholder="Search organizer, event, UPI…" value={search}
+            <TextField
+              size="small"
+              placeholder="Search organizer, event, UPI…"
+              value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              sx={{ flex: '1 1 220px', bgcolor: '#fff' }} />
+              sx={{ flex: '1 1 220px', bgcolor: '#fff' }}
+            />
             <FormControl size="small" sx={{ minWidth: 160, bgcolor: '#fff' }}>
               <InputLabel>Status</InputLabel>
-              <Select label="Status" value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value as 'all' | WithdrawalStatus); setPage(1); }}>
+              <Select
+                label="Status"
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value as 'all' | WithdrawalStatus); setPage(1); }}
+              >
                 <MenuItem value="all">All statuses</MenuItem>
                 <MenuItem value="REQUESTED">Requested</MenuItem>
                 <MenuItem value="PROCESSING">Processing</MenuItem>
@@ -68,13 +109,17 @@ export default function AdminWithdrawalsPage() {
             <LoadingState message="Loading withdrawal requests…" />
           ) : error ? (
             <ErrorState message="Could not load withdrawal requests." onRetry={() => refetch()} />
+          ) : totalAll === 0 ? (
+            <EmptyState
+              icon={AccountBalanceWalletOutlined}
+              title="No withdrawal requests yet"
+              description="Organizer payout requests will appear here for review."
+            />
           ) : filtered.length === 0 ? (
             <EmptyState
-              icon={all.length === 0 ? AccountBalanceWalletOutlined : SearchOffOutlined}
-              title={all.length === 0 ? 'No withdrawal requests yet' : 'No requests match your filters'}
-              description={all.length === 0
-                ? 'Organizer payout requests will appear here for review.'
-                : 'Try a different search term or status.'}
+              icon={SearchOffOutlined}
+              title="No requests match your filters"
+              description="Try a different search term or status."
             />
           ) : (
             <>
@@ -99,7 +144,12 @@ export default function AdminWithdrawalsPage() {
                         <TableCell>{formatEventDate(w.requestedAt)}</TableCell>
                         <TableCell><WithdrawalStatusChip status={w.status} /></TableCell>
                         <TableCell>
-                          <Button size="small" variant="outlined" component={RouterLink} to={`/admin/withdrawals/${w.id}`}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            component={RouterLink}
+                            to={`/admin/withdrawals/${w.id}`}
+                          >
                             View
                           </Button>
                         </TableCell>
@@ -108,16 +158,42 @@ export default function AdminWithdrawalsPage() {
                   </TableBody>
                 </Table>
               </TableContainer>
-              {totalPages > 1 && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-                  <Pagination count={totalPages} page={safePage} onChange={(_, v) => setPage(v)} size="small" shape="rounded" />
-                </Box>
-              )}
+
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mt: 2,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {isFiltering
+                    ? `${filtered.length} match${filtered.length === 1 ? '' : 'es'}`
+                    : `${totalAll} request${totalAll === 1 ? '' : 's'} total`}
+                </Typography>
+                {totalPages > 1 && (
+                  <Pagination
+                    count={totalPages}
+                    page={safePage}
+                    onChange={(_, v) => setPage(v)}
+                    size="small"
+                    shape="rounded"
+                    sx={{
+                      '& .MuiPaginationItem-root': { fontSize: 12.5, color: MUTED },
+                      '& .Mui-selected': {
+                        bgcolor: '#EAF1FF !important',
+                        color: BLUE,
+                        fontWeight: 700,
+                      },
+                    }}
+                  />
+                )}
+              </Box>
             </>
           )}
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            {filtered.length} of {all.length} request{all.length === 1 ? '' : 's'}.
-          </Typography>
         </CardContent>
       </Card>
     </AdminShell>

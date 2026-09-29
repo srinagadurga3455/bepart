@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import { Avatar, Box, Chip, Typography } from '@mui/material';
+import { Avatar, Box, Typography } from '@mui/material';
 import {
   AccountBalanceWalletOutlined,
   GridViewOutlined,
-  GroupsOutlined,
   LogoutOutlined,
+  ReceiptLongOutlined,
   SettingsOutlined,
 } from '@mui/icons-material';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
@@ -20,8 +20,8 @@ import { BePartMark } from '../../app/components/BePartBrand';
 
 const NAV_ICONS: Record<string, ReactNode> = {
   '/admin': <GridViewOutlined sx={{ fontSize: 18 }} />,
-  '/admin/organizers': <GroupsOutlined sx={{ fontSize: 18 }} />,
   '/admin/withdrawals': <AccountBalanceWalletOutlined sx={{ fontSize: 18 }} />,
+  '/admin/transactions': <ReceiptLongOutlined sx={{ fontSize: 18 }} />,
   '/admin/account': <SettingsOutlined sx={{ fontSize: 18 }} />,
 };
 
@@ -46,10 +46,12 @@ function initials(name: string | undefined, email: string | undefined): string {
 interface AdminShellProps {
   title?: string;
   subtitle?: string;
+  /** Hide the BePart brand mark from the top-right header area. */
+  hideBrand?: boolean;
   children: ReactNode;
 }
 
-export default function AdminShell({ title, subtitle, children }: AdminShellProps) {
+export default function AdminShell({ title, subtitle, hideBrand = false, children }: AdminShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { data: meRes } = useQuery({ queryKey: ['auth', 'me'], queryFn: () => authApi.me() });
@@ -206,22 +208,10 @@ export default function AdminShell({ title, subtitle, children }: AdminShellProp
                 </Typography>
               )}
             </Box>
-            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
-              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                <BePartMark size={28} fontSize={16} />
-              </Box>
-              <Chip label="ADMIN" size="small" color="primary" variant="outlined" sx={{ fontWeight: 700, fontSize: 10.5, display: { xs: 'none', sm: 'flex' } }} />
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               <Avatar sx={{ width: 34, height: 34, bgcolor: '#2557F5', fontSize: 13, fontWeight: 700 }}>
                 {initials(me?.name, me?.email)}
               </Avatar>
-              <Box sx={{ display: { xs: 'none', sm: 'block' }, lineHeight: 1.25, minWidth: 0 }}>
-                <Typography noWrap sx={{ fontSize: 13, fontWeight: 700, color: '#101828', maxWidth: 160 }}>
-                  {displayName}
-                </Typography>
-                <Typography noWrap sx={{ fontSize: 11.5, color: '#667085', maxWidth: 160 }}>
-                  {me?.email || 'Platform admin'}
-                </Typography>
-              </Box>
             </Box>
           </Box>
         </Box>

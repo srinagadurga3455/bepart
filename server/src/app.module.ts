@@ -11,6 +11,8 @@ import { AdminModule } from './admin/admin.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { StorageModule } from './storage/storage.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { EmailModule } from './email/email.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -27,6 +29,8 @@ import { RolesGuard } from './common/guards/roles.guard';
       },
     ]),
     WhatsappModule,
+    EmailModule,
+    NotificationsModule,
     AuthModule,
     OrganizersModule,
     EventsModule,

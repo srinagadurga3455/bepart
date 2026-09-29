@@ -42,6 +42,13 @@ export class AuthRepository {
     return this.prisma.otpVerification.create({ data });
   }
 
+  findLatestOtp(identifier: string) {
+    return this.prisma.otpVerification.findFirst({
+      where: { identifier },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   findLatestValidOtp(identifier: string) {
     return this.prisma.otpVerification.findFirst({
       where: {

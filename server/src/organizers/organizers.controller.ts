@@ -54,10 +54,28 @@ export class OrganizersController {
   @Get()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List all organizers (ADMIN only)' })
-  @ApiResponse({ status: 200, description: 'Organizer list with _count.events' })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  @ApiResponse({ status: 200, description: 'Organizer list with _count.events (array or { data, meta } when page param is provided)' })
   @ApiResponse({ status: 403, description: 'ADMIN only' })
-  findAll() {
+  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
+    if (page !== undefined) {
+      const p = Math.max(1, parseInt(page, 10) || 1);
+      const l = Math.min(50, Math.max(1, parseInt(limit || '10', 10) || 10));
+      return this.organizersService.findAllPaged(p, l);
+    }
     return this.organizersService.findAll();
+  }
+
+  @Get(':id/overview')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Organizer overview (ADMIN only)', description: 'Aggregated stats: organizer profile, events with registration counts, and PAID revenue per event.' })
+  @ApiParam({ name: 'id', description: 'Organizer ID' })
+  @ApiResponse({ status: 200, description: 'Organizer overview object' })
+  @ApiResponse({ status: 403, description: 'ADMIN only' })
+  @ApiResponse({ status: 404, description: 'Organizer not found' })
+  getOverview(@Param('id') id: string) {
+    return this.organizersService.getOverview(id);
   }
 
   @Get(':id/events')

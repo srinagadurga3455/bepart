@@ -103,6 +103,16 @@ export class OrganizersService {
     return this.organizersRepo.findAllOrganizers();
   }
 
+  async findAllPaged(page: number, limit: number) {
+    return this.organizersRepo.findAllOrganizersPaged(page, limit);
+  }
+
+  async getOverview(id: string) {
+    const overview = await this.organizersRepo.getOrganizerOverview(id);
+    if (!overview) throw new NotFoundException('Organizer not found');
+    return overview;
+  }
+
   async getOrganizerEvents(organizerId: string, query: { page?: number; limit?: number }) {
     const organizer = await this.organizersRepo.findOrganizerById(organizerId);
     if (!organizer) throw new NotFoundException('Organizer not found');
@@ -184,8 +194,10 @@ export class OrganizersService {
 
   async remove(id: string) {
     const org = await this.getOrganizerOrFail(id);
-    const eventCount = await this.organizersRepo.countEventsByOrganizer(id);
-    if (eventCount > 0) throw new ConflictException(`Cannot delete organizer with ${eventCount} event(s). Deactivate instead.`);
+    // The schema defines onDelete: Cascade on Event → Organizer (and further
+    // cascades on Registration → Event, Withdrawal → Organizer/Event, etc.),
+    // so Prisma handles all dependent record cleanup automatically.
+    // No event-count restriction — admins may delete any organizer.
     await this.organizersRepo.deleteOrganizer(id);
     return { message: 'Organizer deleted', id: org.id };
   }

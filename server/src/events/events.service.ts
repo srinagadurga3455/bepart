@@ -81,6 +81,10 @@ export class EventsService {
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(50, Math.max(1, query.limit || 10));
     const skip = (page - 1) * limit;
+    // Completed/past events stay visible in Explore: completion is a display
+    // concern handled client-side via the event `date` field (see
+    // frontend `isEventCompleted`). Only registration closing uses
+    // `closingTime`, which is separate and always earlier than `date`.
     const where: any = { status: EventStatus.PUBLISHED, isActive: true, organizer: { isActive: true } };
     if (query.search) where.eventName = { contains: query.search, mode: 'insensitive' };
     const [data, total] = await Promise.all([

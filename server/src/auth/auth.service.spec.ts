@@ -6,6 +6,8 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { AuthRepository } from './auth.repo';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Role } from '../common/constants/roles';
 
 const mockAuthRepo: any = {
@@ -16,12 +18,26 @@ const mockAuthRepo: any = {
   findUserByIdWithProfile: jest.fn(),
   findUserByEmailNormalized: jest.fn(),
   createOtp: jest.fn(),
+  findLatestOtp: jest.fn().mockResolvedValue(null),
   findLatestValidOtp: jest.fn(),
   incrementOtpAttempts: jest.fn(),
   markOtpVerified: jest.fn(),
 };
 
-const mockWhatsapp = { sendOtp: jest.fn().mockResolvedValue(undefined) };
+const mockWhatsapp = {
+  sendOtp: jest.fn().mockResolvedValue(undefined),
+  sendTextMessage: jest.fn().mockResolvedValue({ skipped: true }),
+  isConfigured: jest.fn().mockReturnValue(false),
+};
+
+const mockEmail = {
+  sendOtpEmail: jest.fn().mockResolvedValue({ skipped: true }),
+  isConfigured: jest.fn().mockReturnValue(false),
+};
+
+const mockNotifications = {
+  sendOnce: jest.fn().mockResolvedValue({ status: 'SENT' }),
+};
 
 describe('AuthService OTP', () => {
   let service: AuthService;
@@ -33,6 +49,8 @@ describe('AuthService OTP', () => {
         AuthService,
         { provide: AuthRepository, useValue: mockAuthRepo },
         { provide: WhatsappService, useValue: mockWhatsapp },
+        { provide: EmailService, useValue: mockEmail },
+        { provide: NotificationsService, useValue: mockNotifications },
         {
           provide: ConfigService,
           useValue: {
@@ -63,7 +81,7 @@ describe('AuthService OTP', () => {
       const result = await service.requestOtp({ email: 'admin@pravesh.local' });
       expect(result).toHaveProperty('message');
       expect(mockAuthRepo.createOtp).toHaveBeenCalled();
-      expect(mockWhatsapp.sendOtp).toHaveBeenCalled();
+      expect(mockEmail.sendOtpEmail).toHaveBeenCalledWith('admin@pravesh.local', expect.any(String), 5);
     });
 
     it('should reject unknown user', async () => {
@@ -71,9 +89,24 @@ describe('AuthService OTP', () => {
       await expect(service.requestOtp({ email: 'no@campus.edu' })).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    it('should reject STUDENT role', async () => {
+    it('should allow STUDENT role (student OTP login)', async () => {
       mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 's@campus.edu', role: Role.STUDENT, isActive: true });
-      await expect(service.requestOtp({ email: 's@campus.edu' })).rejects.toBeInstanceOf(UnauthorizedException);
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp1' });
+      const result = await service.requestOtp({ email: 's@campus.edu' });
+      expect(result).toHaveProperty('message');
+      expect(mockAuthRepo.createOtp).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'STUDENT_LOGIN' }));
+    });
+
+    it('should enforce resend cooldown', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 's@campus.edu', role: Role.STUDENT, isActive: true });
+      mockAuthRepo.findLatestOtp.mockResolvedValueOnce({
+        id: 'otp0',
+        verified: false,
+        expiresAt: new Date(Date.now() + 60000),
+        createdAt: new Date(),
+      });
+      await expect(service.requestOtp({ email: 's@campus.edu' })).rejects.toThrow('wait');
+      expect(mockAuthRepo.createOtp).not.toHaveBeenCalled();
     });
 
     it('should reject deactivated', async () => {

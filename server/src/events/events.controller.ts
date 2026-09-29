@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -9,6 +9,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
+import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 
 @ApiTags('events')
 @Controller('events')
@@ -51,21 +52,21 @@ export class EventsController {
   @Public()
   @Get('public/:id')
   @ApiOperation({ summary: 'Public event detail (PUBLISHED only)', description: 'No auth, only PUBLISHED' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiResponse({ status: 200, description: 'Event with organizer.name' })
-  @ApiResponse({ status: 400, description: 'Invalid ID (must be UUID)' })
+  @ApiResponse({ status: 400, description: 'Invalid ID (must be UUID or legacy numeric ID)' })
   @ApiResponse({ status: 404, description: 'Not found / unpublished' })
-  findOnePublic(@Param('id', ParseUUIDPipe) id: string) {
+  findOnePublic(@Param('id', ParseEventIdPipe) id: string) {
     return this.eventsService.findOnePublic(id);
   }
 
   @Public()
   @Get('public/:id/registration-form')
   @ApiOperation({ summary: 'Get registration form structure for published event', description: 'Returns organiser-defined sections and fields' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiResponse({ status: 200, description: 'Form structure with sections and fields' })
   @ApiResponse({ status: 404, description: 'Not found / unpublished' })
-  getRegistrationForm(@Param('id', ParseUUIDPipe) id: string) {
+  getRegistrationForm(@Param('id', ParseEventIdPipe) id: string) {
     return this.eventsService.getRegistrationForm(id);
   }
 
@@ -73,12 +74,12 @@ export class EventsController {
   @Roles(Role.ORGANIZER, Role.ADMIN)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Get event detail (owner or ADMIN)' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiResponse({ status: 200, description: 'Event detail' })
   @ApiResponse({ status: 400, description: 'Invalid ID' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  findOne(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     if (user.role === Role.ADMIN) return this.eventsService.findOneForAdmin(id);
     return this.eventsService.findOneForOrganizer(id, user.userId || user.id);
   }
@@ -87,13 +88,13 @@ export class EventsController {
   @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Update own event (DRAFT/PREVIEW only)' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiBody({ type: UpdateEventDto })
   @ApiResponse({ status: 200, description: 'Updated' })
   @ApiResponse({ status: 400, description: 'Invalid ID / date' })
   @ApiResponse({ status: 403, description: 'Not owner or cannot update PUBLISHED' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateEventDto, @CurrentUser() user: RequestUser) {
+  update(@Param('id', ParseEventIdPipe) id: string, @Body() dto: UpdateEventDto, @CurrentUser() user: RequestUser) {
     return this.eventsService.update(id, dto, user.userId || user.id);
   }
 
@@ -101,12 +102,12 @@ export class EventsController {
   @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Move DRAFT → PREVIEW (owner only)' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiResponse({ status: 201, description: 'PREVIEW' })
   @ApiResponse({ status: 400, description: 'Invalid ID' })
   @ApiResponse({ status: 403, description: 'Not owner / invalid transition' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  preview(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  preview(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.eventsService.preview(id, user.userId || user.id);
   }
 
@@ -114,12 +115,12 @@ export class EventsController {
   @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Publish PREVIEW → PUBLISHED (owner only)' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiResponse({ status: 201, description: 'PUBLISHED' })
   @ApiResponse({ status: 400, description: 'Invalid ID / transition' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  publish(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  publish(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.eventsService.publish(id, user.userId || user.id);
   }
 
@@ -127,12 +128,12 @@ export class EventsController {
   @Roles(Role.ORGANIZER, Role.ADMIN)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Cancel event (valid transition, owner only)' })
-  @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiResponse({ status: 201, description: 'CANCELLED' })
   @ApiResponse({ status: 400, description: 'Invalid ID / transition' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  cancel(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.eventsService.cancel(id, user.userId || user.id, user.role);
   }
 }

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -26,12 +27,13 @@ export class AuthController {
   @Public()
   @Post('request-otp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({
-    summary: 'Request OTP for ADMIN/ORGANIZER',
-    description: 'Submit email or phone. OTP is logged to server console (development mock) and via WhatsappService mock. Expires in 5 minutes.',
+    summary: 'Request OTP (email via SES, phone via WhatsApp)',
+    description: 'Submit email or phone. OTP expires in 5 minutes, single-use, max 5 attempts, 30s resend cooldown.',
   })
   @ApiBody({ type: RequestOtpDto, examples: { admin: { value: { email: 'admin@pravesh.local' } }, organizer: { value: { email: 'organizer@example.com' } } } })
-  @ApiResponse({ status: 200, description: 'OTP sent (mock logged to console)' })
+  @ApiResponse({ status: 200, description: 'OTP sent' })
   @ApiResponse({ status: 401, description: 'User not found / deactivated / wrong role' })
   async requestOtp(@Body() dto: RequestOtpDto) {
     return this.authService.requestOtp(dto);

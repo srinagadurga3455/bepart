@@ -1,12 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, Matches, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, MaxLength, Matches, Min } from 'class-validator';
+import { IsEventId } from '../../common/validators/event-id.validator';
 import { Transform } from 'class-transformer';
 import { CouponDiscountType } from '@prisma/client';
 
 export class CreateCouponDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID) the coupon belongs to' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID or legacy numeric ID) the coupon belongs to' })
   @IsString()
-  @IsUUID()
+  @IsEventId()
   eventId: string;
 
   @ApiPropertyOptional({

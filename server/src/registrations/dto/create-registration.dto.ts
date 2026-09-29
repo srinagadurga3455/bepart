@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsEventId } from '../../common/validators/event-id.validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -9,9 +10,9 @@ export class CreateRegistrationDto {
   @MaxLength(20)
   phone: string;
 
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID)' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID or legacy numeric ID)' })
   @IsString()
-  @IsUUID()
+  @IsEventId()
   eventId: string;
 
   @ApiPropertyOptional({

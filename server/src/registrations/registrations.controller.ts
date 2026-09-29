@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RegistrationsService } from './registrations.service';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -40,6 +40,16 @@ export class RegistrationsController {
   @ApiResponse({ status: 404, description: 'Ticket not found' })
   findTicket(@Param('id') id: string) {
     return this.service.findTicketById(id);
+  }
+
+  @Public()
+  @Get('by-phone')
+  @ApiOperation({ summary: 'Public my-tickets lookup by mobile number (no auth)', description: 'Return ALL registrations for a registered mobile number, newest first. No OTP required. Uses canonical phone matching.' })
+  @ApiQuery({ name: 'phone', description: 'Registered mobile number (10-digit, country code optional)' })
+  @ApiResponse({ status: 200, description: 'Registration array with event + ticketUrl' })
+  @ApiResponse({ status: 400, description: 'Missing/invalid mobile number' })
+  findTicketsByPhone(@Query('phone') phone: string) {
+    return this.service.findTicketsByPhone(phone);
   }
 
   @Get(':id')

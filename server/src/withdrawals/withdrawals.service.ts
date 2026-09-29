@@ -3,10 +3,17 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, WithdrawalStatus } from '@prisma/client';
 import { StorageService } from '../storage/storage.service';
+import { EmailService } from '../email/email.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { NotificationsService, NotificationTypes } from '../notifications/notifications.service';
+import { NotificationChannel } from '@prisma/client';
 import { CreateWithdrawalDto, UPI_ID_PATTERN } from './dto/create-withdrawal.dto';
 import {
   WITHDRAWAL_OPEN_STATUSES,
@@ -35,6 +42,8 @@ interface WithdrawalView {
   transactionId: string | null;
   proofUrl: string | null;
   rejectionReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
   requestedAt: Date;
   paidAt: Date | null;
   createdAt: Date;
@@ -53,6 +62,8 @@ export interface WithdrawalResponse {
   transactionId: string | null;
   proofUrl: string | null;
   rejectionReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
   requestedAt: Date;
   paidAt: Date | null;
   createdAt: Date;
@@ -66,9 +77,15 @@ function formatPaise(paise: number): string {
 
 @Injectable()
 export class WithdrawalsService {
+  private readonly logger = new Logger(WithdrawalsService.name);
+
   constructor(
     private readonly repo: WithdrawalsRepository,
     private readonly storageService: StorageService,
+    @Optional() private readonly emailService?: EmailService,
+    @Optional() private readonly whatsappService?: WhatsappService,
+    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   private toResponse(w: WithdrawalView): WithdrawalResponse {
@@ -82,6 +99,8 @@ export class WithdrawalsService {
       transactionId: w.transactionId,
       proofUrl: w.proofUrl,
       rejectionReason: w.rejectionReason,
+      reviewedBy: (w as any).reviewedBy ?? null,
+      reviewedAt: (w as any).reviewedAt ?? null,
       requestedAt: w.requestedAt,
       paidAt: w.paidAt,
       createdAt: w.createdAt,
@@ -121,6 +140,159 @@ export class WithdrawalsService {
     return organizer;
   }
 
+  private adminWhatsappNumber(): string | null {
+    const n = this.config?.get<string>('ADMIN_WHATSAPP_NUMBER')?.trim();
+    return n || null;
+  }
+
+  private adminEmail(): string | null {
+    const e = this.config?.get<string>('ADMIN_EMAIL')?.trim();
+    return e && e.includes('@') ? e : null;
+  }
+
+  private adminReviewUrl(withdrawalId: string): string {
+    const base = (this.config?.get<string>('FRONTEND_URL') || 'http://localhost:5173').replace(/\/$/, '');
+    return `${base}/admin/withdrawals/${withdrawalId}`;
+  }
+
+  /** Full detail row (organizer contact + event) for notifications. Never throws. */
+  private async notifyDetail(id: string): Promise<any | null> {
+    try {
+      return await this.repo.findById(id);
+    } catch (err) {
+      this.logger.warn(`Could not load withdrawal ${id} for notification: ${(err as Error)?.message}`);
+      return null;
+    }
+  }
+
+  private async notifyAdminOfRequest(id: string): Promise<void> {
+    if (!this.notifications) return;
+    try {
+      const detail = await this.notifyDetail(id);
+      if (!detail) return;
+      const balance = await this.computeBalance(this.repo.db, detail.eventId);
+      const reviewUrl = this.adminReviewUrl(id);
+      const payload = {
+        organizer: detail.organizer?.name ?? 'Organizer',
+        event: detail.event?.eventName ?? 'Event',
+        amount: formatPaise(detail.amount),
+        availableBalance: formatPaise(balance.available),
+        settlementId: id,
+        reviewUrl,
+      };
+      const adminNumber = this.adminWhatsappNumber();
+      if (adminNumber && this.whatsappService) {
+        await this.notifications.sendOnce({
+          type: NotificationTypes.SETTLEMENT_REQUEST_WHATSAPP,
+          channel: NotificationChannel.WHATSAPP,
+          recipient: adminNumber,
+          entityType: 'withdrawal',
+          entityId: id,
+          sender: () => this.whatsappService!.sendSettlementRequestNotification({ to: adminNumber, ...payload }),
+        });
+      }
+      const adminMail = this.adminEmail();
+      if (adminMail && this.emailService) {
+        await this.notifications.sendOnce({
+          type: NotificationTypes.SETTLEMENT_REQUEST_EMAIL,
+          channel: NotificationChannel.EMAIL,
+          recipient: adminMail,
+          entityType: 'withdrawal',
+          entityId: id,
+          sender: () =>
+            this.emailService!.sendSettlementRequestedEmail({
+              to: adminMail,
+              organizerName: payload.organizer,
+              eventName: payload.event,
+              amount: payload.amount,
+              availableBalance: payload.availableBalance,
+              settlementId: id,
+              reviewUrl,
+            }),
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Admin settlement-request notification failed: ${(err as Error)?.message}`);
+    }
+  }
+
+  private async notifyOrganizer(
+    id: string,
+    kind: 'approved' | 'rejected' | 'paid',
+    extra?: { reason?: string; transactionId?: string; paidAt?: Date | null },
+  ): Promise<void> {
+    if (!this.notifications) return;
+    try {
+      const detail = await this.notifyDetail(id);
+      if (!detail) return;
+      const phone = detail.organizer?.phone?.trim() || null;
+      const email = detail.organizer?.email?.trim() || null;
+      const base = {
+        organizer: detail.organizer?.name ?? 'Organizer',
+        event: detail.event?.eventName ?? 'Event',
+        amount: formatPaise(detail.amount),
+        settlementId: id,
+      };
+      const typeBase =
+        kind === 'approved'
+          ? 'SETTLEMENT_APPROVED'
+          : kind === 'rejected'
+            ? 'SETTLEMENT_REJECTED'
+            : 'SETTLEMENT_PAID';
+      if (phone && this.whatsappService) {
+        await this.notifications.sendOnce({
+          type: NotificationTypes[`${typeBase}_WHATSAPP` as keyof typeof NotificationTypes],
+          channel: NotificationChannel.WHATSAPP,
+          recipient: phone,
+          entityType: 'withdrawal',
+          entityId: id,
+          sender: () => {
+            if (kind === 'approved') {
+              return this.whatsappService!.sendSettlementApprovedNotification({ to: phone, ...base });
+            }
+            if (kind === 'rejected') {
+              return this.whatsappService!.sendSettlementRejectedNotification({
+                to: phone,
+                ...base,
+                reason: extra?.reason ?? '',
+              });
+            }
+            return this.whatsappService!.sendSettlementPaidNotification({
+              to: phone,
+              amount: base.amount,
+              utr: extra?.transactionId ?? '',
+              paidAt: extra?.paidAt ? extra.paidAt.toLocaleString('en-IN') : new Date().toLocaleString('en-IN'),
+              settlementId: id,
+            });
+          },
+        });
+      }
+      if (email && email.includes('@') && this.emailService) {
+        await this.notifications.sendOnce({
+          type: NotificationTypes[`${typeBase}_EMAIL` as keyof typeof NotificationTypes],
+          channel: NotificationChannel.EMAIL,
+          recipient: email,
+          entityType: 'withdrawal',
+          entityId: id,
+          sender: () => {
+            const mailBase = { to: email, organizerName: base.organizer, eventName: base.event, amount: base.amount, settlementId: id };
+            if (kind === 'approved') return this.emailService!.sendSettlementApprovedEmail(mailBase);
+            if (kind === 'rejected') {
+              return this.emailService!.sendSettlementRejectedEmail({ ...mailBase, reason: extra?.reason ?? '' });
+            }
+            return this.emailService!.sendSettlementPaidEmail({
+              ...mailBase,
+              utr: extra?.transactionId ?? '',
+              paidAt: extra?.paidAt ? extra.paidAt.toLocaleString('en-IN') : new Date().toLocaleString('en-IN'),
+            });
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Organizer settlement notification failed: ${(err as Error)?.message}`);
+    }
+  }
+
   async create(dto: CreateWithdrawalDto, userId: string): Promise<WithdrawalResponse> {
     const organizer = await this.requireApprovedOrganizer(userId);
 
@@ -138,8 +310,9 @@ export class WithdrawalsService {
     // Serializable transaction: balance check + insert are atomic, so two
     // concurrent requests cannot both spend the same available balance.
     // Prisma surfaces serialization failures as P2034.
+    let created: WithdrawalResponse;
     try {
-      return await this.repo.transaction(async (tx) => {
+      created = await this.repo.transaction(async (tx) => {
         const event = await this.repo.findEventById(tx, dto.eventId);
         if (!event) throw new NotFoundException('Event not found');
         if (event.organizerId !== organizer.id) {
@@ -176,6 +349,9 @@ export class WithdrawalsService {
       }
       throw err;
     }
+    // Admin notification AFTER the settlement is saved (never blocks creation).
+    await this.notifyAdminOfRequest(created.id);
+    return created;
   }
 
   async findMine(userId: string): Promise<WithdrawalResponse[]> {
@@ -187,6 +363,11 @@ export class WithdrawalsService {
   async findAll(): Promise<WithdrawalResponse[]> {
     const rows = await this.repo.findAll();
     return rows.map((w) => this.toResponse(w));
+  }
+
+  async findAllPaged(page: number, limit: number) {
+    const { data, meta } = await this.repo.findAllPaged(page, limit);
+    return { data: data.map((w) => this.toResponse(w)), meta };
   }
 
   async findOne(id: string, userId: string, role: string): Promise<WithdrawalResponse> {
@@ -243,16 +424,19 @@ export class WithdrawalsService {
     throw new BadRequestException(`Cannot ${action} withdrawal in status ${existing.status}`);
   }
 
-  async process(id: string): Promise<WithdrawalResponse> {
-    return this.transitionOrThrow(
+  async process(id: string, adminId?: string): Promise<WithdrawalResponse> {
+    const res = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.REQUESTED],
-      { status: WithdrawalStatus.PROCESSING },
+      { status: WithdrawalStatus.PROCESSING, reviewedBy: adminId ?? null, reviewedAt: new Date() },
       'process',
     );
+    // REQUESTED -> PROCESSING is the admin approval: notify the organizer.
+    await this.notifyOrganizer(id, 'approved');
+    return res;
   }
 
-  async reject(id: string, reason: string): Promise<WithdrawalResponse> {
+  async reject(id: string, reason: string, adminId?: string): Promise<WithdrawalResponse> {
     const rejectionReason = reason?.trim() || '';
     if (!rejectionReason) {
       throw new BadRequestException('Rejection reason is required');
@@ -262,15 +446,17 @@ export class WithdrawalsService {
     }
     // REJECTED rows are excluded from reserved balance, so the organizer can
     // request the released amount again.
-    return this.transitionOrThrow(
+    const res = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.REQUESTED, WithdrawalStatus.PROCESSING],
-      { status: WithdrawalStatus.REJECTED, rejectionReason },
+      { status: WithdrawalStatus.REJECTED, rejectionReason, reviewedBy: adminId ?? null, reviewedAt: new Date() },
       'reject',
     );
+    await this.notifyOrganizer(id, 'rejected', { reason: rejectionReason });
+    return res;
   }
 
-  async pay(id: string, transactionId: string, proofUrl?: string): Promise<WithdrawalResponse> {
+  async pay(id: string, transactionId: string, proofUrl?: string, adminId?: string): Promise<WithdrawalResponse> {
     const txn = transactionId?.trim() || '';
     if (!txn) {
       throw new BadRequestException('Transaction ID is required before marking as paid');
@@ -283,18 +469,22 @@ export class WithdrawalsService {
     if (duplicate) {
       throw new ConflictException('Transaction ID has already been used for another withdrawal');
     }
-    return this.transitionOrThrow(
+    const paidAt = new Date();
+    const res = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.PROCESSING],
-      { status: WithdrawalStatus.PAID, transactionId: txn, proofUrl: proof, paidAt: new Date() },
+      { status: WithdrawalStatus.PAID, transactionId: txn, proofUrl: proof, paidAt, reviewedBy: adminId ?? null, reviewedAt: new Date() },
       'mark as paid',
     );
+    await this.notifyOrganizer(id, 'paid', { transactionId: txn, paidAt });
+    return res;
   }
 
   async confirmPaid(
     id: string,
     transactionId: string,
     screenshot?: Express.Multer.File,
+    adminId?: string,
   ): Promise<WithdrawalResponse> {
     const existing = await this.repo.findById(id);
     if (!existing) throw new NotFoundException('Withdrawal not found');
@@ -327,12 +517,15 @@ export class WithdrawalsService {
       throw new ConflictException('Transaction ID has already been used for another withdrawal');
     }
     const { url } = await this.storageService.uploadProof(screenshot, existing.id);
-    return this.transitionOrThrow(
+    const paidAt = new Date();
+    const res = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.PROCESSING],
-      { status: WithdrawalStatus.PAID, transactionId: txn, proofUrl: url, paidAt: new Date() },
+      { status: WithdrawalStatus.PAID, transactionId: txn, proofUrl: url, paidAt, reviewedBy: adminId ?? null, reviewedAt: new Date() },
       'mark as paid',
     );
+    await this.notifyOrganizer(id, 'paid', { transactionId: txn, paidAt });
+    return res;
   }
 
   // Returns file bytes for local proofs (auth + ownership enforced by caller context).

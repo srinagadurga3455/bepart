@@ -6,6 +6,7 @@ import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Role } from '../common/constants/roles';
+import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 import { RequestUser } from '../common/types/jwt-payload';
 
 @ApiTags('coupons')
@@ -25,7 +26,7 @@ export class EventCouponsController {
   @ApiResponse({ status: 404, description: 'Event not found' })
   @ApiResponse({ status: 409, description: 'Coupon code already exists' })
   create(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @Body() dto: CreateCouponDto,
     @CurrentUser() user: RequestUser,
   ) {
@@ -38,7 +39,7 @@ export class EventCouponsController {
   @ApiResponse({ status: 200, description: 'Coupon list' })
   @ApiResponse({ status: 403, description: 'Not your event' })
   @ApiResponse({ status: 404, description: 'Event not found' })
-  list(@Param('eventId', ParseUUIDPipe) eventId: string, @CurrentUser() user: RequestUser) {
+  list(@Param('eventId', ParseEventIdPipe) eventId: string, @CurrentUser() user: RequestUser) {
     return this.couponsService.listForEvent(eventId, { userId: user.userId || user.id, role: user.role });
   }
 

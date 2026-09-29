@@ -3,15 +3,21 @@ import {
   BadRequestException,
   UnauthorizedException,
   Logger,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { AuthRepository } from './auth.repo';
 import { LoginDto } from './dto/login.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { EmailService } from '../email/email.service';
+import { NotificationsService, NotificationTypes } from '../notifications/notifications.service';
+import { NotificationChannel } from '@prisma/client';
 import { Role as PrismaRole } from '@prisma/client';
 import { Role } from '../common/constants/roles';
 import { normalizePhone } from '../common/utils/phone';
@@ -21,12 +27,15 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly OTP_EXPIRY_MINUTES = 5;
   private readonly OTP_MAX_ATTEMPTS = 5;
+  private readonly OTP_RESEND_COOLDOWN_SECONDS = 30;
 
   constructor(
     private readonly authRepo: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly whatsappService: WhatsappService,
+    private readonly emailService: EmailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private sanitizeUser(user: any) {
@@ -65,7 +74,13 @@ export class AuthService {
   }
 
   private generateOtp(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return crypto.randomInt(100000, 1000000).toString();
+  }
+
+  private purposeForRole(role: string): 'ADMIN_LOGIN' | 'ORGANIZER_LOGIN' | 'STUDENT_LOGIN' {
+    if (role === Role.ADMIN) return 'ADMIN_LOGIN';
+    if (role === Role.ORGANIZER) return 'ORGANIZER_LOGIN';
+    return 'STUDENT_LOGIN';
   }
 
   async requestOtp(dto: RequestOtpDto) {
@@ -88,14 +103,26 @@ export class AuthService {
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
     }
-    if (user.role !== Role.ADMIN && user.role !== Role.ORGANIZER) {
-      throw new UnauthorizedException('OTP login only for ADMIN and ORGANIZER');
+    if (user.role !== Role.ADMIN && user.role !== Role.ORGANIZER && user.role !== Role.STUDENT) {
+      throw new UnauthorizedException('OTP login is not available for this account');
+    }
+
+    // Resend cooldown: one OTP per identifier per 30s (rate-limit friendly).
+    const latest = await this.authRepo.findLatestOtp(identifier);
+    if (latest && !latest.verified && latest.expiresAt > new Date()) {
+      const ageSec = (Date.now() - new Date(latest.createdAt).getTime()) / 1000;
+      if (ageSec < this.OTP_RESEND_COOLDOWN_SECONDS) {
+        throw new HttpException(
+          `Please wait ${Math.ceil(this.OTP_RESEND_COOLDOWN_SECONDS - ageSec)} seconds before requesting a new OTP`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
     }
 
     const otp = this.generateOtp();
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + this.OTP_EXPIRY_MINUTES * 60 * 1000);
-    const purpose = user.role === Role.ADMIN ? 'ADMIN_LOGIN' : 'ORGANIZER_LOGIN';
+    const purpose = this.purposeForRole(user.role);
 
     await this.authRepo.createOtp({
       identifier,
@@ -104,15 +131,37 @@ export class AuthService {
       expiresAt,
     });
 
-    // Log to console for dev/testing
-    const roleLabel = user.role;
-    console.log(`[OTP] ${roleLabel} ${identifier} -> ${otp}`);
-    this.logger.log(`[OTP] ${roleLabel} ${identifier} -> ${otp}`);
+    // Real delivery: email identifiers via Amazon SES, phone via WhatsApp.
+    // The OTP is never returned in the API response. In non-production the
+    // OTP is also logged so testing can proceed without provider credentials;
+    // production never logs it.
+    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    if (isEmail) {
+      await this.notifications.sendOnce({
+        type: NotificationTypes.OTP_EMAIL,
+        channel: NotificationChannel.EMAIL,
+        recipient: identifier,
+        sender: () => this.emailService.sendOtpEmail(identifier, otp, this.OTP_EXPIRY_MINUTES),
+      });
+      if (!this.emailService.isConfigured() && !isProd) {
+        console.log(`[OTP] ${user.role} ${identifier} -> ${otp}`);
+      }
+    } else {
+      await this.notifications.sendOnce({
+        type: NotificationTypes.OTP_WHATSAPP,
+        channel: NotificationChannel.WHATSAPP,
+        recipient: identifier,
+        sender: () => this.whatsappService.sendTextMessage(
+          identifier,
+          `Your BePart verification code is: ${otp}. It expires in ${this.OTP_EXPIRY_MINUTES} minutes.`,
+        ),
+      });
+      if (!this.whatsappService.isConfigured() && !isProd) {
+        console.log(`[OTP] ${user.role} ${identifier} -> ${otp}`);
+      }
+    }
 
-    // Mock WhatsApp delivery
-    await this.whatsappService.sendOtp(identifier, otp);
-
-    return { message: 'OTP sent. Check server console (development mock).', expiresAt };
+    return { message: 'OTP sent. It expires in 5 minutes.', expiresAt };
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
@@ -163,12 +212,12 @@ export class AuthService {
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
     }
-    if (user.role !== Role.ADMIN && user.role !== Role.ORGANIZER) {
-      throw new UnauthorizedException('OTP login only for ADMIN and ORGANIZER');
+    if (user.role !== Role.ADMIN && user.role !== Role.ORGANIZER && user.role !== Role.STUDENT) {
+      throw new UnauthorizedException('OTP login is not available for this account');
     }
 
     // Optional: ensure purpose matches role
-    const expectedPurpose = user.role === Role.ADMIN ? 'ADMIN_LOGIN' : 'ORGANIZER_LOGIN';
+    const expectedPurpose = this.purposeForRole(user.role);
     if (record.purpose !== expectedPurpose) {
       // allow but log mismatch
       this.logger.warn(`OTP purpose ${record.purpose} mismatched user role ${user.role}`);
