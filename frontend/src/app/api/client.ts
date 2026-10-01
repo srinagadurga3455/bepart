@@ -5,9 +5,11 @@ import axios, { type AxiosResponse } from 'axios';
  *
  * - Uses VITE_API_BASE_URL when set.
  * - When the page is opened via a LAN IP (e.g. phone testing on the same
- *   Wi-Fi) but the env URL points at localhost (or a stale LAN IP), swap the
- *   hostname to the page's hostname so the request doesn't time out with
- *   ERR_CONNECTION_TIMED_OUT. Port and /api path are preserved.
+ *   Wi-Fi) but the env URL points at localhost (or a private LAN IP),
+ *   swap the hostname to the page's hostname so the request doesn't time out
+ *   with ERR_CONNECTION_TIMED_OUT. Port and /api path are preserved.
+ * - Public hosts (e.g. *.onrender.com, www.bepart.in) are NEVER rewritten,
+ *   so production Vercel -> Render stays intact.
  * - Falls back to localhost for local dev.
  */
 function resolveBaseURL(): string {
@@ -18,11 +20,15 @@ function resolveBaseURL(): string {
     if (typeof window !== 'undefined' && window.location?.hostname) {
       const pageHost = window.location.hostname;
       const url = new URL(configured);
-      const isPageLan =
+      const isConfiguredLocalOrLan =
+        url.hostname === 'localhost' ||
+        url.hostname === '127.0.0.1' ||
+        /^192\.168\.\d+\.\d+$/.test(url.hostname) ||
+        /^10\.\d+\.\d+\.\d+$/.test(url.hostname) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(url.hostname);
+      const isPageNonLocal =
         pageHost !== 'localhost' && pageHost !== '127.0.0.1';
-      const isConfiguredLocal =
-        url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-      if (isPageLan && (isConfiguredLocal || url.hostname !== pageHost)) {
+      if (isPageNonLocal && isConfiguredLocalOrLan) {
         url.hostname = pageHost;
         return url.toString().replace(/\/$/, '');
       }
@@ -30,7 +36,7 @@ function resolveBaseURL(): string {
   } catch {
     // If URL parsing fails, use the configured value as-is.
   }
-  return configured;
+  return configured.replace(/\/$/, '');
 }
 
 const baseURL = resolveBaseURL();
