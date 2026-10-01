@@ -108,6 +108,32 @@ export interface FormTheme {
   answerSize?: 'sm' | 'md' | 'lg';
 }
 
+/** Settings controlling collection behavior, access, and confirmation for a registration form. */
+export interface FormSettings {
+  /** Collect participant name (auto-prefilled, not a hidden system field toggle). */
+  collectName?: boolean;
+  /** Collect participant phone (auto-prefilled). */
+  collectPhone?: boolean;
+  /** Collect participant email address as an additional field. */
+  collectEmail?: boolean;
+  /** Require the participant to be logged in before they can register. */
+  requireLogin?: boolean;
+  /** Allow the same phone/user to submit more than once. */
+  allowMultipleSubmissions?: boolean;
+  /** Message shown to participants after a successful registration. */
+  confirmationMessage?: string;
+  /** Whether the registration form is accepting responses. */
+  registrationOpen?: boolean;
+  /** Message shown when registrations are closed. */
+  closedMessage?: string;
+  /** Enable a privacy/consent section at the bottom of the form. */
+  showConsentSection?: boolean;
+  /** Custom privacy policy / terms text shown in the consent section. */
+  consentText?: string;
+  /** Label for the required consent checkbox. */
+  consentCheckboxLabel?: string;
+}
+
 /** Registration form blueprint stored on the event (never modified by participants). */
 export interface FormStructure {
   title: string;
@@ -115,6 +141,7 @@ export interface FormStructure {
   sections: FormSectionDef[];
   payment?: FormPaymentConfig;
   theme?: FormTheme;
+  settings?: FormSettings;
 }
 
 /** A participant's answers keyed by field name. Checkbox answers are arrays. */
@@ -192,11 +219,29 @@ export interface RegistrationPayload {
   eventId: string;
   phone: string;
   formData: FormDataRecord;
+  /** Coupon code applied at POST /payments/init (required when the PAID payment carries one). */
+  couponCode?: string;
 }
 
 /** Public ticket lookup returns the registration with its event plus a shareable URL. */
-export interface TicketItem extends RegistrationItem {
-  ticketUrl: string;
+export type TicketStatus = 'VALID' | 'CHECKED_IN' | 'CANCELLED';
+
+/** Public ticket shape from GET /tickets/:ticketId (no payment internals). */
+export interface TicketItem {
+  ticket: {
+    code: string;
+    status: TicketStatus;
+    checkedInAt?: string | null;
+    ticketUrl: string;
+    createdAt: string;
+  };
+  registration: {
+    registrationId: string;
+    formData?: FormDataRecord | null;
+    participantName: string;
+  };
+  event: (Omit<EventItem, 'formStructure'> & { formStructure?: FormStructure | null }) | null;
+  checkedIn: boolean;
 }
 
 export interface CheckInResult {

@@ -1,10 +1,11 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { OrganizersRepository } from './organizers.repo';
 import { CreateOrganizerDto } from './dto/create-organizer.dto';
 import { UpdateOrganizerDto } from './dto/update-organizer.dto';
 import { OrganizerStatus, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { MailerService } from '../mailer/mailer.service';
 import { normalizePhone } from '../common/utils/phone';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class OrganizersService {
   constructor(
     private readonly organizersRepo: OrganizersRepository,
     private readonly whatsappService: WhatsappService,
+    @Optional() private readonly mailerService?: MailerService,
   ) {}
 
   private async getOrganizerOrFail(id: string) {
@@ -65,9 +67,23 @@ export class OrganizersService {
       purpose: 'ORGANIZER_LOGIN' as any,
       expiresAt,
     });
-    console.log(`[OTP] ORGANIZER ${normalizedEmail} -> ${otp}`);
-    this.logger.log(`[OTP] ORGANIZER ${normalizedEmail} -> ${otp}`);
-    await this.whatsappService.sendOtp(normalizedEmail, otp);
+    // Initial organizer OTP goes to the organizer's EMAIL via Gmail/SMTP
+    // (Pravesh smtp/ reference, delivery only). The OTP row above is the
+    // source of truth; delivery failure never rolls back creation (a fresh
+    // OTP can be requested via POST /api/auth/request-otp).
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[OTP] ORGANIZER ${normalizedEmail} dispatched (see inbox or SMTP logs in development)`);
+    }
+    this.logger.log(`[OTP] ORGANIZER ${normalizedEmail} dispatched (value hidden)`);
+    if (this.mailerService) {
+      try {
+        await this.mailerService.sendOtpEmail(normalizedEmail, otp, { expiryMinutes: 5 });
+      } catch (e) {
+        this.logger.warn(`Organizer welcome OTP email failed for ${normalizedEmail}: ${(e as Error)?.message}`);
+      }
+    } else {
+      await this.whatsappService.sendOtp(normalizedEmail, otp);
+    }
 
     return result;
   }

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Param,
   ParseUUIDPipe,
   Post,
@@ -8,6 +9,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ParseEventIdPipe } from '../common/pipes/parse-event-id.pipe';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StorageService } from './storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -45,7 +47,7 @@ export class StorageController {
   @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
   @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
   async uploadEventPosterSquare(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {
@@ -66,10 +68,40 @@ export class StorageController {
   @ApiResponse({ status: 400, description: 'Invalid aspect ratio / file type / too large' })
   @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
   async uploadEventPosterRectangle(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: RequestUser,
   ) {
     return this.storageService.handleEventPosterRectangleUpload(file, eventId, user);
+  }
+
+  @Delete('events/:eventId/poster-square')
+  @Roles(Role.ORGANIZER)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Remove event square poster', description: 'Clears the stored square poster URL and deletes the R2 object. Only owner ORGANIZER.' })
+  @ApiParam({ name: 'eventId', type: String, description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Square poster removed {posterSquareUrl: null}' })
+  @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async removeEventPosterSquare(
+    @Param('eventId', ParseEventIdPipe) eventId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.storageService.handleEventPosterSquareDelete(eventId, user);
+  }
+
+  @Delete('events/:eventId/poster-rectangle')
+  @Roles(Role.ORGANIZER)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Remove event rectangle poster', description: 'Clears the stored banner URL and deletes the R2 object. Only owner ORGANIZER.' })
+  @ApiParam({ name: 'eventId', type: String, description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Rectangle poster removed {posterRectangleUrl: null}' })
+  @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async removeEventPosterRectangle(
+    @Param('eventId', ParseEventIdPipe) eventId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.storageService.handleEventPosterRectangleDelete(eventId, user);
   }
 }

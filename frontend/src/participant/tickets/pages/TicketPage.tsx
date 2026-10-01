@@ -5,8 +5,8 @@ import {
   Alert, Chip, Stack,
 } from '@mui/material';
 import {
-  AccessTime, CheckCircle, ConfirmationNumber, Event as EventIcon,
-  LocationOn, PersonOutlined, PrintOutlined, SupportAgentOutlined,
+  AccessTime, Cancel as CancelIcon, CheckCircle, ConfirmationNumber, ContentCopy,
+  Event as EventIcon, LocationOn, PersonOutlined, PrintOutlined, SupportAgentOutlined,
 } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
 import { useQuery } from '@tanstack/react-query';
@@ -81,18 +81,32 @@ export default function TicketPage() {
     );
   }
 
-  const ticket = response.data;
+  const raw = response.data;
+  // New ticket API shape { ticket, registration, event } — mapped onto the
+  // page's existing rendering (registrationId, formData, event, ticketUrl).
   // QR encodes the canonical public ticket URL (backend-provided), so a scan
-  // always resolves to this ticket. The raw registration ID is never displayed.
-  const ticketUrl = ticket.ticketUrl || `${window.location.origin}/ticket/${ticket.registrationId}`;
+  // always resolves to this ticket.
+  const ticketUrl = raw.ticket.ticketUrl || `${window.location.origin}/ticket/${raw.ticket.code}`;
+  const ticket = {
+    registrationId: raw.registration.registrationId,
+    ticketUrl,
+    ticketId: raw.ticket.code,
+    status: raw.ticket.status,
+    event: raw.event,
+    formData: (raw.registration.formData || {}) as FormDataRecord,
+    checkedInAt: raw.ticket.checkedInAt,
+  };
   const event = ticket.event;
   const poster = eventPoster(event);
   const formData: FormDataRecord = ticket.formData || {};
   const formStructure = event?.formStructure;
   const sections = formStructure?.sections || [];
   const selectedCount = getSelectedCount(formData, findCountFieldName(formStructure));
-  const registrant = formData.teamName || formData.member1Name || formData.fullName || '—';
-  const checkedIn = !!(ticket as { checkedInAt?: string | null }).checkedInAt;
+  const registrant = raw.registration.participantName !== '—'
+    ? raw.registration.participantName
+    : formData.teamName || formData.member1Name || formData.fullName || '—';
+  const checkedIn = !!raw.checkedIn;
+  const cancelled = ticket.status === 'CANCELLED';
 
   return (
     <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
@@ -123,15 +137,17 @@ export default function TicketPage() {
           )}
 
           {/* Confirmation band */}
-          <Box sx={{ bgcolor: checkedIn ? '#15803D' : '#16A34A', color: 'white', px: 3, py: 3, textAlign: 'center' }}>
-            <CheckCircle sx={{ fontSize: 44, mb: 0.5 }} />
+          <Box sx={{ bgcolor: cancelled ? '#B42318' : checkedIn ? '#15803D' : '#16A34A', color: 'white', px: 3, py: 3, textAlign: 'center' }}>
+            {cancelled ? <CancelIcon sx={{ fontSize: 44, mb: 0.5 }} /> : <CheckCircle sx={{ fontSize: 44, mb: 0.5 }} />}
             <Typography variant="h5" sx={{ fontWeight: 800 }}>
-              {checkedIn ? 'Checked In — Enjoy the Event!' : 'Registration Confirmed'}
+              {cancelled ? 'Ticket Cancelled' : checkedIn ? 'Checked In — Enjoy the Event!' : 'Registration Confirmed'}
             </Typography>
             <Typography variant="body2" sx={{ opacity: 0.92, mt: 0.5 }}>
-              {checkedIn
-                ? `Checked in on ${formatDate((ticket as { checkedInAt?: string }).checkedInAt)} — show this ticket if asked.`
-                : 'Show this ticket at the entry gate for a quick scan.'}
+              {cancelled
+                ? 'This registration was cancelled — the QR is no longer valid for entry.'
+                : checkedIn
+                  ? `Checked in on ${formatDate(ticket.checkedInAt ?? undefined)} — show this ticket if asked.`
+                  : 'Show this ticket at the entry gate for a quick scan.'}
             </Typography>
           </Box>
 
@@ -147,7 +163,34 @@ export default function TicketPage() {
               <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mt: 1.5, flexWrap: 'wrap' }}>
                 <Chip label={event?.status || 'CONFIRMED'} color="success" size="small" variant="outlined" />
                 {checkedIn && <Chip label="CHECKED IN" color="success" size="small" />}
+                {cancelled && <Chip label="CANCELLED" color="error" size="small" />}
               </Box>
+
+              {/* Ticket ID + share */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+                <Typography variant="caption" color="text.secondary">Ticket ID</Typography>
+                <Typography variant="caption" sx={{ fontWeight: 800, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+                  {ticket.ticketId}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<ContentCopy sx={{ fontSize: 15 }} />}
+                  sx={{ minWidth: 0, px: 1, textTransform: 'none', fontWeight: 700 }}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(ticketUrl);
+                    } catch {
+                      /* clipboard unavailable (insecure context) — the URL is still shown below */
+                    }
+                  }}
+                >
+                  Copy link
+                </Button>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5, overflowWrap: 'anywhere' }}>
+                {ticketUrl}
+              </Typography>
             </Box>
 
             <Divider sx={{ mb: 2.5, borderStyle: 'dashed' }} />
@@ -186,9 +229,15 @@ export default function TicketPage() {
 
             <Divider sx={{ mb: 2.5, borderStyle: 'dashed' }} />
 
-            {/* QR */}
+            {/* QR — encodes the public ticket URL; no image is stored server-side */}
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, mb: 2.5 }}>
-              <Box sx={{ bgcolor: '#FFFFFF', p: 2, borderRadius: 3, border: '2px solid', borderColor: 'divider', lineHeight: 0 }}>
+              <Box
+                sx={{
+                  bgcolor: '#FFFFFF', p: 2, borderRadius: 3, lineHeight: 0,
+                  border: '2px solid', borderColor: cancelled ? 'error.main' : 'divider',
+                  opacity: cancelled ? 0.35 : 1,
+                }}
+              >
                 <QRCodeSVG
                   value={ticketUrl}
                   size={168}
@@ -199,8 +248,12 @@ export default function TicketPage() {
                   title="Ticket verification QR code"
                 />
               </Box>
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>Scan at entry</Typography>
-              <Typography variant="caption" color="text.secondary">Entry QR · one scan per ticket</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {cancelled ? 'QR no longer valid' : 'Scan at entry'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {cancelled ? 'This registration was cancelled.' : 'Entry QR · one scan per ticket'}
+              </Typography>
             </Box>
 
             <Divider sx={{ mb: 2.5, borderStyle: 'dashed' }} />

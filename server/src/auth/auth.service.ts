@@ -3,6 +3,8 @@ import {
   BadRequestException,
   UnauthorizedException,
   Logger,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +14,7 @@ import { LoginDto } from './dto/login.dto';
 import { RequestOtpDto } from './dto/request-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { MailerService } from '../mailer/mailer.service';
 import { Role as PrismaRole } from '@prisma/client';
 import { Role } from '../common/constants/roles';
 import { normalizePhone } from '../common/utils/phone';
@@ -27,6 +30,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly whatsappService: WhatsappService,
+    @Optional() private readonly mailerService?: MailerService,
   ) {}
 
   private sanitizeUser(user: any) {
@@ -104,12 +108,36 @@ export class AuthService {
       expiresAt,
     });
 
-    // Log to console for dev/testing
-    const roleLabel = user.role;
-    console.log(`[OTP] ${roleLabel} ${identifier} -> ${otp}`);
-    this.logger.log(`[OTP] ${roleLabel} ${identifier} -> ${otp}`);
+    // OTP delivery: email identifiers go through Gmail/SMTP (Pravesh
+    // smtp/ reference, delivery only); phone identifiers keep the existing
+    // WhatsApp path. OTP generation/hashing/expiry/attempts/single-use stay
+    // in the OtpVerification table — never the Pravesh in-memory store.
+    // OTPs are never logged in production.
+    const isProd = (this.config.get<string>('NODE_ENV', 'development') || 'development') === 'production';
+    if (!isProd) {
+      const roleLabel = user.role;
+      console.log(`[OTP] ${roleLabel} ${identifier} -> ${otp}`);
+      this.logger.log(`[OTP] ${roleLabel} ${identifier} dispatched (see server console in development)`);
+    } else {
+      this.logger.log(`OTP dispatched for ${user.role} ${identifier} (value hidden)`);
+    }
 
-    // Mock WhatsApp delivery
+    if (isEmail) {
+      if (!this.mailerService) {
+        throw new ServiceUnavailableException('Email OTP delivery is not available');
+      }
+      try {
+        await this.mailerService.sendOtpEmail(identifier, otp, {
+          expiryMinutes: this.OTP_EXPIRY_MINUTES,
+        });
+      } catch (e) {
+        this.logger.warn(`Email OTP delivery failed for ${identifier}: ${(e as Error)?.message}`);
+        throw new ServiceUnavailableException('Failed to send OTP email. Please try again.');
+      }
+      return { message: 'OTP sent to your email.', expiresAt };
+    }
+
+    // Mock WhatsApp delivery (phone path unchanged)
     await this.whatsappService.sendOtp(identifier, otp);
 
     return { message: 'OTP sent. Check server console (development mock).', expiresAt };

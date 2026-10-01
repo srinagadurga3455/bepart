@@ -11,7 +11,7 @@ import OrganizerShell from '../../components/OrganizerShell';
 import { paymentsApi } from '../api/payments';
 import { eventsApi } from '../../events/api/events';
 import { apiErrorMessage, unwrapList } from '../../../app/api/client';
-import { formatEventDate, formatPaise } from '../../../app/utils/format';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
 import type { EventItem, PaymentItem, PaymentStatus } from '../../../app/types';
 import { orgCardSx, orgSectionTitleSx, orgSmallButtonSx } from '../../components/organizerStyles';
 import EmptyState from '../../../app/components/EmptyState';
@@ -64,7 +64,7 @@ function TransactionsContent() {
   const safePage = Math.min(page, totalPages);
   const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const collected = all.filter((p) => p.status === 'PAID').reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  const collectedLabel = formatPaise(collected);
+  const collectedLabel = formatINR(collected);
 
   const markStatus = async (p: PaymentItem, status: PaymentStatus) => {
     setBusy(true);
@@ -158,7 +158,7 @@ function TransactionsContent() {
                       <TableRow key={p.id}>
                         <TableCell>{p.event?.eventName || eventNameById[p.eventId || ''] || '—'}</TableCell>
                         <TableCell>{p.phone || p.registration?.phone || '—'}</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>{formatPaise(p.amount)}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{formatINR(p.amount)}</TableCell>
                         <TableCell>{p.couponCode || '—'}</TableCell>
                         <TableCell><PaymentStatusChip status={p.status} /></TableCell>
                         <TableCell>{formatEventDate(p.createdAt)}</TableCell>
@@ -195,9 +195,9 @@ function TransactionsContent() {
               {[
                 ['Event', detail.event?.eventName || eventNameById[detail.eventId || ''] || '—'],
                 ['Phone', detail.phone || detail.registration?.phone || '—'],
-                ['Amount', formatPaise(detail.amount)],
-                ['Original', detail.originalAmount != null ? formatPaise(detail.originalAmount) : '—'],
-                ['Discount', detail.discountAmount != null ? formatPaise(detail.discountAmount) : '—'],
+                ['Amount', formatINR(detail.amount)],
+                ['Original', detail.originalAmount != null ? formatINR(detail.originalAmount) : '—'],
+                ['Discount', detail.discountAmount != null ? formatINR(detail.discountAmount) : '—'],
                 ['Registration', detail.registrationId || '—'],
                 ['Date', formatEventDate(detail.createdAt)],
               ].map(([k, v]) => (

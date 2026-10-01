@@ -11,7 +11,7 @@ import { organizersApi } from '../../account/api/organizers';
 import { registrationsApi } from '../api/registrations';
 import { withdrawalsApi } from '../../withdrawals/api/withdrawals';
 import { unwrapList, apiErrorMessage } from '../../../app/api/client';
-import { formatEventDate, formatINR, formatPaise, paiseToRupees } from '../../../app/utils/format';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
 import { registrantName, eventFee } from '../utils/eventData';
 import type {
 RegistrationItem, WithdrawalItem } from '../../../app/types';
@@ -64,8 +64,8 @@ function DetailContent({ id }: { id: string | undefined }) {
   const fee = event ? eventFee(event) : 0;
   const collected = registrations.length * fee;
   const openWd = myWithdrawals.find((w) => ['REQUESTED', 'PROCESSING'].includes(w.status)) || null;
-  const paidTotal = myWithdrawals.filter((w) => w.status === 'PAID').reduce((s, w) => s + paiseToRupees(w.amount), 0);
-  const available = Math.max(0, collected - paidTotal - (openWd ? paiseToRupees(openWd.amount) : 0));
+  const paidTotal = myWithdrawals.filter((w) => w.status === 'PAID').reduce((s, w) => s + (Number(w.amount) || 0), 0);
+  const available = Math.max(0, collected - paidTotal - (openWd ? (Number(openWd.amount) || 0) : 0));
   const canWithdraw = collected > 0 && available > 0 && !openWd && !!orgRes?.data?.upiId;
 
   const refresh = () => {
@@ -145,7 +145,7 @@ function DetailContent({ id }: { id: string | undefined }) {
           </Box>
           {openWd && (
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {formatPaise(openWd.amount)} requested on {formatEventDate(openWd.requestedAt)}. Waiting for admin payment confirmation.
+              {formatINR(openWd.amount)} requested on {formatEventDate(openWd.requestedAt)}. Waiting for admin payment confirmation.
             </Typography>
           )}
           {canWithdraw && (
@@ -171,7 +171,7 @@ function DetailContent({ id }: { id: string | undefined }) {
           <Divider sx={{ my: 2.5 }} />
 
           <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-            {event.status !== 'PUBLISHED' && (
+            {['DRAFT', 'PREVIEW', 'PUBLISHED'].includes(event.status) && (
               <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>
                 {event.status === 'DRAFT' ? 'Continue Editing' : 'Edit'}
               </Button>

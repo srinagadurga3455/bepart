@@ -1,9 +1,10 @@
 // Generic display formatting (dates, currency) shared by the admin and
 // organizer features. Pure functions; owned by the app layer.
 //
-// Money convention: the backend stores amounts in Int PAISE (50000 = Rs.500),
-// while humans type RUPEES. Use formatPaise() for backend amounts and
-// formatINR() for rupee values (event fees, dialog inputs).
+// Money convention: the backend API speaks RUPEES everywhere (500 = ₹500)
+// — use formatINR() for all API amounts. Only the database/Razorpay
+// internals use paise. formatPaise()/paiseToRupees() remain for legacy
+// paise-denominated values only; do NOT apply them to API responses.
 
 export function formatEventDate(iso: string): string {
   const d = new Date(iso);

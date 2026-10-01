@@ -1,6 +1,8 @@
+import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PaymentStatus } from '@prisma/client';
+import { buildTicketUrl, frontendBaseUrl } from '../tickets/tickets.repo';
 
 @Injectable()
 export class PaymentsRepository {
@@ -200,6 +202,23 @@ export class PaymentsRepository {
             formData: (existing as any).pendingFormData as any,
             paymentStatus: 'PAID' as any,
           },
+        });
+
+        // Paid fulfillment completes the registration, so it gets its ticket in
+        // the SAME transaction. upsert keeps replays (webhook + manual
+        // confirm) idempotent: never two tickets for one registration.
+        const ticketCode = randomUUID();
+        await tx.ticket.upsert({
+          where: { registrationId: registration.registrationId },
+          create: {
+            code: ticketCode,
+            registrationId: registration.registrationId,
+            eventId: (existing as any).eventId,
+            ticketUrl: buildTicketUrl(frontendBaseUrl(), ticketCode),
+            qrToken: randomUUID(),
+            status: 'VALID' as any,
+          },
+          update: {},
         });
 
         await tx.payment.update({

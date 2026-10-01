@@ -26,3 +26,47 @@ export function validateUpiId(value: string, required = true): string | null {
 export function validateRequired(value: string, label: string): string | null {
   return value.trim() ? null : `${label} is required`;
 }
+
+// ── Local date/time helpers ──────────────────────────────────────────────
+// datetime-local inputs yield "YYYY-MM-DDTHH:mm" with NO timezone. Parsing
+// them with `new Date(string)` is implementation-dependent (older Safari
+// treats the value as UTC, shifting IST times by +5:30). These helpers parse
+// the components explicitly so the value is ALWAYS the organizer's local
+// time; comparisons below use epoch-ms timestamps, so UTC storage
+// (toISOString) stays correct regardless of timezone.
+
+const LOCAL_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/** Parse a datetime-local value (or date+time pair) as LOCAL time → epoch ms, or null if invalid. */
+export function parseLocalDateTime(value: string): number | null {
+  const m = LOCAL_DATETIME_PATTERN.exec(value.trim());
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  const date = new Date(
+    parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10),
+    parseInt(h, 10), parseInt(mi, 10), s ? parseInt(s, 10) : 0, 0,
+  );
+  return isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** Smallest datetime-local value that is guaranteed future: datetime-local has
+ *  minute precision, so the current minute is already past to the second and
+ *  would instantly fail "must be in the future" validation. Used for picker
+ *  `min` attributes (validation itself stays strict timestamp comparison). */
+export function nextMinuteLocalInputValue(now: Date = new Date()): string {
+  return toLocalDateTimeInputValue(new Date(now.getTime() + 60000));
+}
+
+/** Format a Date as a datetime-local value in LOCAL time (for min attributes). */
+export function toLocalDateTimeInputValue(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Format a Date as a date-input value in LOCAL time (for min attributes). */
+export function toLocalDateInputValue(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

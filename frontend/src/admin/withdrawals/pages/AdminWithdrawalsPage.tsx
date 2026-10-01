@@ -9,7 +9,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { withdrawalsApi } from '../api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
-import { formatEventDate, formatPaise } from '../../../app/utils/format';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
 import type { WithdrawalItem, WithdrawalStatus } from '../../../app/types';
 import AdminShell from '../../components/AdminShell';
 import WithdrawalStatusChip from '../../../app/components/WithdrawalStatus';
@@ -95,7 +95,7 @@ export default function AdminWithdrawalsPage() {
                       <TableRow key={w.id}>
                         <TableCell sx={{ fontWeight: 600 }}>{w.organizer?.name || '—'}</TableCell>
                         <TableCell>{w.event?.eventName || `Event ${w.eventId}`}</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>{formatPaise(w.amount)}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{formatINR(w.amount)}</TableCell>
                         <TableCell>{formatEventDate(w.requestedAt)}</TableCell>
                         <TableCell><WithdrawalStatusChip status={w.status} /></TableCell>
                         <TableCell>

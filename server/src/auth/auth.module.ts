@@ -6,12 +6,14 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { MailerModule } from '../mailer/mailer.module';
 import { AuthRepository } from './auth.repo';
 import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     WhatsappModule,
+    MailerModule,
     UsersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({

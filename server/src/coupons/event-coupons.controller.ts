@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { ParseEventIdPipe } from '../common/pipes/parse-event-id.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CouponsService } from './coupons.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
@@ -25,7 +26,7 @@ export class EventCouponsController {
   @ApiResponse({ status: 404, description: 'Event not found' })
   @ApiResponse({ status: 409, description: 'Coupon code already exists' })
   create(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @Body() dto: CreateCouponDto,
     @CurrentUser() user: RequestUser,
   ) {
@@ -38,7 +39,7 @@ export class EventCouponsController {
   @ApiResponse({ status: 200, description: 'Coupon list' })
   @ApiResponse({ status: 403, description: 'Not your event' })
   @ApiResponse({ status: 404, description: 'Event not found' })
-  list(@Param('eventId', ParseUUIDPipe) eventId: string, @CurrentUser() user: RequestUser) {
+  list(@Param('eventId', ParseEventIdPipe) eventId: string, @CurrentUser() user: RequestUser) {
     return this.couponsService.listForEvent(eventId, { userId: user.userId || user.id, role: user.role });
   }
 

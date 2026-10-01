@@ -1,12 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, Matches, Min } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Matches, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { CouponDiscountType } from '@prisma/client';
+import { IsEventId } from '../../common/validators/event-id.validator';
 
 export class CreateCouponDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID) the coupon belongs to' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID, or legacy numeric ID) the coupon belongs to' })
   @IsString()
-  @IsUUID()
+  @IsEventId()
   eventId: string;
 
   @ApiPropertyOptional({
@@ -24,9 +25,10 @@ export class CreateCouponDto {
   @IsEnum(CouponDiscountType)
   discountType: CouponDiscountType;
 
-  @ApiProperty({ example: 20, description: 'Discount value: 20 for 20%, or paise for FIXED (e.g. 5000 = ₹50)' })
-  @IsInt()
-  @Min(1)
+  @ApiProperty({ example: 20, description: 'Discount value in rupees for FIXED (e.g. 50 = ₹50 off), or percent 1-100 for PERCENTAGE (e.g. 20 = 20% off)' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
   discountValue: number;
 
   @ApiPropertyOptional({ example: true, default: true, description: 'Inactive coupons are rejected at validation' })

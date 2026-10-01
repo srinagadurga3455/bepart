@@ -87,11 +87,10 @@ describe('WithdrawalsService', () => {
 
   // ── Organizer create ──────────────────────────────────────────
 
-  it('creates withdrawal successfully in paise (Int)', async () => {
+  it('creates withdrawal successfully in rupees (₹200 stored as 20000 paise)', async () => {
     financeStubs();
-    const res = await service.create({ eventId: EVENT_ID, amount: 20000 } as any, 'user1');
-    expect(Number.isInteger(res.amount)).toBe(true);
-    expect(res.amount).toBe(20000);
+    const res = await service.create({ eventId: EVENT_ID, amount: 200 } as any, 'user1');
+    expect(res.amount).toBe(200);
     expect(res.upiId).toBe('org@upi');
     expect(res.status).toBe(WithdrawalStatus.REQUESTED);
     expect(res.eventName).toBe('Tech Fest');
@@ -102,19 +101,39 @@ describe('WithdrawalsService', () => {
     );
   });
 
+  it('accepts legacy integer event IDs with unchanged balance/ownership behavior', async () => {
+    financeStubs({ event: paidEvent({ id: '17' }) });
+    const res = await service.create({ eventId: '17', amount: 200 } as any, 'user1');
+    expect(res.status).toBe(WithdrawalStatus.REQUESTED);
+    expect(mockRepo.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ amount: 20000, organizerId: 'org1', eventId: '17' }),
+    );
+    // Ownership still enforced for legacy IDs.
+    financeStubs({ event: paidEvent({ id: '17', organizerId: 'orgX' }) });
+    await expect(
+      service.create({ eventId: '17', amount: 100 } as any, 'user1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    // Balance validation unchanged for legacy IDs.
+    financeStubs({ event: paidEvent({ id: '17' }), revenue: 50000 });
+    await expect(
+      service.create({ eventId: '17', amount: 500.01 } as any, 'user1'),
+    ).rejects.toThrow('exceeds available balance');
+  });
+
   it('accepts explicit upiId override and rejects invalid UPI IDs', async () => {
     financeStubs();
-    const res = await service.create({ eventId: EVENT_ID, amount: 10000, upiId: 'club@okhdfc' } as any, 'user1');
+    const res = await service.create({ eventId: EVENT_ID, amount: 100, upiId: 'club@okhdfc' } as any, 'user1');
     expect(res.upiId).toBe('club@okhdfc');
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000, upiId: 'not-a-upi' } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100, upiId: 'not-a-upi' } as any, 'user1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects withdrawal for another organizer event', async () => {
     financeStubs({ event: paidEvent({ organizerId: 'orgX' }) });
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
@@ -122,19 +141,19 @@ describe('WithdrawalsService', () => {
   it('rejects when event does not exist', async () => {
     mockRepo.findEventById.mockResolvedValue(null);
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('rejects amount above available balance', async () => {
-    financeStubs({ revenue: 50000 }); // available = 50000
+    financeStubs({ revenue: 50000 }); // available = 50000 paise = ₹500
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 50001 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 500.01 } as any, 'user1'),
     ).rejects.toThrow('exceeds available balance');
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
 
-  it('rejects zero/negative/non-integer amounts', async () => {
+  it('rejects zero/negative/over-precise amounts, accepts paise-precision decimals', async () => {
     financeStubs();
     await expect(service.create({ eventId: EVENT_ID, amount: 0 } as any, 'user1')).rejects.toBeInstanceOf(
       BadRequestException,
@@ -142,9 +161,13 @@ describe('WithdrawalsService', () => {
     await expect(service.create({ eventId: EVENT_ID, amount: -100 } as any, 'user1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    await expect(service.create({ eventId: EVENT_ID, amount: 10.5 } as any, 'user1')).rejects.toBeInstanceOf(
+    await expect(service.create({ eventId: EVENT_ID, amount: 10.123 } as any, 'user1')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    // ₹10.50 is valid and stored as 1050 paise.
+    const res = await service.create({ eventId: EVENT_ID, amount: 10.5 } as any, 'user1');
+    expect(res.amount).toBe(10.5);
+    expect(mockRepo.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amount: 1050 }));
   });
 
   it('rejects duplicate open request for same event', async () => {
@@ -153,7 +176,7 @@ describe('WithdrawalsService', () => {
       withdrawals: [{ id: 'w0', amount: 10000, status: WithdrawalStatus.REQUESTED }],
     });
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -163,18 +186,18 @@ describe('WithdrawalsService', () => {
       withdrawals: [{ id: 'w0', amount: 10000, status: WithdrawalStatus.PROCESSING }],
     });
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('rejects free events and events with no paid revenue', async () => {
     financeStubs({ event: paidEvent({ paymentRequired: false }) });
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toThrow('paid events');
     financeStubs({ revenue: 0 });
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toThrow('No paid revenue');
   });
 
@@ -182,7 +205,7 @@ describe('WithdrawalsService', () => {
     mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED', upiId: null });
     financeStubs();
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toThrow('UPI ID is required');
   });
 
@@ -195,7 +218,7 @@ describe('WithdrawalsService', () => {
       }),
     );
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 10000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 100 } as any, 'user1'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -203,16 +226,16 @@ describe('WithdrawalsService', () => {
 
   it('PAID + PROCESSING withdrawals reduce availability; REJECTED releases it', async () => {
     financeStubs({
-      revenue: 50000, // Rs.500
+      revenue: 50000, // Rs.500 (paise in storage)
       withdrawals: [
         { id: 'wPaid', amount: 20000, status: WithdrawalStatus.PAID },
         { id: 'wProc', amount: 10000, status: WithdrawalStatus.PROCESSING },
         { id: 'wRej', amount: 30000, status: WithdrawalStatus.REJECTED }, // ignored
       ],
     });
-    // available = 50000 - 20000 - 10000 = 20000, but an open request also blocks
+    // available = 50000 - 20000 - 10000 = 20000 paise, but an open request also blocks
     await expect(
-      service.create({ eventId: EVENT_ID, amount: 20000 } as any, 'user1'),
+      service.create({ eventId: EVENT_ID, amount: 200 } as any, 'user1'),
     ).rejects.toBeInstanceOf(ConflictException); // open PROCESSING request exists
   });
 
@@ -224,11 +247,11 @@ describe('WithdrawalsService', () => {
         { id: 'wRej', amount: 30000, status: WithdrawalStatus.REJECTED },
       ],
     });
-    const res = await service.create({ eventId: EVENT_ID, amount: 30000 } as any, 'user1');
-    expect(res.amount).toBe(30000);
+    const res = await service.create({ eventId: EVENT_ID, amount: 300 } as any, 'user1');
+    expect(res.amount).toBe(300);
   });
 
-  it('event balance endpoint exposes revenue/reserved/paidOut/available', async () => {
+  it('event balance endpoint exposes revenue/reserved/paidOut/available in rupees', async () => {
     mockRepo.findEventById.mockResolvedValue(paidEvent());
     mockRepo.paidRevenueForEvent.mockResolvedValue(50000);
     mockRepo.findWithdrawalsForEvent.mockResolvedValue([
@@ -236,7 +259,8 @@ describe('WithdrawalsService', () => {
     ]);
     mockRepo.findManyByEventId.mockResolvedValue([withdrawalRow({ id: 'wPaid', status: 'PAID', amount: 20000 })]);
     const res = await service.findByEvent(EVENT_ID, 'user1', 'ORGANIZER');
-    expect(res.balance).toEqual({ revenue: 50000, reserved: 0, paidOut: 20000, available: 30000, openCount: 0 });
+    expect(res.balance).toEqual({ revenue: 500, reserved: 0, paidOut: 200, available: 300, openCount: 0 });
+    expect(res.withdrawals[0]?.amount).toBe(200);
     expect(res.event.eventName).toBe('Tech Fest');
   });
 
@@ -381,7 +405,7 @@ describe('WithdrawalsService', () => {
   it('uses organizerId from JWT profile, never from the request body', async () => {
     financeStubs();
     const res = await service.create(
-      { eventId: EVENT_ID, amount: 10000, organizerId: 'attacker-org' } as any,
+      { eventId: EVENT_ID, amount: 100, organizerId: 'attacker-org' } as any,
       'user1',
     );
     expect(mockRepo.create).toHaveBeenCalledWith(

@@ -13,9 +13,12 @@ interface ReviewStepProps {
   isSubmitting: boolean;
   confirmLabel?: string;
   feeAmount?: number | null;
+  /** Overrides for organizer preview (defaults keep the participant flow identical). */
+  title?: string;
+  subtitle?: string;
 }
 
-export default function ReviewStep({ formStructure, formData, onBack, onEdit, onConfirm, isSubmitting, confirmLabel, feeAmount }: ReviewStepProps) {
+export default function ReviewStep({ formStructure, formData, onBack, onEdit, onConfirm, isSubmitting, confirmLabel, feeAmount, title, subtitle }: ReviewStepProps) {
   const sections = formStructure?.sections || [];
   // Show only the selected member groups (hidden groups are not submitted either)
   const selectedCount = getSelectedCount(formData, findCountFieldName(formStructure));
@@ -35,10 +38,10 @@ export default function ReviewStep({ formStructure, formData, onBack, onEdit, on
     <Box sx={{ width: '100%' }}>
       <Box sx={{ mb: 3 }}>
         <Typography variant="h5" color="text.primary" gutterBottom sx={{ fontWeight: 600 }}>
-          Review Your Registration
+          {title || 'Review Your Registration'}
         </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-          Please verify all information before submitting.
+          {subtitle || 'Please verify all information before submitting.'}
         </Typography>
       </Box>
 

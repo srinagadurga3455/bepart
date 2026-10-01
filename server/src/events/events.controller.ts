@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ParseEventIdPipe } from '../common/pipes/parse-event-id.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -55,7 +56,7 @@ export class EventsController {
   @ApiResponse({ status: 200, description: 'Event with organizer.name' })
   @ApiResponse({ status: 400, description: 'Invalid ID (must be UUID)' })
   @ApiResponse({ status: 404, description: 'Not found / unpublished' })
-  findOnePublic(@Param('id', ParseUUIDPipe) id: string) {
+  findOnePublic(@Param('id', ParseEventIdPipe) id: string) {
     return this.eventsService.findOnePublic(id);
   }
 
@@ -65,7 +66,7 @@ export class EventsController {
   @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
   @ApiResponse({ status: 200, description: 'Form structure with sections and fields' })
   @ApiResponse({ status: 404, description: 'Not found / unpublished' })
-  getRegistrationForm(@Param('id', ParseUUIDPipe) id: string) {
+  getRegistrationForm(@Param('id', ParseEventIdPipe) id: string) {
     return this.eventsService.getRegistrationForm(id);
   }
 
@@ -78,7 +79,7 @@ export class EventsController {
   @ApiResponse({ status: 400, description: 'Invalid ID' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  findOne(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     if (user.role === Role.ADMIN) return this.eventsService.findOneForAdmin(id);
     return this.eventsService.findOneForOrganizer(id, user.userId || user.id);
   }
@@ -86,14 +87,14 @@ export class EventsController {
   @Patch(':id')
   @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Update own event (DRAFT/PREVIEW only)' })
+  @ApiOperation({ summary: 'Update own event (DRAFT/PREVIEW/PUBLISHED; status is preserved)' })
   @ApiParam({ name: 'id', type: String, description: 'Event UUID' })
   @ApiBody({ type: UpdateEventDto })
   @ApiResponse({ status: 200, description: 'Updated' })
   @ApiResponse({ status: 400, description: 'Invalid ID / date' })
   @ApiResponse({ status: 403, description: 'Not owner or cannot update PUBLISHED' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateEventDto, @CurrentUser() user: RequestUser) {
+  update(@Param('id', ParseEventIdPipe) id: string, @Body() dto: UpdateEventDto, @CurrentUser() user: RequestUser) {
     return this.eventsService.update(id, dto, user.userId || user.id);
   }
 
@@ -106,7 +107,7 @@ export class EventsController {
   @ApiResponse({ status: 400, description: 'Invalid ID' })
   @ApiResponse({ status: 403, description: 'Not owner / invalid transition' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  preview(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  preview(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.eventsService.preview(id, user.userId || user.id);
   }
 
@@ -119,7 +120,7 @@ export class EventsController {
   @ApiResponse({ status: 400, description: 'Invalid ID / transition' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  publish(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  publish(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.eventsService.publish(id, user.userId || user.id);
   }
 
@@ -132,7 +133,7 @@ export class EventsController {
   @ApiResponse({ status: 400, description: 'Invalid ID / transition' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Not found' })
-  cancel(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+  cancel(@Param('id', ParseEventIdPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.eventsService.cancel(id, user.userId || user.id, user.role);
   }
 }

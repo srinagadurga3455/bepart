@@ -2,16 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import {
   Alert, Box, Button, Divider, Drawer, FormControl, IconButton, InputLabel, List, ListItemButton,
-  Menu, MenuItem, Select, TextField, Tooltip, Typography,
+  Menu, MenuItem, Select, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowDownward, ArrowUpward, CheckCircleOutlined, Delete,
-  GroupAdd, InfoOutlined, PreviewOutlined, SaveOutlined, SettingsOutlined, UploadOutlined, ViewAgenda,
+  GroupAdd, InfoOutlined, PreviewOutlined, SaveOutlined, SettingsOutlined, ViewAgenda,
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import QuestionCard, { TYPE_META } from './QuestionCard';
 import QuestionInspector from './QuestionInspector';
 import MemberGroupCard from './MemberGroupCard';
+import FormSettingsPanel from './FormSettingsPanel';
 import {
   emptyField, emptySection, emptyMemberGroup, newKey, slugify, defaultNewForm,
   findRepeatCandidates, toFormStructure, validateBuilder,
@@ -22,7 +23,8 @@ import type {
   BuilderForm,
   BuilderSection,
 } from '../utils/formBuilderUtils';
-import type { FormFieldType, FormStructure, FormTheme } from '../../../app/types';
+import type { FormFieldType, FormSettings, FormStructure } from '../../../app/types';
+import { StyleControls } from './BuilderStylePanel';
 
 // Add-question menu grouped by category. Only types the backend supports —
 // no Number/Date (the validator rejects them).
@@ -112,9 +114,12 @@ function normalizeInitial(initial: BuilderForm | null | undefined): BuilderForm 
 interface FormBuilderProps {
   initial: BuilderForm | null | undefined;
   onSave: (structure: FormStructure) => void;
-  onPreview: (structure: FormStructure) => void;
   saving: boolean;
   onBack?: () => void;
+  /** Called when organizer clicks "Change template" — opens the chooser again. */
+  onChangeTemplate?: () => void;
+  /** Live draft sync: lets the parent preserve edits across Back/forward navigation. */
+  onChange?: (draft: BuilderForm) => void;
 }
 
 interface FoundField {
@@ -130,8 +135,17 @@ interface DeleteTarget {
   label: string;
 }
 
-export default function FormBuilder({ initial, onSave, onPreview, saving, onBack }: FormBuilderProps) {
+export default function FormBuilder({ initial, onSave, saving, onBack, onChangeTemplate, onChange }: FormBuilderProps) {
   const [builder, setBuilderState] = useState<BuilderForm>(() => normalizeInitial(initial));
+  // Keep the parent's draft in sync (local state only — no API calls here) so
+  // remounts from Back/forward navigation restore every edit.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+  useEffect(() => {
+    onChangeRef.current?.(builder);
+  }, [builder]);
   const [errors, setErrors] = useState<string[]>([]);
   const [selected, setSelected] = useState<Selection | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -142,7 +156,19 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
   const [saveRequested, setSaveRequested] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [propsOpen, setPropsOpen] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  // 'style' | 'settings' tab in the right panel
+  const [rightTab, setRightTab] = useState<'style' | 'settings'>('style');
+  // Active tab while an item is selected: 'properties' (inspector) plus the
+  // always-visible 'style' | 'settings'. Tab switches never touch `selected`.
+  const [selTab, setSelTab] = useState<'properties' | 'style' | 'settings'>('properties');
+  // Add-actions (add/duplicate question, section, group…) keep the organizer
+  // on their current tab so Style/Settings content is never hidden by the
+  // auto-selection of the new item. Plain clicks still open Properties.
+  const keepTabRef = useRef(false);
+  const selectKeepTab = (sel: Selection) => {
+    keepTabRef.current = true;
+    setSelected(sel);
+  };
   const { enqueueSnackbar } = useSnackbar();
 
   const errorMap = buildErrorMap(errors, builder);
@@ -151,6 +177,10 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
   const setBuilder = (next: BuilderForm) => {
     setBuilderState(next);
     setDirty(true);
+  };
+
+  const updateSettings = (settings: FormSettings) => {
+    setBuilder({ ...builder, settings });
   };
 
   // Honest save indicator: "Saving…" while parent works, "All changes saved"
@@ -257,7 +287,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
     // or the canonical stored name, or two fields would collide on save.
     const copy: BuilderField = { ...src, key: newKey(), name: '', system: undefined, options: [...(src.options || [])] };
     insertField(si, fi + 1, copy);
-    setSelected({ kind: 'question', key: copy.key });
+    selectKeepTab({ kind: 'question', key: copy.key });
     setFocusKey(copy.key);
     enqueueSnackbar('Question duplicated.', { variant: 'success' });
   };
@@ -277,7 +307,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
     const sections = [...base.sections];
     sections[idx] = { ...sections[idx], fields: [...(sections[idx].fields || []), field] };
     setBuilder({ ...base, sections });
-    setSelected({ kind: 'question', key: field.key });
+    selectKeepTab({ kind: 'question', key: field.key });
     setFocusKey(field.key);
     requestAnimationFrame(() => {
       document.querySelector(`[data-card-key="q:${field.key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -297,13 +327,13 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
     const base = ensureSection();
     const idx = si >= 0 && si < base.sections.length ? si : base.sections.length - 1;
     if (base.sections[idx].memberGroup) {
-      setSelected({ kind: 'group', key: base.sections[idx].key });
+      selectKeepTab({ kind: 'group', key: base.sections[idx].key });
       return;
     }
     const sections = [...base.sections];
     sections[idx] = { ...sections[idx], memberGroup: emptyMemberGroup() };
     setBuilder({ ...base, sections });
-    setSelected({ kind: 'group', key: sections[idx].key });
+    selectKeepTab({ kind: 'group', key: sections[idx].key });
     requestAnimationFrame(() => {
       document.querySelector(`[data-card-key="g:${sections[idx].key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
@@ -330,7 +360,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
     fields.splice(fi + 1, 0, copy);
     sections[si] = { ...sections[si], memberGroup: { ...sections[si].memberGroup!, fields } };
     setBuilder({ ...builder, sections });
-    setSelected({ kind: 'member', key: copy.key });
+    selectKeepTab({ kind: 'member', key: copy.key });
     setFocusKey(copy.key);
     enqueueSnackbar('Question duplicated.', { variant: 'success' });
   };
@@ -345,7 +375,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
       },
     };
     setBuilder({ ...builder, sections });
-    setSelected({ kind: 'group', key: sections[si].key });
+    selectKeepTab({ kind: 'group', key: sections[si].key });
   };
 
   const moveMemberField = (si: number, fi: number, dir: number) => {
@@ -361,7 +391,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
   const addSection = () => {
     const section = emptySection(builder.sections.length);
     setBuilder({ ...builder, sections: [...builder.sections, section] });
-    setSelected({ kind: 'section', key: section.key });
+    selectKeepTab({ kind: 'section', key: section.key });
     setFocusKey(section.key);
     requestAnimationFrame(() => {
       document.getElementById(`builder-section-${builder.sections.length}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -393,11 +423,6 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
     }
   };
 
-  const handlePreview = () => {
-    const structure = build();
-    if (structure) onPreview(structure);
-  };
-
   const openAddMenu = (e: ReactMouseEvent<HTMLElement>, si?: number) => {
     setMenuSection(si ?? targetSi);
     setMenuAnchor(e.currentTarget);
@@ -424,13 +449,34 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
     : selected.kind === 'section' || selected.kind === 'group'
       ? `s:${selected.key}`
       : `q:${selected.key}`;
+  // The Properties tab only applies to a real item selection (the form title
+  // has no inspector). Track the selected item id so a NEW selection opens
+  // Properties (existing workflow) while tab switches never clear it.
+  const hasItemSelected = !!selected && selected.kind !== 'title';
+  const selectedId = hasItemSelected ? panelKey : null;
+  const prevSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedId) {
+      prevSelectedIdRef.current = null;
+      return;
+    }
+    if (selectedId !== prevSelectedIdRef.current) {
+      if (keepTabRef.current) keepTabRef.current = false;
+      else setSelTab('properties');
+      prevSelectedIdRef.current = selectedId;
+    }
+  }, [selectedId]);
   const selectedQuestion = selected?.kind === 'question' ? findQuestion(selected.key) : null;
   const selectedMember = selected?.kind === 'member' ? findMember(selected.key) : null;
   const selectedSectionIdx = selected && (selected.kind === 'section' || selected.kind === 'group')
     ? findSectionIdx(selected.key)
     : -1;
 
-  const renderProperties = () => {
+  // Inspector branches render for a selection; `styleOnly` skips straight to
+  // the Style controls (Typography, Theme, header image) so the Style tab can
+  // render them without depending on — or disturbing — the selection.
+  const renderProperties = (styleOnly = false) => {
+    if (!styleOnly) {
     if (selectedQuestion) {
       const { si, fi, field } = selectedQuestion;
       return (
@@ -544,7 +590,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
             onClick={() => {
               const f = { ...emptyField(), key: newKey() };
               updateSection(gsi, { memberGroup: { ...group, fields: [...group.fields, f] } });
-              setSelected({ kind: 'member', key: f.key });
+              selectKeepTab({ kind: 'member', key: f.key });
               setFocusKey(f.key);
             }}
           >
@@ -604,184 +650,70 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
         </Box>
       );
     }
-  const setTheme = (patch: Partial<FormTheme>) =>
-    setBuilder({ ...builder, theme: { ...(builder.theme || {}), ...patch } });
-  const theme = builder.theme || {};
-  const handleHeaderImageFile = (file: File | undefined) => {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      enqueueSnackbar('Please choose an image file.', { variant: 'warning' });
-      return;
     }
-    setUploadingImage(true);
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const maxDim = 1200;
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        setTheme({ headerImageUrl: canvas.toDataURL('image/jpeg', 0.82) });
-        enqueueSnackbar('Header image updated.', { variant: 'success' });
-      } catch {
-        enqueueSnackbar('Could not process that image.', { variant: 'error' });
-      } finally {
-        URL.revokeObjectURL(url);
-        setUploadingImage(false);
-      }
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      setUploadingImage(false);
-      enqueueSnackbar('Could not read that image.', { variant: 'error' });
-    };
-    img.src = url;
-  };
-    const THEME_OPTIONS: { v: NonNullable<FormTheme['theme']>; label: string; hint: string }[] = [
-      { v: 'light', label: 'Light', hint: 'Clean white form' },
-      { v: 'bepart', label: 'BePart', hint: 'Brand blue accents' },
-      { v: 'dark', label: 'Dark', hint: 'Dark stage, light text' },
-    ];
-    const activeTheme = theme.theme || 'light';
-    return (
-      <Box>
-        <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', color: 'text.secondary', mb: 2 }}>
-          FORM STYLE
-        </Typography>
-        <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', color: 'text.secondary', mb: 1.5 }}>
-          HEADER
-        </Typography>
-        <TextField label="Header image URL (optional)" value={theme.headerImageUrl && theme.headerImageUrl.startsWith('data:') ? '' : (theme.headerImageUrl || '')}
-          onChange={(e) => setTheme({ headerImageUrl: e.target.value.trim() || undefined })}
-          placeholder="https://… or upload below"
-          fullWidth size="small" sx={{ mb: 1.5 }} helperText="Cover shown at the top of the participant form" />
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5, flexWrap: 'wrap' }}>
-          <Button size="small" variant="outlined" component="label" startIcon={<UploadOutlined />} disabled={uploadingImage} sx={{ borderRadius: 2 }}>
-            {uploadingImage ? 'Processing…' : theme.headerImageUrl ? 'Change image' : 'Upload image'}
-            <input type="file" hidden accept="image/*" onChange={(e) => handleHeaderImageFile(e.target.files?.[0])} />
-          </Button>
-          {theme.headerImageUrl ? (
-            <Button size="small" onClick={() => setTheme({ headerImageUrl: undefined })}>Remove</Button>
-          ) : null}
-        </Box>
-        {theme.headerImageUrl ? (
-          <Box sx={{ mb: 1.5 }}>
-            <Box component="img" src={theme.headerImageUrl} alt="Form header preview"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              sx={{ width: '100%', maxHeight: 120, objectFit: 'cover', borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'block' }} />
-          </Box>
-        ) : null}
-
-        <Divider sx={{ my: 2 }} />
-        <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', color: 'text.secondary', mb: 1.5 }}>
-          TYPOGRAPHY
-        </Typography>
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-          <InputLabel>Question typeface</InputLabel>
-          <Select label="Question typeface" value={theme.questionFont || 'default'}
-            onChange={(e) => setTheme({ questionFont: e.target.value as FormTheme['questionFont'] })}>
-            <MenuItem value="default">Sans</MenuItem>
-            <MenuItem value="serif">Serif</MenuItem>
-            <MenuItem value="mono">Mono</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-          <InputLabel>Question size</InputLabel>
-          <Select label="Question size" value={theme.questionSize || 'md'}
-            onChange={(e) => setTheme({ questionSize: e.target.value as FormTheme['questionSize'] })}>
-            <MenuItem value="sm">12</MenuItem>
-            <MenuItem value="md">14</MenuItem>
-            <MenuItem value="lg">16</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }}>
-          <InputLabel>Answer typeface</InputLabel>
-          <Select label="Answer typeface" value={theme.answerFont || 'default'}
-            onChange={(e) => setTheme({ answerFont: e.target.value as FormTheme['answerFont'] })}>
-            <MenuItem value="default">Sans</MenuItem>
-            <MenuItem value="serif">Serif</MenuItem>
-            <MenuItem value="mono">Mono</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl fullWidth size="small" sx={{ mb: 1 }}>
-          <InputLabel>Answer size</InputLabel>
-          <Select label="Answer size" value={theme.answerSize || 'md'}
-            onChange={(e) => setTheme({ answerSize: e.target.value as FormTheme['answerSize'] })}>
-            <MenuItem value="sm">11</MenuItem>
-            <MenuItem value="md">13</MenuItem>
-            <MenuItem value="lg">15</MenuItem>
-          </Select>
-        </FormControl>
-
-        <Divider sx={{ my: 2 }} />
-        <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', color: 'text.secondary', mb: 1.5 }}>
-          THEME
-        </Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1 }}>
-          {THEME_OPTIONS.map((o) => {
-            const isActive = activeTheme === o.v;
-            return (
-              <Box
-                key={o.v}
-                onClick={() => setTheme({ theme: o.v })}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTheme({ theme: o.v }); } }}
-                aria-pressed={isActive}
-                sx={{
-                  borderRadius: 2,
-                  border: '1.5px solid',
-                  borderColor: isActive ? 'primary.main' : 'divider',
-                  bgcolor: o.v === 'dark' ? '#171717' : o.v === 'bepart' ? '#F4F7FF' : '#fff',
-                  p: 1,
-                  cursor: 'pointer',
-                  position: 'relative',
-                  transition: 'border-color 0.2s ease, transform 0.2s ease',
-                  '&:hover': { transform: 'translateY(-1px)' },
-                }}
-              >
-                {isActive && (
-                  <Box sx={{ position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: '50%', bgcolor: 'primary.main', color: '#fff', display: 'grid', placeItems: 'center', transition: 'transform 0.2s ease', transform: 'scale(1)' }}>
-                    <CheckCircleOutlined sx={{ fontSize: 12 }} />
-                  </Box>
-                )}
-                <Typography sx={{ fontSize: 13, fontWeight: 800, color: o.v === 'dark' ? '#fff' : 'text.primary', fontFamily: o.v === 'dark' ? 'inherit' : undefined }}>
-                  Aa
-                </Typography>
-                <Box sx={{ height: 3, borderRadius: 1, bgcolor: o.v === 'dark' ? 'rgba(255,255,255,0.5)' : '#CBD2DC', my: 0.75 }} />
-                <Box sx={{ height: 14, borderRadius: 999, bgcolor: o.v === 'dark' ? '#fff' : 'primary.main', opacity: o.v === 'light' ? 0.85 : 1 }} />
-                <Typography sx={{ fontSize: 10.5, fontWeight: 700, mt: 0.75, color: o.v === 'dark' ? '#fff' : 'text.secondary', textAlign: 'center' }}>
-                  {o.label}
-                </Typography>
-              </Box>
-            );
-          })}
-        </Box>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          Style applies to the participant form and preview instantly.
-        </Typography>
-      </Box>
-    );
-  };
-
+  // Style tab: shared component (also used on Preview & Publish) bound to the
+  // same builder theme — one source of truth, never duplicated or reset.
   return (
-    <Box sx={{ bgcolor: '#F7F8FA', borderRadius: 3, overflow: 'hidden', border: '1px solid', borderColor: '#ECEEF4' }}>
-      {/* ── Top bar ── */}
+    <StyleControls
+      theme={builder.theme}
+      onThemeChange={(patch) => setBuilder({ ...builder, theme: { ...(builder.theme || {}), ...patch } })}
+    />
+  );
+  };
+
+  // Right-panel tab state: with an item selected the organizer gets
+  // Properties (+ Style + Settings); otherwise Style + Settings. Every tab
+  // reads the same `builder` state, so adding/editing/deleting questions can
+  // never hide or reset another tab's content.
+  const activeTab = hasItemSelected ? selTab : rightTab;
+  const handlePanelTab = (_e: unknown, v: 'properties' | 'style' | 'settings' | null) => {
+    if (!v) return;
+    if (hasItemSelected) setSelTab(v);
+    else if (v !== 'properties') setRightTab(v);
+  };
+  const renderPanelContent = () => {
+    if (activeTab === 'properties' && hasItemSelected) return renderProperties();
+    if (activeTab === 'settings') {
+      return (
+        <FormSettingsPanel
+          settings={builder.settings || {}}
+          onChange={updateSettings}
+        />
+      );
+    }
+    return renderProperties(true);
+  };
+
+  // Editor container: Header / Main content / Bottom navigation. The container
+  // fills the viewport below the sticky topbar + step breadcrumb so Main gets
+  // a bounded flex area (required for independent column scrolls). Bottom
+  // navigation is a direct child here — outside every scroll region.
+  return (
+    <Box sx={{
+      bgcolor: '#F7F8FA', borderRadius: 3, border: '1px solid', borderColor: '#ECEEF4',
+      display: 'flex', flexDirection: 'column',
+      height: { xs: 'auto', lg: 'calc(100vh - 140px)' },
+      minHeight: 480,
+    }}>
+      {/* ── Top bar: title + template + save status only. Navigation lives in
+          the bottom bar ([Back] [Preview]) to avoid duplicate actions. ── */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: { xs: 1.5, sm: 2 }, py: 1, bgcolor: '#fff', borderBottom: '1px solid', borderColor: '#ECEEF4', position: 'sticky', top: 0, zIndex: 5, flexWrap: 'wrap' }}>
-        {onBack && (
-          <Tooltip title="Back to event details">
-            <IconButton size="small" aria-label="Back to event details" onClick={onBack}>
-              <ArrowBack fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
         <BePartMark size={26} fontSize={15} />
         <Typography noWrap sx={{ fontSize: 14, fontWeight: 700, ml: 0.5, maxWidth: { xs: 120, sm: 280 } }}>
           {builder.title.trim() || 'Create Form'}
         </Typography>
+        {onChangeTemplate && (
+          <Tooltip title="Pick a different template — your current questions will be replaced">
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={onChangeTemplate}
+              sx={{ fontSize: 11, fontWeight: 700, borderRadius: 999, px: 1.5, py: 0.5, ml: 0.5, display: { xs: 'none', sm: 'inline-flex' } }}
+            >
+              Change template
+            </Button>
+          </Tooltip>
+        )}
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <Typography sx={{ fontSize: 12, color: saving ? 'primary.main' : dirty ? 'warning.main' : 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.75, mr: 0.5 }}>
             {saving ? (
@@ -792,23 +724,27 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
               <><CheckCircleOutlined sx={{ fontSize: 14, color: 'success.main' }} /> {savedAt ? 'All changes saved' : 'Saved'}</>
             )}
           </Typography>
-          <Button size="small" variant="text" startIcon={<PreviewOutlined fontSize="small" />} onClick={handlePreview} disabled={saving} sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-            Preview
-          </Button>
-          <Button size="small" variant="contained" onClick={handleSave} disabled={saving} sx={{ boxShadow: 'none' }}>
-            {saving ? 'Saving…' : 'Save & Continue'}
-          </Button>
           <Tooltip title="Form settings">
-            <IconButton size="small" aria-label="Open form settings" onClick={() => setPropsOpen(true)} sx={{ display: { xs: 'inline-flex', lg: 'none' } }}>
+            <IconButton size="small" aria-label="Open form settings" onClick={() => { setRightTab('settings'); setSelTab('settings'); setPropsOpen(true); }} sx={{ display: { xs: 'inline-flex', lg: 'none' } }}>
               <SettingsOutlined fontSize="small" />
             </IconButton>
           </Tooltip>
         </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'stretch', minHeight: 480 }}>
+      {/* ── Main content: Sections sidebar | scrollable question editor |
+          scrollable Properties/Style/Settings sidebar. Flexes to fill the
+          container; each column scrolls internally instead of clipping. ── */}
+      <Box sx={{
+        display: 'flex', alignItems: 'stretch',
+        flex: { xs: 'none', lg: 1 }, minHeight: 0,
+      }}>
         {/* ── Left nav ── */}
-        <Box sx={{ width: 224, flexShrink: 0, bgcolor: '#fff', borderRight: '1px solid', borderColor: '#ECEEF4', p: 1.5, display: { xs: 'none', md: 'flex' }, flexDirection: 'column', gap: 0.5 }}>
+        <Box sx={{
+          width: 224, flexShrink: 0, bgcolor: '#fff', borderRight: '1px solid', borderColor: '#ECEEF4',
+          p: 1.5, display: { xs: 'none', md: 'flex' }, flexDirection: 'column', gap: 0.5,
+          minHeight: 0, height: { xs: 'auto', lg: '100%' }, overflowY: { xs: 'visible', lg: 'auto' },
+        }}>
           <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: 'text.secondary', px: 1, mb: 0.5 }}>
             SECTIONS
           </Typography>
@@ -844,8 +780,11 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
           </Button>
         </Box>
 
-        {/* ── Canvas ── */}
-        <Box sx={{ flex: 1, minWidth: 0, p: { xs: 1.25, sm: 2.25 }, maxWidth: 720, mx: 'auto', width: '100%' }}>
+        {/* ── Canvas (independent scroll on desktop) ── */}
+        <Box sx={{
+          flex: 1, minWidth: 0, minHeight: 0, p: { xs: 1.25, sm: 2.25 }, maxWidth: 720, mx: 'auto', width: '100%',
+          height: { xs: 'auto', lg: '100%' }, overflowY: { xs: 'visible', lg: 'auto' },
+        }}>
           {/* Form header */}
           <Box
             data-card-key="t"
@@ -1039,7 +978,7 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
                         onAddField={() => {
                           const f = { ...emptyField(), key: newKey() };
                           updateSection(si, { memberGroup: { ...section.memberGroup!, fields: [...section.memberGroup!.fields, f] } });
-                          setSelected({ kind: 'member', key: f.key });
+                          selectKeepTab({ kind: 'member', key: f.key });
                           setFocusKey(f.key);
                         }}
                         onFieldChange={(fi, updated) => updateMemberField(si, fi, updated)}
@@ -1072,7 +1011,8 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
             </Box>
           ) : null}
 
-          {/* Fixed creation bar — always available while scrolling. */}
+          {/* Creation bar — stays visible at the bottom of the scrollable
+              question editor while scrolling (above the bottom nav bar). */}
           <Box
             sx={{
               position: 'sticky',
@@ -1109,21 +1049,63 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
           </Box>
         </Box>
 
-        {/* ── Right properties panel ── */}
-        <Box sx={{ width: 300, flexShrink: 0, bgcolor: '#fff', borderLeft: '1px solid', borderColor: '#ECEEF4', p: 2, display: { xs: 'none', lg: 'block' }, overflowY: 'auto', maxHeight: 720, position: 'sticky', top: 53, alignSelf: 'flex-start' }}>
-          <Box
-            key={panelKey}
-            sx={{
-              '@keyframes fbPanelIn': {
-                from: { opacity: 0, transform: 'translateX(6px)' },
-                to: { opacity: 1, transform: 'translateX(0)' },
-              },
-              animation: 'fbPanelIn 0.2s ease',
-            }}
+        {/* ── Right properties panel (fixed; own scroll, never pushed by questions) ── */}
+        <Box sx={{
+          width: 300, flexShrink: 0, bgcolor: '#fff', borderLeft: '1px solid', borderColor: '#ECEEF4',
+          display: { xs: 'none', lg: 'flex' }, flexDirection: 'column',
+          minHeight: 0, height: { xs: 'auto', lg: '100%' },
+        }}>
+          {/* Tab bar at top of right panel — Style/Settings are always present;
+              Properties appears while an item is selected. Switching tabs never
+              clears the selection or resets any tab's content. */}
+          <Tabs
+            value={activeTab}
+            onChange={handlePanelTab}
+            sx={{ borderBottom: '1px solid', borderColor: 'divider', minHeight: 40, px: 1 }}
           >
-            {renderProperties()}
+            {hasItemSelected && (
+              <Tab value="properties" label="Properties" sx={{ fontSize: 12, fontWeight: 700, minHeight: 40, py: 0.5 }} />
+            )}
+            <Tab value="style" label="Style" sx={{ fontSize: 12, fontWeight: 700, minHeight: 40, py: 0.5 }} />
+            <Tab value="settings" label="Settings" sx={{ fontSize: 12, fontWeight: 700, minHeight: 40, py: 0.5 }} />
+          </Tabs>
+          <Box sx={{ flex: 1, p: 2, overflowY: 'auto', minHeight: 0 }}>
+            <Box
+              key={hasItemSelected ? `${panelKey}:${selTab}` : rightTab}
+              sx={{
+                '@keyframes fbPanelIn': {
+                  from: { opacity: 0, transform: 'translateX(6px)' },
+                  to: { opacity: 1, transform: 'translateX(0)' },
+                },
+                animation: 'fbPanelIn 0.2s ease',
+              }}
+            >
+              {renderPanelContent()}
+            </Box>
           </Box>
         </Box>
+      </Box>
+
+          {/* ── Bottom navigation: dedicated bar at the absolute bottom of the
+          editor container, OUTSIDE the scrollable question area. Back aligns
+          left, Preview aligns right; stable while the center scrolls
+          and unaffected by either side panel. ── */}
+      <Box sx={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2,
+        px: { xs: 1.5, sm: 2.5 }, py: 1.5,
+        borderTop: '1px solid', borderColor: '#ECEEF4', bgcolor: '#fff',
+        borderRadius: '0 0 12px 12px',
+      }}>
+        {onBack ? (
+          <Button variant="outlined" size="large" startIcon={<ArrowBack fontSize="small" />} onClick={onBack} disabled={saving}
+            sx={{ px: 4, fontWeight: 600, borderRadius: 2 }}>
+            Back
+          </Button>
+        ) : <Box />}
+        <Button variant="contained" size="large" endIcon={<PreviewOutlined fontSize="small" />} onClick={handleSave} disabled={saving}
+          sx={{ px: 4, fontWeight: 600, borderRadius: 2, boxShadow: 'none' }}>
+          {saving ? 'Saving…' : 'Preview'}
+        </Button>
       </Box>
 
       {/* Properties bottom sheet — mobile/tablet only (desktop uses the side panel). */}
@@ -1132,7 +1114,15 @@ export default function FormBuilder({ initial, onSave, onPreview, saving, onBack
         slotProps={{ paper: { sx: { borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '80vh' } } }}>
         <Box sx={{ p: 2.5, pb: 4 }}>
           <Box sx={{ width: 40, height: 4, borderRadius: 2, bgcolor: 'divider', mx: 'auto', mb: 2 }} />
-          {renderProperties()}
+          {/* Tab switcher in drawer — same persistent tabs as the side panel */}
+          <Tabs value={activeTab} onChange={handlePanelTab} sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+            {hasItemSelected && (
+              <Tab value="properties" label="Properties" sx={{ fontSize: 12, fontWeight: 700 }} />
+            )}
+            <Tab value="style" label="Style" sx={{ fontSize: 12, fontWeight: 700 }} />
+            <Tab value="settings" label="Settings" sx={{ fontSize: 12, fontWeight: 700 }} />
+          </Tabs>
+          {renderPanelContent()}
           <Button fullWidth variant="contained" onClick={() => setPropsOpen(false)} sx={{ mt: 2, borderRadius: 999, boxShadow: 'none' }}>
             Done
           </Button>

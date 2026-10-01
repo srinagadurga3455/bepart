@@ -7,7 +7,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSnackbar } from 'notistack';
 import { withdrawalsApi } from '../api/withdrawals';
-import { formatEventDate, formatPaise } from '../../../app/utils/format';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
 import { apiErrorMessage } from '../../../app/api/client';
 import type { WithdrawalStatus } from '../../../app/types';
 import AdminShell from '../../components/AdminShell';
@@ -92,7 +92,7 @@ function DetailContent({ id }: { id: string | undefined }) {
             </Avatar>
             <Box sx={{ flex: '1 1 200px' }}>
               <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}>
-                {formatPaise(w.amount)}
+{formatINR(w.amount)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 {w.event?.eventName || `Event ${w.eventId}`} Â· Requested {formatEventDate(w.requestedAt)}
@@ -113,7 +113,7 @@ function DetailContent({ id }: { id: string | undefined }) {
           </Typography>
 
           <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 700 }}>Amount</Typography>
-          <Typography variant="body1" sx={{ mb: 2, fontWeight: 700 }}>{formatPaise(w.amount)}</Typography>
+          <Typography variant="body1" sx={{ mb: 2, fontWeight: 700 }}>{formatINR(w.amount)}</Typography>
 
           {w.status === 'PAID' && (
             <>
@@ -134,7 +134,7 @@ function DetailContent({ id }: { id: string | undefined }) {
           <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Payment Confirmation</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Transfer {formatPaise(w.amount)} manually to UPI ID <strong>{w.organizer?.upiId || 'â€”'}</strong>, then record the payment below.
+              Transfer {formatINR(w.amount)} manually to UPI ID <strong>{w.organizer?.upiId || 'â€”'}</strong>, then record the payment below.
             </Typography>
             <TextField
               label="Transaction ID *"

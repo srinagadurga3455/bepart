@@ -78,15 +78,15 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    const res = await service.create('reg1', { amount: 50000 } as any, studentUser);
+    const res = await service.create('reg1', { amount: 500 } as any, studentUser);
     expect(res.status).toBe(PaymentStatus.PENDING);
-    expect(res.amount).toBe(50000);
+    expect(res.amount).toBe(500);
     expect(mockPaymentsRepo.createPayment).toHaveBeenCalledWith(expect.objectContaining({ registrationId: 'reg1', amount: 50000 }));
   });
 
   it('should reject invalid registration', async () => {
     mockPaymentsRepo.findRegistrationWithEvent.mockResolvedValue(null);
-    await expect(service.create('invalid', { amount: 50000 } as any, studentUser)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.create('invalid', { amount: 500 } as any, studentUser)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('should reject amount <=0', async () => {
@@ -100,13 +100,13 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     mockPaymentsRepo.findRegistrationWithEvent.mockResolvedValue({ registrationId: 'reg1', phone: '+919876543210' });
     mockPaymentsRepo.findUserById.mockResolvedValue({ id: 'user1', phone: '+919876543210' });
     mockPaymentsRepo.findPaymentByRegistrationId.mockResolvedValue({ id: 'pay1' });
-    await expect(service.create('reg1', { amount: 50000 } as any, studentUser)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.create('reg1', { amount: 500 } as any, studentUser)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('should return 403 when student tries to use another student registration', async () => {
     mockPaymentsRepo.findRegistrationWithEvent.mockResolvedValue({ registrationId: 'reg1', phone: '+919999999999', event: { id: '550e8400-e29b-41d4-a716-446655440000' } });
     mockPaymentsRepo.findUserById.mockResolvedValue({ id: 'user1', phone: '+919876543210' });
-    await expect(service.create('reg1', { amount: 50000 } as any, studentUser)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.create('reg1', { amount: 500 } as any, studentUser)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('should allow ADMIN to create payment for any registration', async () => {
@@ -120,7 +120,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    const res = await service.create('reg1', { amount: 50000 } as any, adminUser);
+    const res = await service.create('reg1', { amount: 500 } as any, adminUser);
     expect(res.status).toBe(PaymentStatus.PENDING);
   });
 
@@ -245,7 +245,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    const res = await service.create('regFree', { amount: 50000 } as any, studentUser);
+    const res = await service.create('regFree', { amount: 500 } as any, studentUser);
     expect(res.status).toBe(PaymentStatus.PENDING);
   });
 
@@ -348,7 +348,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     // Add the methods to mock if not present
     mockPaymentsRepo.createPendingPayment.mockClear();
     // Test via service
-    const res = await service.createPending({ eventId: '550e8400-e29b-41d4-a716-446655440017', phone: '+91 9123456789', amount: 50000 } as any);
+    const res = await service.createPending({ eventId: '550e8400-e29b-41d4-a716-446655440017', phone: '+91 9123456789', amount: 500 } as any);
     expect(res.phone).toBe('9123456789');
     expect(mockPaymentsRepo.createPendingPayment).toHaveBeenCalledWith(expect.objectContaining({ phone: '9123456789' }));
   });
@@ -364,39 +364,40 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     }));
   };
 
-  it('REGRESSION: Rs500 with 10% coupon => exactly Rs450 (45000 paise), never Rs405', async () => {
+  it('REGRESSION: Rs500 with 10% coupon => exactly Rs450, never Rs405', async () => {
     const eventId = '550e8400-e29b-41d4-a716-446655440099';
     pendingEvent(eventId);
+    // priceQuote speaks rupees (API): 500/50/450. Storage stays paise.
     mockCouponsService.priceQuote.mockResolvedValue({
-      originalAmount: 50000, discountAmount: 5000, totalAmount: 45000,
+      originalAmount: 500, discountAmount: 50, totalAmount: 450,
       coupon: { id: 'coupon1', code: 'AICLUB20' },
     });
-    // Client sends ORIGINAL ticket amount: Rs500 = 50000 paise
+    // Client sends ORIGINAL ticket amount in rupees: Rs500
     const res: any = await service.createPending(
-      { eventId, phone: '9123456789', amount: 50000, couponCode: 'AICLUB20' } as any,
+      { eventId, phone: '9123456789', amount: 500, couponCode: 'AICLUB20' } as any,
     );
-    // Discount applied exactly once: stored amount is the final 45000, never 40500.
-    expect(mockCouponsService.priceQuote).toHaveBeenCalledWith('AICLUB20', eventId, 50000);
+    // Discount applied exactly once: stored amount is the final 45000 paise, never 40500.
+    expect(mockCouponsService.priceQuote).toHaveBeenCalledWith('AICLUB20', eventId, 500);
     expect(mockPaymentsRepo.createPendingPayment).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 45000, originalAmount: 50000, discountAmount: 5000, couponId: 'coupon1', couponCode: 'AICLUB20' }),
     );
-    expect(res.amount).toBe(45000);
-    expect(res.originalAmount).toBe(50000);
-    expect(res.discountAmount).toBe(5000);
-    expect(res.amount).not.toBe(40500);
+    expect(res.amount).toBe(450);
+    expect(res.originalAmount).toBe(500);
+    expect(res.discountAmount).toBe(50);
+    expect(res.amount).not.toBe(405);
   });
 
   it('should accept coupon with future expiresAt (UTC)', async () => {
     const eventId = '550e8400-e29b-41d4-a716-446655440098';
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockResolvedValue({
-      originalAmount: 50000, discountAmount: 5000, totalAmount: 45000,
+      originalAmount: 500, discountAmount: 50, totalAmount: 450,
       coupon: { id: 'couponFuture', code: 'AICLUB20' },
     });
     const res: any = await service.createPending(
-      { eventId, phone: '9123456789', amount: 50000, couponCode: 'AICLUB20' } as any,
+      { eventId, phone: '9123456789', amount: 500, couponCode: 'AICLUB20' } as any,
     );
-    expect(res.amount).toBe(45000);
+    expect(res.amount).toBe(450);
   });
 
   it('should reject coupon with past expiresAt as "Coupon expired"', async () => {
@@ -404,7 +405,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockRejectedValue(new BadRequestException('Coupon expired'));
     await expect(
-      service.createPending({ eventId, phone: '9123456789', amount: 50000, couponCode: 'AICLUB20' } as any),
+      service.createPending({ eventId, phone: '9123456789', amount: 500, couponCode: 'AICLUB20' } as any),
     ).rejects.toThrow('Coupon expired');
     expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
@@ -413,13 +414,13 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     const eventId = '550e8400-e29b-41d4-a716-446655440096';
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockResolvedValue({
-      originalAmount: 50000, discountAmount: 5000, totalAmount: 45000,
+      originalAmount: 500, discountAmount: 50, totalAmount: 450,
       coupon: { id: 'couponFutureStr', code: 'QT1930672' },
     });
     const res: any = await service.createPending(
-      { eventId, phone: '9123456789', amount: 50000, couponCode: 'QT1930672' } as any,
+      { eventId, phone: '9123456789', amount: 500, couponCode: 'QT1930672' } as any,
     );
-    expect(res.amount).toBe(45000);
+    expect(res.amount).toBe(450);
   });
 
   it('should reject genuinely expired coupon ISO string (e.g. 2025-12-31) as "Coupon expired"', async () => {
@@ -427,7 +428,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockRejectedValue(new BadRequestException('Coupon expired'));
     await expect(
-      service.createPending({ eventId, phone: '9123456789', amount: 50000, couponCode: 'QT1930672' } as any),
+      service.createPending({ eventId, phone: '9123456789', amount: 500, couponCode: 'QT1930672' } as any),
     ).rejects.toThrow('Coupon expired');
     expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
@@ -437,7 +438,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockRejectedValue(new BadRequestException('Invalid coupon code'));
     await expect(
-      service.createPending({ eventId, phone: '9123456789', amount: 50000, couponCode: 'NOPE123' } as any),
+      service.createPending({ eventId, phone: '9123456789', amount: 500, couponCode: 'NOPE123' } as any),
     ).rejects.toThrow('Invalid coupon code');
     expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
@@ -447,7 +448,7 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockRejectedValue(new BadRequestException('Coupon is inactive'));
     await expect(
-      service.createPending({ eventId, phone: '9123456789', amount: 50000, couponCode: 'AICLUB20' } as any),
+      service.createPending({ eventId, phone: '9123456789', amount: 500, couponCode: 'AICLUB20' } as any),
     ).rejects.toThrow('Coupon is inactive');
     expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
@@ -457,27 +458,29 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     pendingEvent(eventId);
     mockCouponsService.priceQuote.mockRejectedValue(new BadRequestException('Coupon usage limit reached'));
     await expect(
-      service.createPending({ eventId, phone: '9123456789', amount: 50000, couponCode: 'AICLUB20' } as any),
+      service.createPending({ eventId, phone: '9123456789', amount: 500, couponCode: 'AICLUB20' } as any),
     ).rejects.toThrow('Coupon usage limit reached');
     expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
 
   it('should charge full price with zero discount when no coupon is provided', async () => {    const eventId = '550e8400-e29b-41d4-a716-446655440091';
     pendingEvent(eventId);
-    const res: any = await service.createPending({ eventId, phone: '9123456789', amount: 100000 } as any);
+    const res: any = await service.createPending({ eventId, phone: '9123456789', amount: 1000 } as any);
     expect(mockCouponsService.priceQuote).not.toHaveBeenCalled();
     expect(mockPaymentsRepo.createPendingPayment).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 100000, originalAmount: 100000, discountAmount: 0 }),
     );
-    expect(res.amount).toBe(100000);
+    expect(res.amount).toBe(1000);
   });
 
-  it('should list own-event transactions for findMine (ORGANIZER)', async () => {
+  it('should list own-event transactions for findMine (ORGANIZER) in rupees', async () => {
     mockPaymentsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'orgUser1' });
     mockPaymentsRepo.findByOrganizerId.mockResolvedValue([{ id: 'pay1', amount: 45000, status: PaymentStatus.PAID }]);
     const res: any = await service.findMine('orgUser1', 'ORGANIZER');
     expect(mockPaymentsRepo.findByOrganizerId).toHaveBeenCalledWith('org1');
     expect(res).toHaveLength(1);
+    // Stored 45000 paise is exposed as ₹450.
+    expect(res[0].amount).toBe(450);
   });
 
   it('should return [] for findMine when organizer profile is missing', async () => {
@@ -490,5 +493,13 @@ describe('PaymentsService - Auth ownership & payment flow', () => {
     const res: any = await service.findMine('admin1', 'ADMIN');
     expect(mockPaymentsRepo.findAllPayments).toHaveBeenCalled();
     expect(res).toHaveLength(2);
+  });
+
+  it('should expose GET /payments/mine to ORGANIZER and ADMIN', async () => {
+    const { PaymentsController } = await import('./payments.controller');
+    const roles = Reflect.getMetadata('roles', PaymentsController.prototype.findMine);
+    expect(roles).toBeDefined();
+    expect(roles).toContain(Role.ORGANIZER);
+    expect(roles).toContain(Role.ADMIN);
   });
 });

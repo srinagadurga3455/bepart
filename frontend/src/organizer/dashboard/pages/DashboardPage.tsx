@@ -17,7 +17,7 @@ import { eventsApi } from '../../events/api/events';
 import { registrationsApi } from '../../events/api/registrations';
 import { withdrawalsApi } from '../../withdrawals/api/withdrawals';
 import { unwrapList } from '../../../app/api/client';
-import { formatINR, formatPaise } from '../../../app/utils/format';
+import { formatINR } from '../../../app/utils/format';
 import { financeByEvent } from '../../events/utils/eventData';
 import type { EventItem, RegistrationItem, WithdrawalItem } from '../../../app/types';
 import OrganizerShell from '../../components/OrganizerShell';
@@ -328,9 +328,9 @@ function DashboardContent() {
           </Typography>
           <Typography sx={{ fontSize: 12.5, color: '#667085' }}>
             {openWithdrawal
-              ? `${formatPaise(openWithdrawal.amount)} ${openWithdrawal.status.toLowerCase()} — waiting for admin.`
+              ? `${formatINR(openWithdrawal.amount)} ${openWithdrawal.status.toLowerCase()} — waiting for admin.`
               : paidOut > 0
-                ? `${formatPaise(paidOut)} paid out to you so far.`
+                ? `${formatINR(paidOut)} paid out to you so far.`
                 : 'No payouts yet. Withdraw collected fees from an event.'}
           </Typography>
         </Box>

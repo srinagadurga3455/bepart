@@ -9,6 +9,7 @@ import { PayWithdrawalDto } from './dto/pay-withdrawal.dto';
 import { ConfirmPaidDto } from './dto/confirm-paid.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { ParseEventIdPipe } from '../common/pipes/parse-event-id.pipe';
 import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
 
@@ -20,7 +21,7 @@ export class WithdrawalsController {
 
   @Post()
   @Roles(Role.ORGANIZER)
-  @ApiOperation({ summary: 'Request withdrawal (ORGANIZER)', description: 'Request withdrawal of collected fees for own event. Amount is in paise and must not exceed available balance; one open request per event. organizerId is derived from JWT, never the body.' })
+  @ApiOperation({ summary: 'Request withdrawal (ORGANIZER)', description: 'Request withdrawal of collected fees for own event. Amount is in rupees (e.g. 25000 = ₹25,000) and must not exceed available balance; one open request per event. organizerId is derived from JWT, never the body.' })
   @ApiBody({ type: CreateWithdrawalDto })
   @ApiResponse({ status: 201, description: 'Withdrawal REQUESTED' })
   @ApiResponse({ status: 400, description: 'Invalid amount / free event / no revenue / exceeds balance / bad UPI ID' })
@@ -63,12 +64,12 @@ export class WithdrawalsController {
 
   @Get('event/:eventId')
   @Roles(Role.ORGANIZER, Role.ADMIN)
-  @ApiOperation({ summary: 'Withdrawals for an event (+ balance)', description: 'Organizers: own events only. Returns withdrawals plus revenue/reserved/paidOut/available balance in paise.' })
-  @ApiParam({ name: 'eventId', description: 'Event ID (UUID)' })
+  @ApiOperation({ summary: 'Withdrawals for an event (+ balance)', description: 'Organizers: own events only. Returns withdrawals plus revenue/reserved/paidOut/available balance in rupees.' })
+  @ApiParam({ name: 'eventId', description: 'Event ID (UUID, or legacy numeric ID)' })
   @ApiResponse({ status: 403, description: 'Not owner' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   findByEvent(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('eventId', ParseEventIdPipe) eventId: string,
     @CurrentUser() user: RequestUser,
   ) {
     return this.service.findByEvent(eventId, user.userId || user.id, user.role);

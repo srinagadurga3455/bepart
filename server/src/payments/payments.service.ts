@@ -9,6 +9,8 @@ import { RequestUser } from '../common/types/jwt-payload';
 import { canonicalPhone } from '../common/utils/phone';
 import { CouponsRepository } from '../coupons/coupons.repo';
 import { CouponsService } from '../coupons/coupons.service';
+import { assertRupees, rupeesToPaise, toRupeesPayment } from '../common/utils/money';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import * as crypto from 'crypto';
 // Razorpay SDK has no bundled types; require keeps build green without @types.
  // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -24,6 +26,9 @@ export class PaymentsService {
     private readonly couponsRepo: CouponsRepository,
     private readonly couponsService: CouponsService,
     @Optional() private readonly configService?: ConfigService,
+    // Optional so pre-existing unit tests (which don't provide it) keep
+    // working unmodified; the module always provides it in production.
+    @Optional() private readonly whatsappService?: WhatsappService,
   ) {
     const keyId = this.configService?.get<string>('RAZORPAY_KEY_ID');
     const keySecret = this.getRazorpayKeySecret();
@@ -55,7 +60,8 @@ export class PaymentsService {
 
   async create(registrationId: string, dto: CreatePaymentDto, user: RequestUser) {
     if (!dto || dto.amount === undefined || dto.amount === null) throw new BadRequestException('amount is required');
-    if (!Number.isInteger(dto.amount) || dto.amount <= 0) throw new BadRequestException('amount must be an integer > 0 (in paise)');
+    // API speaks rupees (500 = ₹500). Storage + Razorpay speak paise.
+    const amountPaise = rupeesToPaise(assertRupees(dto.amount));
 
     const registration = await this.paymentsRepo.findRegistrationWithEvent(registrationId);
     if (!registration) throw new NotFoundException('Registration not found');
@@ -77,23 +83,24 @@ export class PaymentsService {
 
     const payment = await this.paymentsRepo.createPayment({
       registrationId,
-      amount: dto.amount,
+      amount: amountPaise,
       status: PaymentStatus.PENDING,
     });
 
-    return {
+    return toRupeesPayment({
       id: payment.id,
       registrationId: payment.registrationId,
       amount: payment.amount,
       status: payment.status,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
-    };
+    });
   }
 
   async createPending(dto: CreatePendingPaymentDto, user?: RequestUser) {
     if (!dto || dto.amount === undefined || dto.amount === null) throw new BadRequestException('amount is required');
-    if (!Number.isInteger(dto.amount) || dto.amount <= 0) throw new BadRequestException('amount must be an integer > 0 (in paise)');
+    // API speaks rupees (500 = ₹500). Storage + Razorpay speak paise.
+    const amountPaise = rupeesToPaise(assertRupees(dto.amount));
     if (!dto.phone || !dto.eventId) throw new BadRequestException('phone and eventId are required');
 
     // Verify event exists and is paid and published
@@ -110,12 +117,12 @@ export class PaymentsService {
     const existingReg = await this.paymentsRepo.findRegistrationByPhoneAndEvent(phone, dto.eventId);
     if (existingReg) throw new ConflictException('Phone already registered for this event');
 
-    // SINGLE SOURCE OF TRUTH: `dto.amount` is always the ORIGINAL ticket amount
-    // (in paise). The coupon discount is calculated EXACTLY ONCE here via
+    // SINGLE SOURCE OF TRUTH: the rupee `dto.amount` is converted once to
+    // paise here; the coupon discount is calculated EXACTLY ONCE via
     // CouponsService (the one authoritative calculation). `Payment.amount`
-    // stores only the final payable amount. Never recalculate the coupon in
-    // registration, webhook (updateStatus), or any other flow.
-    let finalAmount = dto.amount;
+    // stores only the final payable amount (paise). Never recalculate the
+    // coupon in registration, webhook (updateStatus), or any other flow.
+    let finalAmount = amountPaise;
     let originalAmount: number | null = null;
     let discountAmount = 0;
     let couponId: string | null = null;
@@ -126,12 +133,21 @@ export class PaymentsService {
       const rawCode = (dto as any).couponCode as string;
       this.logger.debug(`Coupon check code=${rawCode} event=${dto.eventId} now=${new Date(Date.now()).toISOString()}`);
       // Full validation (exists, event, active, dates, usage) + backend quote.
+      // priceQuote takes rupees (API) and returns rupees; convert to paise
+      // for storage exactly once here.
       const quote = await this.couponsService.priceQuote(rawCode, dto.eventId, dto.amount);
-      originalAmount = quote.originalAmount;
-      discountAmount = quote.discountAmount;
-      finalAmount = quote.totalAmount;
+      originalAmount = rupeesToPaise(quote.originalAmount);
+      discountAmount = rupeesToPaise(quote.discountAmount);
+      finalAmount = rupeesToPaise(quote.totalAmount);
       couponId = quote.coupon.id;
       couponCode = quote.coupon.code;
+    }
+
+    // Razorpay orders require a minimum of 100 paise (₹1) — e.g. a
+    // fully-discounted coupon total cannot go through Razorpay. Fail fast
+    // with 400 here, before any payment row is created.
+    if (finalAmount < 100) {
+      throw new BadRequestException('Payable amount must be at least ₹1 (100 paise) for online payment');
     }
 
     const payment = await this.paymentsRepo.createPendingPayment({
@@ -141,7 +157,7 @@ export class PaymentsService {
       status: PaymentStatus.PENDING,
       couponId: couponId as any,
       couponCode: couponCode as any,
-      originalAmount: originalAmount ?? dto.amount,
+      originalAmount: originalAmount ?? amountPaise,
       discountAmount,
       // Pending answers ride along so organizer PAID confirmation creates the
       // Registration atomically (see updatePaymentStatusAtomic).
@@ -155,7 +171,7 @@ export class PaymentsService {
     // payment without Razorpay fields, preserving existing main behavior.
     const razorpay = this.getRazorpayClient();
     if (!razorpay) {
-      return {
+      return toRupeesPayment({
         id: payment.id,
         phone: payment.phone,
         eventId: payment.eventId,
@@ -166,12 +182,12 @@ export class PaymentsService {
         status: payment.status,
         couponId: (payment as any).couponId,
         createdAt: payment.createdAt,
-      };
+      });
     }
 
     try {
       const razorpayOrder = await razorpay.orders.create({
-        amount: finalAmount, // paise
+        amount: finalAmount, // paise: Razorpay always takes the smallest currency unit
         currency: 'INR',
         receipt: payment.id, // BePart payment ID as receipt for reconciliation
         notes: {
@@ -184,18 +200,20 @@ export class PaymentsService {
       await this.paymentsRepo.updatePaymentRazorpayOrderId(payment.id, razorpayOrder.id);
 
       return {
-        id: payment.id,
-        phone: payment.phone,
-        eventId: payment.eventId,
-        amount: payment.amount,
-        originalAmount: (payment as any).originalAmount,
-        discountAmount: (payment as any).discountAmount,
-        couponCode: (payment as any).couponCode,
-        status: payment.status,
-        couponId: (payment as any).couponId,
+        ...toRupeesPayment({
+          id: payment.id,
+          phone: payment.phone,
+          eventId: payment.eventId,
+          amount: payment.amount,
+          originalAmount: (payment as any).originalAmount,
+          discountAmount: (payment as any).discountAmount,
+          couponCode: (payment as any).couponCode,
+          status: payment.status,
+          couponId: (payment as any).couponId,
+          createdAt: payment.createdAt,
+        }),
         razorpayOrderId: razorpayOrder.id,
         razorpayKeyId: this.configService?.get<string>('RAZORPAY_KEY_ID'),
-        createdAt: payment.createdAt,
       };
     } catch (error) {
       // Keep DB consistent: no orphan PENDING payment if the gateway call fails.
@@ -238,7 +256,15 @@ export class PaymentsService {
       return { success: true, paymentId: (payment as any).id, alreadyPaid: true };
     }
 
-    await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpay_payment_id);
+    const updated = await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpay_payment_id);
+    // Ticket confirmation: only after the signature verified AND the payment
+    // row is PAID. updatePaymentStatusAtomic fulfills the registration+ticket
+    // in the same transaction when pending answers exist; notify only then.
+    // Never throws — delivery failures are recorded, payment stays PAID.
+    const fulfilledId = (updated as any)?.registrationId;
+    if (fulfilledId && this.whatsappService) {
+      await this.whatsappService.notifyTicketReady({ registrationId: fulfilledId });
+    }
     return { success: true, paymentId: (payment as any).id, orderId: razorpay_order_id, paymentIdRazorpay: razorpay_payment_id };
   }
 
@@ -314,7 +340,11 @@ export class PaymentsService {
       return { received: true, processed: false, message: 'Payment already marked as PAID' };
     }
 
-    await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpayPaymentId ?? undefined);
+    const updated = await this.paymentsRepo.updatePaymentStatusAtomic((payment as any).id, PaymentStatus.PAID, razorpayPaymentId ?? undefined);
+    const fulfilledId = (updated as any)?.registrationId;
+    if (fulfilledId && this.whatsappService) {
+      await this.whatsappService.notifyTicketReady({ registrationId: fulfilledId });
+    }
     return { received: true, processed: true, paymentId: (payment as any).id };
   }
 
@@ -340,21 +370,22 @@ export class PaymentsService {
   async getById(id: string) {
     const payment = await this.paymentsRepo.findPaymentById(id);
     if (!payment) throw new NotFoundException('Payment not found');
-    return payment;
+    return toRupeesPayment(payment as any);
   }
 
   async getByRegistrationId(registrationId: string) {
     const payment = await this.paymentsRepo.findPaymentByRegistrationId(registrationId);
     if (!payment) throw new NotFoundException('Payment not found for registration');
-    return payment;
+    return toRupeesPayment(payment as any);
   }
 
   // Transaction listing: ADMIN sees all, ORGANIZER sees own events' payments.
+  // Stored paise rows are mapped to API rupees like every other getter.
   async findMine(userId: string, role: string) {
-    if (role === 'ADMIN') return this.paymentsRepo.findAllPayments();
+    if (role === 'ADMIN') return (await this.paymentsRepo.findAllPayments()).map((p) => toRupeesPayment(p as any));
     const organizer = await this.paymentsRepo.findOrganizerByUserId(userId);
     if (!organizer) return [];
-    return this.paymentsRepo.findByOrganizerId(organizer.id);
+    return (await this.paymentsRepo.findByOrganizerId(organizer.id)).map((p) => toRupeesPayment(p as any));
   }
 
   async updateStatus(id: string, dto: UpdatePaymentStatusDto, actor: RequestUser) {
@@ -376,6 +407,12 @@ export class PaymentsService {
       throw new ForbiddenException('You can only update payments for your own events');
     }
     const updated = await this.paymentsRepo.updatePaymentStatusAtomic(id, dto.status as PaymentStatus);
-    return updated;
+    // Organizer offline confirmation can also fulfill a ticket (same atomic
+    // path as webhooks) — notify only when a registration is attached.
+    const fulfilledId = (updated as any)?.registrationId;
+    if (dto.status === PaymentStatus.PAID && fulfilledId && this.whatsappService) {
+      await this.whatsappService.notifyTicketReady({ registrationId: fulfilledId });
+    }
+    return toRupeesPayment(updated as any);
   }
 }

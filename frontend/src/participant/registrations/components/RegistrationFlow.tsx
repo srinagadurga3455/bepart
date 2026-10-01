@@ -9,7 +9,7 @@ import { useAuth } from '../../../auth/components/RequireRole';
 import ProgressIndicator from './ProgressIndicator';
 import FormSection from './FormSection';
 import ReviewStep from './ReviewStep';
-import PaymentStep from './PaymentStep';
+import PaymentStep, { type PaidRegistrationArgs } from './PaymentStep';
 import {
   findCountFieldName,
   getSelectedCount,
@@ -37,6 +37,9 @@ interface RegistrationFlowProps {
   // Organizer preview: renders the payment step as an explanation instead of
   // calling the real payment API with a draft event.
   previewMode?: boolean;
+  // Paid-event completion: called ONLY after backend verification confirms
+  // PAID. The parent creates the registration and shows success.
+  onPaymentComplete?: (args: PaidRegistrationArgs) => void;
 }
 
 export default function RegistrationFlow({
@@ -46,6 +49,7 @@ export default function RegistrationFlow({
   eventId,
   event,
   previewMode = false,
+  onPaymentComplete,
 }: RegistrationFlowProps) {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [showReview, setShowReview] = useState(false);
@@ -90,11 +94,14 @@ export default function RegistrationFlow({
   // from the form itself. But when the visitor IS signed in and their account
   // has a name/phone, prefill matching empty fields and say so visibly —
   // never silently. Values stay editable; nothing is stored twice.
+  // Organizer preview NEVER prefills: the preview must show pristine empty
+  // fields exactly as a new participant sees them (otherwise the organizer's
+  // own account data looks like mock/dummy data in the preview).
   const { user } = useAuth();
   const [prefilled, setPrefilled] = useState<string[]>([]);
   const prefillDone = useRef(false);
   useEffect(() => {
-    if (prefillDone.current || !user) return;
+    if (prefillDone.current || !user || previewMode) return;
     const allNames = new Set<string>();
     for (const s of formStructure?.sections || []) {
       for (const f of s.fields || []) allNames.add(f.name);
@@ -186,11 +193,26 @@ export default function RegistrationFlow({
     const scoped = countFieldName ? stripHiddenMemberValues(data as FormDataRecord, getSelectedCount(data as FormDataRecord, countFieldName)) : { ...data };
     const formData: FormDataRecord = { ...scoped };
     Object.keys(formData).forEach((key) => {
-      if (Array.isArray(formData[key]) && (formData[key] as unknown[]).length === 0) {
+      const value = formData[key];
+      // Omit unanswered questions so the record stores only real answers.
+      // (Client validation already blocks submit while a REQUIRED field is
+      // empty, and the backend tolerates absent optionals.)
+      if (value === undefined || value === null) {
+        delete formData[key];
+      } else if (typeof value === 'string' && !value.trim()) {
+        delete formData[key];
+      } else if (Array.isArray(value) && value.length === 0) {
         delete formData[key];
       }
     });
     onSubmit(formData);
+    if (previewMode) {
+      // Organizer sandbox: restart the walkthrough for another pass. No
+      // registration is created — the parent's onSubmit is a no-op.
+      methods.reset();
+      setShowReview(false);
+      setCurrentSectionIndex(0);
+    }
   };
 
   const handleFormSubmit = (e?: BaseSyntheticEvent) => {
@@ -279,6 +301,8 @@ export default function RegistrationFlow({
               formData={paidFormData || {}}
               phone={typeof paidFormData?.phone === 'string' ? paidFormData.phone.trim() : ''}
               onBack={handleBack}
+              onPaid={(args) => onPaymentComplete?.(args)}
+              actionPending={isSubmitting}
             />
           )
         ) : showReview ? (
@@ -289,7 +313,9 @@ export default function RegistrationFlow({
             onEdit={handleEditSection}
             onConfirm={handleFormSubmit}
             isSubmitting={isSubmitting}
-            confirmLabel={isPaidEvent ? 'Continue to Payment' : undefined}
+            confirmLabel={previewMode ? 'Done' : isPaidEvent ? 'Continue to Payment' : undefined}
+            title={previewMode ? 'Preview Your Registration' : undefined}
+            subtitle={previewMode ? 'This review step is exactly what participants will see before confirming.' : undefined}
             feeAmount={feeAmount}
           />
         ) : (
@@ -376,7 +402,7 @@ export default function RegistrationFlow({
                   '&:disabled': { bgcolor: 'action.disabledBackground' },
                 }}
               >
-                {isLastSection ? 'Review & Register' : 'Continue'}
+                {isLastSection ? (previewMode ? 'Preview' : 'Review & Register') : 'Continue'}
               </Button>
             </Stack>
           </>

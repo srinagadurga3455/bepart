@@ -3,5 +3,7 @@ import { RegistrationsService } from './registrations.service';
 import { RegistrationsController } from './registrations.controller';
 import { RegistrationsRepository } from './registrations.repo';
 import { CouponsModule } from '../coupons/coupons.module';
-@Module({ imports: [CouponsModule], controllers: [RegistrationsController], providers: [RegistrationsService, RegistrationsRepository], exports: [RegistrationsService] })
+import { TicketsModule } from '../tickets/tickets.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
+@Module({ imports: [CouponsModule, TicketsModule, WhatsappModule], controllers: [RegistrationsController], providers: [RegistrationsService, RegistrationsRepository], exports: [RegistrationsService] })
 export class RegistrationsModule {}

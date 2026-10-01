@@ -156,6 +156,9 @@ function EventsContent() {
                     </Button>
                   </>
                 )}
+                {event.status === 'PUBLISHED' && (
+                  <Button size="small" variant="contained" component={RouterLink} to={`/organizer/events/${event.id}/edit`} sx={{ ...orgSmallButtonSx, boxShadow: 'none' }}>Edit</Button>
+                )}
               </CardContent>
             </Card>
           );

@@ -3,11 +3,20 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, WithdrawalStatus } from '@prisma/client';
 import { StorageService } from '../storage/storage.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { CreateWithdrawalDto, UPI_ID_PATTERN } from './dto/create-withdrawal.dto';
+import {
+  assertRupees,
+  paiseToRupees,
+  rupeesToPaise,
+  toRupeesBalance,
+} from '../common/utils/money';
 import {
   WITHDRAWAL_OPEN_STATUSES,
   WithdrawalDb,
@@ -15,13 +24,17 @@ import {
 } from './withdrawals.repo';
 
 export interface WithdrawalBalance {
-  /** Collected PAID revenue for the event, Int paise. */
+  /**
+   * INTERNAL math is paise (matches stored Int columns). The API-facing
+   * `findByEvent` balance is mapped to rupees via toRupeesBalance.
+   */
+  /** Collected PAID revenue for the event. */
   revenue: number;
-  /** Amount locked by REQUESTED/PROCESSING withdrawals, Int paise. */
+  /** Amount locked by REQUESTED/PROCESSING withdrawals. */
   reserved: number;
-  /** Amount already paid out, Int paise. */
+  /** Amount already paid out. */
   paidOut: number;
-  /** revenue - reserved - paidOut, Int paise. */
+  /** revenue - reserved - paidOut. */
   available: number;
   openCount: number;
 }
@@ -60,23 +73,39 @@ export interface WithdrawalResponse {
   organizerId: string;
 }
 
-function formatPaise(paise: number): string {
-  return `\u20B9${(paise / 100).toFixed(2)}`;
+function formatRupees(rupees: number): string {
+  return `₹${rupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
 @Injectable()
 export class WithdrawalsService {
+  private readonly logger = new Logger(WithdrawalsService.name);
+
   constructor(
     private readonly repo: WithdrawalsRepository,
     private readonly storageService: StorageService,
+    @Optional() private readonly whatsappService?: WhatsappService,
   ) {}
+
+  /** Fire-and-forget safe: notification methods never throw; failures are audited, never rolled back. */
+  private async notifySafely(kind: 'request' | 'success' | 'rejected', withdrawalId: string): Promise<void> {
+    if (!this.whatsappService) return;
+    try {
+      if (kind === 'request') await this.whatsappService.notifyPayoutRequest(withdrawalId);
+      else if (kind === 'success') await this.whatsappService.notifyPayoutSuccess(withdrawalId);
+      else await this.whatsappService.notifyPayoutRejected(withdrawalId);
+    } catch (e) {
+      this.logger.warn(`Payout ${kind} notification failed for ${withdrawalId} (withdrawal kept): ${(e as Error)?.message}`);
+    }
+  }
 
   private toResponse(w: WithdrawalView): WithdrawalResponse {
     return {
       id: w.id,
       eventId: w.eventId,
       eventName: w.event?.eventName ?? null,
-      amount: w.amount,
+      // Stored paise -> API rupees.
+      amount: paiseToRupees(w.amount),
       upiId: w.upiId,
       status: w.status,
       transactionId: w.transactionId,
@@ -131,15 +160,14 @@ export class WithdrawalsService {
     if (!UPI_ID_PATTERN.test(upiId)) {
       throw new BadRequestException('Invalid UPI ID format (expected name@bank)');
     }
-    if (!Number.isInteger(dto.amount) || dto.amount < 1) {
-      throw new BadRequestException('Amount must be a positive integer in paise');
-    }
+    // API speaks rupees (25000 = ₹25,000); storage + balance math speak paise.
+    const amountPaise = rupeesToPaise(assertRupees(dto.amount));
 
     // Serializable transaction: balance check + insert are atomic, so two
     // concurrent requests cannot both spend the same available balance.
     // Prisma surfaces serialization failures as P2034.
     try {
-      return await this.repo.transaction(async (tx) => {
+      const created = await this.repo.transaction(async (tx) => {
         const event = await this.repo.findEventById(tx, dto.eventId);
         if (!event) throw new NotFoundException('Event not found');
         if (event.organizerId !== organizer.id) {
@@ -155,19 +183,23 @@ export class WithdrawalsService {
         if (balance.openCount > 0) {
           throw new ConflictException('A withdrawal request for this event is already open');
         }
-        if (dto.amount > balance.available) {
+        if (amountPaise > balance.available) {
           throw new BadRequestException(
-            `Amount exceeds available balance (${formatPaise(balance.available)} available)`,
+            `Amount exceeds available balance (${formatRupees(paiseToRupees(balance.available))} available)`,
           );
         }
         const created = await this.repo.create(tx, {
-          amount: dto.amount,
+          amount: amountPaise,
           upiId,
           organizerId: organizer.id,
           eventId: event.id,
         });
         return this.toResponse(created);
       }, 'Serializable');
+      // Persisted first — the admin WhatsApp notification is a side effect
+      // that must never roll back the request.
+      await this.notifySafely('request', created.id);
+      return created;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
         throw new ConflictException(
@@ -220,7 +252,8 @@ export class WithdrawalsService {
     ]);
     return {
       event: { id: event.id, eventName: event.eventName },
-      balance,
+      // Internal paise balance -> API rupees.
+      balance: toRupeesBalance(balance),
       withdrawals: rows.map((w) => this.toResponse(w)),
     };
   }
@@ -262,12 +295,15 @@ export class WithdrawalsService {
     }
     // REJECTED rows are excluded from reserved balance, so the organizer can
     // request the released amount again.
-    return this.transitionOrThrow(
+    const rejected = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.REQUESTED, WithdrawalStatus.PROCESSING],
       { status: WithdrawalStatus.REJECTED, rejectionReason },
       'reject',
     );
+    // Persisted first — the organizer WhatsApp notification is a side effect.
+    await this.notifySafely('rejected', rejected.id);
+    return rejected;
   }
 
   async pay(id: string, transactionId: string, proofUrl?: string): Promise<WithdrawalResponse> {
@@ -283,12 +319,15 @@ export class WithdrawalsService {
     if (duplicate) {
       throw new ConflictException('Transaction ID has already been used for another withdrawal');
     }
-    return this.transitionOrThrow(
+    const paid = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.PROCESSING],
       { status: WithdrawalStatus.PAID, transactionId: txn, proofUrl: proof, paidAt: new Date() },
       'mark as paid',
     );
+    // Persisted first — the organizer WhatsApp notification is a side effect.
+    await this.notifySafely('success', paid.id);
+    return paid;
   }
 
   async confirmPaid(
@@ -327,12 +366,16 @@ export class WithdrawalsService {
       throw new ConflictException('Transaction ID has already been used for another withdrawal');
     }
     const { url } = await this.storageService.uploadProof(screenshot, existing.id);
-    return this.transitionOrThrow(
+    const paid = await this.transitionOrThrow(
       id,
       [WithdrawalStatus.PROCESSING],
       { status: WithdrawalStatus.PAID, transactionId: txn, proofUrl: url, paidAt: new Date() },
       'mark as paid',
     );
+    // Persisted first — the organizer WhatsApp notification (with the proof
+    // image header when the URL is public) is a side effect.
+    await this.notifySafely('success', paid.id);
+    return paid;
   }
 
   // Returns file bytes for local proofs (auth + ownership enforced by caller context).

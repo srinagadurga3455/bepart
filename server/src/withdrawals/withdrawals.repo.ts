@@ -55,7 +55,7 @@ export class WithdrawalsRepository {
     return db.event.findUnique({ where: { id } });
   }
 
-  /** Source of truth for collected revenue: sum of PAID payment amounts (Int paise). */
+  /** Source of truth for collected revenue: sum of PAID payment amounts (stored paise; API maps to rupees). */
   async paidRevenueForEvent(db: WithdrawalDb, eventId: string): Promise<number> {
     const agg = await db.payment.aggregate({
       _sum: { amount: true },

@@ -1,19 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
+import { IsEventId } from '../../common/validators/event-id.validator';
 
 export const UPI_ID_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9.-]{2,64}$/;
 
 export class CreateWithdrawalDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID, must belong to the organizer)' })
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID, or legacy numeric ID for pre-migration events; must belong to the organizer)' })
   @IsString()
-  @IsUUID()
+  @IsEventId()
   eventId: string;
 
-  @ApiProperty({ example: 2500000, description: 'Amount in paise (2500000 = ₹25,000.00). Must not exceed available balance.' })
+  @ApiProperty({ example: 25000, description: 'Amount in rupees (25000 = ₹25,000.00, up to 2 decimals). Must not exceed available balance.' })
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
+  @IsNumber()
+  @Min(0.01)
   amount: number;
 
   @ApiPropertyOptional({ example: 'organizer@upi', description: 'UPI ID for payout. Defaults to the UPI ID on the organizer profile.' })

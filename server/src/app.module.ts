@@ -11,8 +11,10 @@ import { AdminModule } from './admin/admin.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { StorageModule } from './storage/storage.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { MailerModule } from './mailer/mailer.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { TicketsModule } from './tickets/tickets.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -27,12 +29,14 @@ import { RolesGuard } from './common/guards/roles.guard';
       },
     ]),
     WhatsappModule,
+    MailerModule,
     AuthModule,
     OrganizersModule,
     EventsModule,
     RegistrationsModule,
     PaymentsModule,
     CouponsModule,
+    TicketsModule,
     AdminModule,
     WithdrawalsModule,
     StorageModule,
