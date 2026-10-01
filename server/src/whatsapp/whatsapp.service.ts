@@ -187,19 +187,20 @@ export class WhatsappService {
     return { messageId, skipped: false };
   }
 
-  /** Legacy OTP hook (kept signature-compatible). Real text when a phone identifier is used. Never throws; OTP values stay out of production logs. */
+  /**
+   * Legacy OTP hook (kept signature-compatible). MOCK — does not call the
+   * external service: real OTP delivery goes through notifications.sendOnce
+   * in the callers, so sending here too would double-deliver. OTP values
+   * stay out of production logs; development/test consoles keep the old
+   * behavior. Never throws.
+   */
   async sendOtp(destination: string, otp: string): Promise<void> {
     if (destination.includes('@')) return; // email identifiers go through SES
-    try {
-      const res = await this.sendTextMessage(destination, `Your BePart verification code is: ${otp}. It expires in 5 minutes.`);
-      if (res.skipped) {
-        this.logger.log(`[WhatsApp OTP skipped — not configured] To: ${destination}`);
-      } else if (process.env.NODE_ENV === 'production') {
-        this.logger.log('[WhatsApp OTP] dispatch suppressed in production (value hidden)');
-      }
-    } catch (err) {
-      // Delivery must never break callers — record and swallow.
-      this.logger.warn(`WhatsApp OTP send failed (value hidden): ${(err as Error)?.message}`);
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(`[WhatsApp OTP MOCK] dispatch to ${destination} (see server console in development)`);
+      console.log(`[WhatsApp OTP MOCK]\nTo: ${destination}\nOTP: ${otp}`);
+    } else {
+      this.logger.log('[WhatsApp OTP MOCK] dispatch suppressed in production (value hidden)');
     }
   }
 

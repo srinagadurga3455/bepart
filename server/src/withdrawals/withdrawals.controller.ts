@@ -9,10 +9,9 @@ import { PayWithdrawalDto } from './dto/pay-withdrawal.dto';
 import { ConfirmPaidDto } from './dto/confirm-paid.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ParseEventIdPipe } from '../common/pipes/parse-event-id.pipe';
+import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
-import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 
 @ApiTags('withdrawals')
 @ApiBearerAuth('JWT-auth')

@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
-import { ParseEventIdPipe as ParseEventIdPipeLegacy } from '../common/pipes/parse-event-id.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';

@@ -368,6 +368,7 @@ describe('RegistrationsService - findTicketsByPhone', () => {
         RegistrationsService,
         { provide: RegistrationsRepository, useValue: mockRepo },
         { provide: require('../coupons/coupons.service').CouponsService, useValue: {} },
+        { provide: require('../tickets/tickets.service').TicketsService, useValue: {} },
       ],
     }).compile();
     service = mod.get(RegistrationsService);
