@@ -67,11 +67,16 @@ describe('PaymentsService - Razorpay integration', () => {
       id: 'pay1', phone: '9123456789', eventId, amount: 50000, status: 'PENDING',
     });
     mockPaymentsRepo.updatePaymentRazorpayOrderId.mockResolvedValue({ id: 'pay1', razorpayOrderId: 'order_test_1' });
-    (service as any).razorpay = { orders: { create: jest.fn().mockResolvedValue({ id: 'order_test_1' }) } };
+    const createOrder = jest.fn().mockResolvedValue({ id: 'order_test_1' });
+    (service as any).razorpay = { orders: { create: createOrder } };
 
-    const res: any = await service.createPending({ eventId, phone: '+91 9123456789', amount: 50000 } as any);
+    // API takes rupees (500 = ₹500)...
+    const res: any = await service.createPending({ eventId, phone: '+91 9123456789', amount: 500 } as any);
     expect(res.razorpayOrderId).toBe('order_test_1');
     expect(res.razorpayKeyId).toBe(KEY_ID);
+    // ...but Razorpay itself always gets paise (50000), and the API returns rupees.
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({ amount: 50000, currency: 'INR' }));
+    expect(res.amount).toBe(500);
     expect(mockPaymentsRepo.updatePaymentRazorpayOrderId).toHaveBeenCalledWith('pay1', 'order_test_1');
   });
 
@@ -143,5 +148,31 @@ describe('PaymentsService - Razorpay integration', () => {
       service.verifyPayment({ razorpay_order_id: 'order_x', razorpay_payment_id: 'pay_x', razorpay_signature: '0'.repeat(64) }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(mockPaymentsRepo.updatePaymentStatusAtomic).not.toHaveBeenCalled();
+  });
+
+  it('rejects a sub-₹1 payable amount before creating any payment row', async () => {
+    const eventId = '550e8400-e29b-41d4-a716-446655440017';
+    mockPaymentsRepo.findEventById.mockResolvedValue({ id: eventId, paymentRequired: true, status: 'PUBLISHED' });
+    mockPaymentsRepo.findPendingPaymentByPhoneAndEvent.mockResolvedValue(null);
+    mockPaymentsRepo.findRegistrationByPhoneAndEvent.mockResolvedValue(null);
+    // ₹0.50 = 50 paise: passes rupee validation but is below Razorpay's minimum.
+    await expect(
+      service.createPending({ eventId, phone: '+91 9123456789', amount: 0.5 } as any),
+    ).rejects.toThrow(/at least ₹1/);
+    expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fully-discounted (₹0) coupon total before creating any payment row', async () => {
+    const eventId = '550e8400-e29b-41d4-a716-446655440017';
+    mockPaymentsRepo.findEventById.mockResolvedValue({ id: eventId, paymentRequired: true, status: 'PUBLISHED' });
+    mockPaymentsRepo.findPendingPaymentByPhoneAndEvent.mockResolvedValue(null);
+    mockPaymentsRepo.findRegistrationByPhoneAndEvent.mockResolvedValue(null);
+    mockCouponsService.priceQuote.mockResolvedValue({
+      originalAmount: 500, discountAmount: 500, totalAmount: 0, coupon: { id: 'c1', code: 'FREE100' },
+    });
+    await expect(
+      service.createPending({ eventId, phone: '+91 9123456789', amount: 500, couponCode: 'FREE100' } as any),
+    ).rejects.toThrow(/at least ₹1/);
+    expect(mockPaymentsRepo.createPendingPayment).not.toHaveBeenCalled();
   });
 });

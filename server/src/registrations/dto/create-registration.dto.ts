@@ -1,7 +1,7 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { IsEventId } from '../../common/validators/event-id.validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsEventId } from '../../common/validators/event-id.validator';
 
 export class CreateRegistrationDto {
   @ApiProperty({ example: '+91 9876543210', description: 'Phone for registration' })
@@ -35,10 +35,10 @@ export class CreateRegistrationDto {
   @IsOptional()
   formData?: any;
 
-  @ApiPropertyOptional({ example: 50000, description: 'Amount in paise for paid events (required if paymentRequired=true)' })
+  @ApiPropertyOptional({ example: 500, description: 'Amount in rupees for paid events (e.g. 500 = ₹500). Informational: paid registration is fulfilled from the PAID payment, not this field.' })
   @IsOptional()
-  @IsString()
-  @IsUUID()
+  @Type(() => Number)
+  @IsNumber()
   amount?: number;
 
   @ApiPropertyOptional({ example: 'AICLUB20', description: 'Optional coupon code. Backend validates it for the event and snapshots pricing. Invalid codes are rejected, never silently ignored.' })

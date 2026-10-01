@@ -24,7 +24,9 @@ const routes: RouteObject[] = [
   { path: '/organizer/registrations', element: org(<OrganizerRegistrationsPage />) },
   { path: '/organizer/transactions', element: org(<OrganizerTransactionsPage />) },
   { path: '/organizer/coupons', element: org(<OrganizerCouponsPage />) },
-  { path: '/organizer/checkin', element: org(<OrganizerCheckInPage />) },
+  // Check-in scanner: shared by ORGANIZER (own events) and ADMIN (any event),
+  // matching the backend @Roles(ORGANIZER, ADMIN) on /check-in/*.
+  { path: '/organizer/checkin', element: <RequireRole roles={['ORGANIZER', 'ADMIN']}><OrganizerCheckInPage /></RequireRole> },
   { path: '/organizer/withdrawals', element: org(<OrganizerWithdrawalsPage />) },
   { path: '/organizer/account', element: org(<OrganizerAccountPage />) },
 ];

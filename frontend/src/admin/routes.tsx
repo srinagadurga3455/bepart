@@ -17,6 +17,8 @@ export interface NavItem {
 
 export const adminNav: NavItem[] = [
   { label: 'Dashboard', to: '/admin', end: true },
+  { label: 'Organizers', to: '/admin/organizers' },
+  { label: 'Check-In', to: '/organizer/checkin' },
   { label: 'Withdrawals', to: '/admin/withdrawals' },
   { label: 'Transactions', to: '/admin/transactions' },
   { label: 'Account', to: '/admin/account' },

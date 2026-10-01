@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Param,
   Post,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ParseEventIdPipe } from '../common/pipes/parse-event-id.pipe';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StorageService } from './storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -71,5 +73,35 @@ export class StorageController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.storageService.handleEventPosterRectangleUpload(file, eventId, user);
+  }
+
+  @Delete('events/:eventId/poster-square')
+  @Roles(Role.ORGANIZER)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Remove event square poster', description: 'Clears the stored square poster URL and deletes the R2 object. Only owner ORGANIZER.' })
+  @ApiParam({ name: 'eventId', type: String, description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Square poster removed {posterSquareUrl: null}' })
+  @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async removeEventPosterSquare(
+    @Param('eventId', ParseEventIdPipe) eventId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.storageService.handleEventPosterSquareDelete(eventId, user);
+  }
+
+  @Delete('events/:eventId/poster-rectangle')
+  @Roles(Role.ORGANIZER)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Remove event rectangle poster', description: 'Clears the stored banner URL and deletes the R2 object. Only owner ORGANIZER.' })
+  @ApiParam({ name: 'eventId', type: String, description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Rectangle poster removed {posterRectangleUrl: null}' })
+  @ApiResponse({ status: 403, description: 'Forbidden - organizer owner only, ADMIN denied' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async removeEventPosterRectangle(
+    @Param('eventId', ParseEventIdPipe) eventId: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.storageService.handleEventPosterRectangleDelete(eventId, user);
   }
 }

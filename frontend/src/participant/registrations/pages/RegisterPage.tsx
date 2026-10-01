@@ -13,9 +13,11 @@ import { ArrowBack, CheckCircleOutlined, ConfirmationNumber, ErrorOutlined } fro
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { eventsApi } from '../../events/api/events';
 import { registrationsApi } from '../api/registrations';
-import { apiErrorMessage } from '../../../app/api/client';
-import type { FormDataRecord } from '../../../app/types';
+import { apiErrorMessage, unwrapList } from '../../../app/api/client';
+import type { FormDataRecord, RegistrationItem } from '../../../app/types';
+import { eventPoster } from '../../../app/types';
 import RegistrationFlow from '../components/RegistrationFlow';
+import type { PaidRegistrationArgs } from '../components/PaymentStep';
 
 const BLUE = '#2557F5';
 
@@ -65,6 +67,47 @@ export default function RegisterPage() {
       setError(apiErrorMessage(err, 'Registration failed. Please try again.'));
     },
   });
+
+  // Paid-event completion: runs ONLY after POST /payments/verify confirms
+  // PAID (see PaymentStep). Sends the SAME couponCode priced at init —
+  // the backend rejects a mismatch instead of silently full-pricing.
+  const createPaidRegistration = useMutation({
+    mutationFn: (vars: { phone: string; formData: FormDataRecord; couponCode?: string }) =>
+      registrationsApi.create({ eventId: eventId!, phone: vars.phone, formData: vars.formData, couponCode: vars.couponCode }),
+    onSuccess: (res) => {
+      setTicketId(res?.data?.registrationId || null);
+      setSuccess(true);
+      setError('');
+    },
+    onError: async (err) => {
+      // Backend auto-fulfills the registration during verify/webhook when the
+      // payment carries formData — then this POST 409s because the ticket
+      // ALREADY exists. Recover it instead of failing the user.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 409) {
+        try {
+          const list = await registrationsApi.list();
+          const mine = unwrapList<RegistrationItem>(list).find(
+            (r) => String((r as { eventId?: unknown })?.eventId) === String(eventId),
+          );
+          if (mine?.registrationId) {
+            setTicketId(mine.registrationId);
+            setSuccess(true);
+            setError('');
+            return;
+          }
+        } catch {
+          // Fall through to the generic error below.
+        }
+      }
+      setError(apiErrorMessage(err, 'Registration failed after payment. Your payment is recorded — contact the organizer with your phone number.'));
+    },
+  });
+
+  const handlePaidComplete = (args: PaidRegistrationArgs) => {
+    setError('');
+    createPaidRegistration.mutate({ phone: args.phone, formData: args.formData, couponCode: args.couponCode });
+  };
 
   /* ── Loading state ───────────────────────────────────────────── */
   if (eventLoading || formLoading) {
@@ -304,9 +347,10 @@ export default function RegisterPage() {
               <RegistrationFlow
                 formStructure={formStructure}
                 onSubmit={handleFormSubmit}
-                isSubmitting={createRegistration.isPending}
+                isSubmitting={createRegistration.isPending || createPaidRegistration.isPending}
                 eventId={eventId!}
                 event={event}
+                onPaymentComplete={handlePaidComplete}
               />
             )}
 

@@ -1,5 +1,6 @@
 import client from '../../../app/api/client';
 import type {
+  CouponItem,
   EventItem,
   EventListResponse,
   EventPayload,
@@ -32,4 +33,22 @@ export const eventsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  removePosterRectangle: (id: number | string) =>
+    client.delete<{ message: string; posterRectangleUrl: string | null }>(`/storage/events/${id}/poster-rectangle`),
+  removePosterSquare: (id: number | string) =>
+    client.delete<{ message: string; posterSquareUrl: string | null }>(`/storage/events/${id}/poster-square`),
+};
+
+export const couponsApi = {
+  list: (eventId: string) => client.get<CouponItem[]>(`/events/${eventId}/coupons`),
+  create: (data: {
+    eventId: string;
+    code?: string;
+    discountType: 'PERCENTAGE' | 'FIXED';
+    discountValue: number;
+    isActive?: boolean;
+    usageLimit?: number;
+    startsAt?: string;
+    expiresAt?: string;
+  }) => client.post<CouponItem>('/coupons', data),
 };

@@ -7,6 +7,7 @@ import type {
   FormFieldDef,
   FormFieldType,
   FormSectionDef,
+  FormSettings,
   FormStructure,
   FormTheme,
 } from '../../../app/types';
@@ -46,6 +47,8 @@ export interface BuilderForm {
   sections: BuilderSection[];
   /** Optional visual theme (persisted on the stored formStructure). */
   theme?: FormTheme;
+  /** Optional form settings (persisted on the stored formStructure). */
+  settings?: FormSettings;
 }
 
 export interface RepeatCandidate {
@@ -274,6 +277,7 @@ export function toBuilderForm(formStructure: FormStructure | null | undefined): 
     description: formStructure?.description || '',
     sections: builderSections,
     theme: formStructure?.theme ? { ...formStructure.theme } : undefined,
+    settings: formStructure?.settings ? { ...formStructure.settings } : undefined,
   };
 }
 
@@ -383,6 +387,7 @@ export function toFormStructure(builder: BuilderForm): FormStructure {
     ...(builder.description?.trim() ? { description: builder.description.trim() } : {}),
     sections,
     ...(builder.theme && Object.keys(builder.theme).length > 0 ? { theme: { ...builder.theme } } : {}),
+    ...(builder.settings && Object.keys(builder.settings).length > 0 ? { settings: { ...builder.settings } } : {}),
   };
 }
 

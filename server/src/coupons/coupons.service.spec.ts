@@ -78,8 +78,10 @@ describe('CouponsService', () => {
     expect(mockCouponsRepo.createFull).toHaveBeenCalledWith(expect.objectContaining({ eventId: 'event1' }));
   });
 
-  it('should create coupon with expiry', async () => {
+  it('should create FIXED coupon from rupees (₹50 stored as 5000 paise)', async () => {
     mockPrisma.event.findUnique.mockResolvedValue({ id: 'event1' });
+    // Dynamic future expiry (fixed calendar dates rot as time passes).
+    const futureExpiry = new Date(Date.now() + 30 * 24 * 3600 * 1000);
     mockCouponsRepo.createFull.mockResolvedValue({
       id: 'c2',
       code: 'CD7654321',
@@ -87,15 +89,18 @@ describe('CouponsService', () => {
       discountType: CouponDiscountType.FIXED,
       discountValue: 5000,
       isUsed: false,
-      expiresAt: new Date('2025-12-31'),
+      expiresAt: futureExpiry,
     });
     const res = await service.create({
       eventId: 'event1',
       discountType: CouponDiscountType.FIXED,
-      discountValue: 5000,
-      expiresAt: '2025-12-31T23:59:59.000Z',
+      discountValue: 50,
+      expiresAt: futureExpiry.toISOString(),
     });
     expect(res.code).toBe('CD7654321');
+    // Stored paise, returned rupees.
+    expect(mockCouponsRepo.createFull).toHaveBeenCalledWith(expect.objectContaining({ discountValue: 5000 }));
+    expect(res.discountValue).toBe(50);
   });
 
   it('should validate coupon correctly for valid coupon', async () => {
@@ -242,7 +247,7 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
     mockPrisma.event.findUnique.mockResolvedValue(ownEvent);
     await expect(service.create(
       { eventId: 'event1', discountType: CouponDiscountType.FIXED, discountValue: 0 } as any, adminActor,
-    )).rejects.toThrow(/>= 1/);
+    )).rejects.toThrow(/greater than 0 rupees/);
   });
 
   it('expiresAt before startsAt is rejected', async () => {
@@ -251,6 +256,24 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       eventId: 'event1', discountType: CouponDiscountType.PERCENTAGE, discountValue: 10,
       startsAt: '2026-12-31T00:00:00.000Z', expiresAt: '2026-01-01T00:00:00.000Z',
     } as any, adminActor)).rejects.toThrow(/before startsAt/);
+  });
+
+  it('already-expired expiresAt is rejected at creation', async () => {
+    mockPrisma.event.findUnique.mockResolvedValue(ownEvent);
+    await expect(service.create({
+      eventId: 'event1', discountType: CouponDiscountType.PERCENTAGE, discountValue: 10,
+      expiresAt: new Date(Date.now() - 3600000).toISOString(),
+    } as any, adminActor)).rejects.toThrow(/must be in the future/);
+  });
+
+  it('future expiresAt is accepted at creation', async () => {
+    mockPrisma.event.findUnique.mockResolvedValue(ownEvent);
+    mockCouponsRepo.createFull.mockResolvedValue({ id: 'c9', code: 'FUTURE1', eventId: 'event1' });
+    const res = await service.create({
+      eventId: 'event1', discountType: CouponDiscountType.PERCENTAGE, discountValue: 10,
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    } as any, adminActor);
+    expect(res.code).toBe('FUTURE1');
   });
 
   it('lookup is case-insensitive (aiclub20 == AICLUB20)', async () => {
@@ -263,13 +286,13 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
     expect(res.code).toBe('AICLUB20');
   });
 
-  it('20% on Rs1000 quotes 100000 -> 20000 -> 80000', async () => {
+  it('20% on Rs1000 quotes 1000 -> 200 -> 800 (rupees in/out)', async () => {
     mockCouponsRepo.findByCode.mockResolvedValue({
       id: 'c1', code: 'CLUB20', eventId: 'event1', isActive: true, isUsed: false,
       discountType: CouponDiscountType.PERCENTAGE, discountValue: 20, expiresAt: null, startsAt: null, usageLimit: null, usedCount: 0,
     });
-    const q = await service.priceQuote('CLUB20', 'event1', 100000);
-    expect(q).toEqual({ originalAmount: 100000, discountAmount: 20000, totalAmount: 80000, coupon: { id: 'c1', code: 'CLUB20' } });
+    const q = await service.priceQuote('CLUB20', 'event1', 1000);
+    expect(q).toEqual({ originalAmount: 1000, discountAmount: 200, totalAmount: 800, coupon: { id: 'c1', code: 'CLUB20' } });
   });
 
   it('100% percentage zeroes the total without going negative', async () => {
@@ -277,7 +300,7 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       id: 'c1', code: 'FREE100', eventId: 'event1', isActive: true, isUsed: false,
       discountType: CouponDiscountType.PERCENTAGE, discountValue: 100, expiresAt: null, startsAt: null, usageLimit: null, usedCount: 0,
     });
-    const q = await service.priceQuote('FREE100', 'event1', 100000);
+    const q = await service.priceQuote('FREE100', 'event1', 1000);
     expect(q.totalAmount).toBe(0);
   });
 
@@ -286,9 +309,9 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       id: 'c1', code: 'BIGOFF', eventId: 'event1', isActive: true, isUsed: false,
       discountType: CouponDiscountType.FIXED, discountValue: 200000, expiresAt: null, startsAt: null, usageLimit: null, usedCount: 0,
     });
-    const q = await service.priceQuote('BIGOFF', 'event1', 100000);
+    const q = await service.priceQuote('BIGOFF', 'event1', 1000);
     expect(q.totalAmount).toBe(0);
-    expect(q.discountAmount).toBe(100000);
+    expect(q.discountAmount).toBe(1000);
   });
 
   it('coupon for another event is rejected', async () => {
@@ -296,7 +319,7 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       id: 'c1', code: 'CLUB20', eventId: 'event1', isActive: true, isUsed: false,
       discountType: CouponDiscountType.PERCENTAGE, discountValue: 20, expiresAt: null, startsAt: null, usageLimit: null, usedCount: 0,
     });
-    await expect(service.priceQuote('CLUB20', 'event2', 100000)).rejects.toThrow('Coupon not valid for this event');
+    await expect(service.priceQuote('CLUB20', 'event2', 1000)).rejects.toThrow('Coupon not valid for this event');
   });
 
   it('inactive coupon is rejected', async () => {
@@ -304,7 +327,7 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       id: 'c1', code: 'CLUB20', eventId: 'event1', isActive: false, isUsed: false,
       discountType: CouponDiscountType.PERCENTAGE, discountValue: 20, expiresAt: null, startsAt: null, usageLimit: null, usedCount: 0,
     });
-    await expect(service.priceQuote('CLUB20', 'event1', 100000)).rejects.toThrow('Coupon is inactive');
+    await expect(service.priceQuote('CLUB20', 'event1', 1000)).rejects.toThrow('Coupon is inactive');
   });
 
   it('coupon before startsAt is rejected', async () => {
@@ -313,7 +336,7 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       discountType: CouponDiscountType.PERCENTAGE, discountValue: 20, expiresAt: null,
       startsAt: new Date(Date.now() + 3600000), usageLimit: null, usedCount: 0,
     });
-    await expect(service.priceQuote('CLUB20', 'event1', 100000)).rejects.toThrow('not active yet');
+    await expect(service.priceQuote('CLUB20', 'event1', 1000)).rejects.toThrow('not active yet');
   });
 
   it('exhausted usage limit is rejected', async () => {
@@ -321,7 +344,7 @@ describe('CouponsService - organizer coupons & redemption rules', () => {
       id: 'c1', code: 'CLUB20', eventId: 'event1', isActive: true, isUsed: false,
       discountType: CouponDiscountType.PERCENTAGE, discountValue: 20, expiresAt: null, startsAt: null, usageLimit: 10, usedCount: 10,
     });
-    await expect(service.priceQuote('CLUB20', 'event1', 100000)).rejects.toThrow('usage limit reached');
+    await expect(service.priceQuote('CLUB20', 'event1', 1000)).rejects.toThrow('usage limit reached');
   });
 
   it('consumeAtomic increments usage atomically and rejects when exhausted', async () => {

@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
+import { ParseEventIdPipe as ParseEventIdPipeLegacy } from '../common/pipes/parse-event-id.pipe';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -9,7 +11,6 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/constants/roles';
 import { RequestUser } from '../common/types/jwt-payload';
-import { ParseEventIdPipe } from '../common/pipes/event-id.pipe';
 
 @ApiTags('events')
 @Controller('events')
@@ -87,7 +88,7 @@ export class EventsController {
   @Patch(':id')
   @Roles(Role.ORGANIZER)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Update own event (DRAFT/PREVIEW only)' })
+  @ApiOperation({ summary: 'Update own event (DRAFT/PREVIEW/PUBLISHED; status is preserved)' })
   @ApiParam({ name: 'id', type: String, description: 'Event UUID or legacy numeric ID' })
   @ApiBody({ type: UpdateEventDto })
   @ApiResponse({ status: 200, description: 'Updated' })

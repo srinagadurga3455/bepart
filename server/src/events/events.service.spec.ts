@@ -26,6 +26,13 @@ const mockCouponsRepo: any = {
   hasActiveCouponForEvent: jest.fn().mockResolvedValue(false),
 };
 
+// Dynamic future instants (fixed calendar dates rot as time passes and would
+// trip the must-be-in-the-future validation).
+const futureISO = (daysAhead: number): string =>
+  new Date(Date.now() + daysAhead * 24 * 3600 * 1000).toISOString();
+const FUTURE_DATE = futureISO(3);
+const FUTURE_CLOSING = futureISO(2);
+
 describe('EventsService - Updated Schema Int ID', () => {
   let service: EventsService;
 
@@ -52,33 +59,55 @@ describe('EventsService - Updated Schema Int ID', () => {
 
     it('should validate closingTime before date', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
-      await expect(service.create({ eventName: 'E', date: '2026-10-01T00:00:00Z', closingTime: '2026-10-02T00:00:00Z', slots: 10 } as any, 'user1')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.create({ eventName: 'E', date: FUTURE_CLOSING, closingTime: FUTURE_DATE, slots: 10 } as any, 'user1')).rejects.toThrow(/before the event starts/);
+    });
+
+    it('should reject a past event date', async () => {
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
+      await expect(service.create({
+        eventName: 'E',
+        date: new Date(Date.now() - 3600000).toISOString(),
+        closingTime: new Date(Date.now() - 7200000).toISOString(),
+        slots: 10,
+      } as any, 'user1')).rejects.toThrow(/must be in the future/);
+      expect(mockEventsRepo.createEvent).not.toHaveBeenCalled();
+    });
+
+    it('should reject a past registration deadline with a future event date', async () => {
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
+      await expect(service.create({
+        eventName: 'E',
+        date: FUTURE_DATE,
+        closingTime: new Date(Date.now() - 3600000).toISOString(),
+        slots: 10,
+      } as any, 'user1')).rejects.toThrow(/deadline must be in the future/);
+      expect(mockEventsRepo.createEvent).not.toHaveBeenCalled();
     });
 
     it('should create DRAFT event with new fields and int id', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       mockEventsRepo.createEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', status: EventStatus.DRAFT, eventName: 'E' });
-      const res = await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10 } as any, 'user1');
+      const res = await service.create({ eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10 } as any, 'user1');
       expect(res.status).toBe(EventStatus.DRAFT);
       expect(res.id).toBe('550e8400-e29b-41d4-a716-446655440000');
     });
 
     it('should reject slots <1', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
-      await expect(service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 0 } as any, 'user1')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.create({ eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 0 } as any, 'user1')).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('should default paymentRequired to false when not provided', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       mockEventsRepo.createEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440001', status: EventStatus.DRAFT, eventName: 'E', paymentRequired: false });
-      await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10 } as any, 'user1');
+      await service.create({ eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10 } as any, 'user1');
       expect(mockEventsRepo.createEvent).toHaveBeenCalledWith(expect.objectContaining({ paymentRequired: undefined }));
     });
 
     it('should create with paymentRequired true when provided', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       mockEventsRepo.createEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440002', status: EventStatus.DRAFT, eventName: 'E', paymentRequired: true });
-      const res = await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10, paymentRequired: true } as any, 'user1');
+      const res = await service.create({ eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10, paymentRequired: true } as any, 'user1');
       expect(res.paymentRequired).toBe(true);
       expect(mockEventsRepo.createEvent).toHaveBeenCalledWith(expect.objectContaining({ paymentRequired: true }));
     });
@@ -86,7 +115,7 @@ describe('EventsService - Updated Schema Int ID', () => {
     it('should create with paymentRequired false explicitly', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       mockEventsRepo.createEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440003', status: EventStatus.DRAFT, eventName: 'E', paymentRequired: false });
-      const res = await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10, paymentRequired: false } as any, 'user1');
+      const res = await service.create({ eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10, paymentRequired: false } as any, 'user1');
       expect(res.paymentRequired).toBe(false);
       expect(mockEventsRepo.createEvent).toHaveBeenCalledWith(expect.objectContaining({ paymentRequired: false }));
     });
@@ -94,7 +123,7 @@ describe('EventsService - Updated Schema Int ID', () => {
     it('should create event without coupon (NO) and no coupon row', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       mockEventsRepo.createEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440010', status: EventStatus.DRAFT });
-      const res: any = await service.create({ eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10, coupon: { enabled: false } } as any, 'user1');
+      const res: any = await service.create({ eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10, coupon: { enabled: false } } as any, 'user1');
       expect(res.hasCoupon).toBe(false);
       expect(res.coupon).toBeNull();
       expect(mockCouponsService.create).not.toHaveBeenCalled();
@@ -105,7 +134,7 @@ describe('EventsService - Updated Schema Int ID', () => {
       mockEventsRepo.createEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440011', status: EventStatus.DRAFT });
       mockCouponsService.create.mockResolvedValue({ id: 'c1', code: 'PV7K2M9XQ4T8D', eventId: '550e8400-e29b-41d4-a716-446655440011' });
       const res: any = await service.create({
-        eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10,
+        eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10,
         coupon: { enabled: true, discountType: 'PERCENTAGE', discountValue: 20 },
       } as any, 'user1', 'ORGANIZER');
       expect(mockCouponsService.create).toHaveBeenCalledWith(
@@ -119,7 +148,7 @@ describe('EventsService - Updated Schema Int ID', () => {
     it('should reject coupon.enabled=true without discount config (no orphan event)', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       await expect(service.create({
-        eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10,
+        eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10,
         coupon: { enabled: true },
       } as any, 'user1')).rejects.toBeInstanceOf(BadRequestException);
       expect(mockEventsRepo.createEvent).not.toHaveBeenCalled();
@@ -128,7 +157,7 @@ describe('EventsService - Updated Schema Int ID', () => {
     it('should reject invalid percentage (>100) before creating the event', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       await expect(service.create({
-        eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10,
+        eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10,
         coupon: { enabled: true, discountType: 'PERCENTAGE', discountValue: 150 },
       } as any, 'user1')).rejects.toThrow(/between 1 and 100/);
       expect(mockEventsRepo.createEvent).not.toHaveBeenCalled();
@@ -137,7 +166,7 @@ describe('EventsService - Updated Schema Int ID', () => {
     it('should reject zero discount before creating the event', async () => {
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', status: 'APPROVED' });
       await expect(service.create({
-        eventName: 'E', date: '2026-10-02T10:00:00Z', closingTime: '2026-10-01T10:00:00Z', slots: 10,
+        eventName: 'E', date: FUTURE_DATE, closingTime: FUTURE_CLOSING, slots: 10,
         coupon: { enabled: true, discountType: 'FIXED', discountValue: 0 },
       } as any, 'user1')).rejects.toThrow(BadRequestException);
       expect(mockEventsRepo.createEvent).not.toHaveBeenCalled();
@@ -173,14 +202,33 @@ describe('EventsService - Updated Schema Int ID', () => {
       await expect(service.update('550e8400-e29b-41d4-a716-446655440000', { eventName: 'New' } as any, 'user2')).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('should reject update on PUBLISHED event', async () => {
-      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.PUBLISHED, date: new Date(), closingTime: new Date(Date.now() - 1000000) });
+    it('should allow the owning organizer to update a PUBLISHED event without changing status', async () => {
+      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.PUBLISHED, date: new Date(Date.now() + 3 * 86400000), closingTime: new Date(Date.now() + 2 * 86400000) });
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
-      await expect(service.update('550e8400-e29b-41d4-a716-446655440000', { eventName: 'New' } as any, 'user1')).rejects.toBeInstanceOf(ForbiddenException);
+      mockEventsRepo.updateEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', eventName: 'New', status: EventStatus.PUBLISHED });
+      const res = await service.update('550e8400-e29b-41d4-a716-446655440000', { eventName: 'New' } as any, 'user1');
+      expect(res.eventName).toBe('New');
+      expect(res.status).toBe(EventStatus.PUBLISHED);
+      expect(mockEventsRepo.updateEvent).toHaveBeenCalledWith(
+        '550e8400-e29b-41d4-a716-446655440000',
+        expect.objectContaining({ eventName: 'New' }),
+      );
+      // Status is never part of the update payload.
+      expect(mockEventsRepo.updateEvent).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ status: expect.anything() }),
+      );
+    });
+
+    it('should still reject update on PUBLISHED event by a non-owner', async () => {
+      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.PUBLISHED, date: new Date(Date.now() + 3 * 86400000), closingTime: new Date(Date.now() + 2 * 86400000) });
+      mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org2' });
+      await expect(service.update('550e8400-e29b-41d4-a716-446655440000', { eventName: 'New' } as any, 'user2')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockEventsRepo.updateEvent).not.toHaveBeenCalled();
     });
 
     it('should allow updating paymentRequired on DRAFT event', async () => {
-      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.DRAFT, date: new Date('2026-10-02T10:00:00Z'), closingTime: new Date('2026-10-01T10:00:00Z') });
+      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.DRAFT, date: new Date(Date.now() + 3 * 86400000), closingTime: new Date(Date.now() + 2 * 86400000) });
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
       mockEventsRepo.updateEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', paymentRequired: true });
       const res = await service.update('550e8400-e29b-41d4-a716-446655440000', { paymentRequired: true } as any, 'user1');
@@ -189,7 +237,7 @@ describe('EventsService - Updated Schema Int ID', () => {
     });
 
     it('should allow updating paymentRequired to false', async () => {
-      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.DRAFT, date: new Date('2026-10-02T10:00:00Z'), closingTime: new Date('2026-10-01T10:00:00Z') });
+      mockEventsRepo.findEventById.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', organizerId: 'org1', status: EventStatus.DRAFT, date: new Date(Date.now() + 3 * 86400000), closingTime: new Date(Date.now() + 2 * 86400000) });
       mockEventsRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1' });
       mockEventsRepo.updateEvent.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440000', paymentRequired: false });
       const res = await service.update('550e8400-e29b-41d4-a716-446655440000', { paymentRequired: false } as any, 'user1');

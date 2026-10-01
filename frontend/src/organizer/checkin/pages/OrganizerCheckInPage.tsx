@@ -1,89 +1,100 @@
 import { useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, Tab, Tabs, TextField, Typography,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { CheckCircleOutlined, ErrorOutlined, QrCodeScannerOutlined } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import OrganizerShell from '../../components/OrganizerShell';
 import QrScanner from '../components/QrScanner';
-import { checkinApi } from '../api/checkin';
-import { apiErrorMessage } from '../../../app/api/client';
+import { checkinApi, checkinErrorMessage, type CheckInSuccess, type TicketValidation } from '../api/checkin';
 import { formatEventDate } from '../../../app/utils/format';
-import type { CheckInResult } from '../../../app/types';
 import { orgCardSx, orgPrimaryButtonSx, orgSectionTitleSx } from '../../components/organizerStyles';
 import { registrantName } from '../../../app/utils/registrations';
 
-// Extract a bare registration id from pasted input: accepts a raw UUID or a
-// full ticket URL (the QR encodes the canonical /ticket/:id URL).
+// Accepts a raw ticket code/token, a full ticket URL, or a legacy
+// /ticket/:registrationId URL (the QR encodes the canonical ticket URL).
 export function extractTicketId(input: string): string {
   const clean = input.trim();
-  if (!clean) return '';
-  const m = /\/ticket\/([A-Za-z0-9-]+)\/?(?:\?.*)?$/.exec(clean);
-  if (m?.[1]) return m[1];
   return clean;
 }
+
+type Phase = 'input' | 'validating' | 'confirm' | 'checking' | 'done';
 
 function CheckInContent() {
   const { enqueueSnackbar } = useSnackbar();
   const [mode, setMode] = useState<'camera' | 'manual'>('camera');
   const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<Phase>('input');
   const [error, setError] = useState('');
-  const [result, setResult] = useState<CheckInResult | null>(null);
+  const [validation, setValidation] = useState<TicketValidation | null>(null);
+  const [result, setResult] = useState<CheckInSuccess | null>(null);
+  const busy = phase === 'validating' || phase === 'checking';
 
-  const checkInById = async (ticketId: string) => {
+  const reset = (keepInput = false) => {
+    setPhase('input');
     setError('');
+    setValidation(null);
     setResult(null);
-    setBusy(true);
+    if (!keepInput) setInput('');
+  };
+
+  const validate = async (raw: string) => {
+    const ticket = raw.trim();
+    if (!ticket) {
+      setError('Enter a ticket code, or paste the ticket URL.');
+      return;
+    }
+    setError('');
+    setValidation(null);
+    setResult(null);
+    setPhase('validating');
     try {
-      const res = await checkinApi.checkIn(ticketId);
-      setResult(res.data);
-      if (res.data.alreadyCheckedIn) {
-        enqueueSnackbar(`Already checked in${res.data.checkedInAt ? ` at ${formatEventDate(res.data.checkedInAt)}` : ''}.`, { variant: 'warning' });
-      } else {
-        enqueueSnackbar('Check-in successful.', { variant: 'success' });
-      }
+      const res = await checkinApi.validate(ticket);
+      setValidation(res.data);
+      setPhase('confirm');
     } catch (err) {
-      const msg = apiErrorMessage(err, 'Ticket not recognized. Check the code and try again.');
+      setPhase('input');
+      const msg = checkinErrorMessage(err);
       setError(msg);
       enqueueSnackbar(msg, { variant: 'error' });
-    } finally {
-      setBusy(false);
     }
   };
 
-  const scan = async () => {
-    const ticketId = extractTicketId(input);
-    if (!ticketId) { setError('Enter a ticket ID or paste the ticket URL.'); return; }
-    await checkInById(ticketId);
+  const confirmCheckIn = async () => {
+    if (!validation) return;
+    setError('');
+    setPhase('checking');
+    try {
+      const res = await checkinApi.checkInTicket(validation.ticket.code);
+      setResult(res.data);
+      setPhase('done');
+      enqueueSnackbar('Check-in successful.', { variant: 'success' });
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const msg = checkinErrorMessage(err);
+      setError(msg);
+      enqueueSnackbar(msg, { variant: status === 409 ? 'warning' : 'error' });
+      setPhase('confirm');
+    }
   };
 
   const handleCameraScan = async (raw: string) => {
-    const ticketId = extractTicketId(raw);
-    if (!ticketId) {
+    if (busy) return;
+    if (!raw.trim()) {
       const msg = 'Ticket not recognized — the QR did not contain a BePart ticket.';
       setError(msg);
       enqueueSnackbar(msg, { variant: 'error' });
       return;
     }
-    setInput(raw);
-    await checkInById(ticketId);
+    setInput(raw.trim());
+    await validate(raw);
   };
 
-  const undo = async () => {
-    const ticketId = result?.registrationId || extractTicketId(input);
-    if (!ticketId) return;
-    setBusy(true);
-    try {
-      const res = await checkinApi.undo(ticketId);
-      setResult(res.data);
-      enqueueSnackbar('Check-in reverted.', { variant: 'success' });
-    } catch (err) {
-      enqueueSnackbar(apiErrorMessage(err, 'Could not revert check-in.'), { variant: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const participant = validation
+    ? validation.registration.participantName !== '—'
+      ? validation.registration.participantName
+      : registrantName(validation.registration.formData as never)
+    : '—';
 
   return (
     <Box>
@@ -91,8 +102,8 @@ function CheckInContent() {
         <CardContent sx={{ p: { xs: 2, md: 3 } }}>
           <Typography sx={{ ...orgSectionTitleSx }} gutterBottom>Check-in Scanner</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Open the event, scan the QR on the participant&apos;s ticket, and BePart verifies
-            it instantly. Only tickets for your own events can be checked in.
+            Scan the QR on the participant&apos;s ticket (or enter the code manually), verify the
+            details, then confirm. Only tickets for your own events can be checked in.
           </Typography>
           {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
           <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ mb: 2 }}>
@@ -104,58 +115,106 @@ function CheckInContent() {
           ) : (
             <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
               <TextField
-                label="Ticket ID or ticket URL"
-                placeholder="Paste scanned ticket link or ID"
+                label="Ticket code or ticket URL"
+                placeholder="Paste ticket link, code, or token"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') scan(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') validate(input); }}
                 fullWidth
                 size="small"
+                disabled={busy}
                 sx={{ flex: '1 1 280px', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
               />
-              <Button variant="contained" startIcon={<QrCodeScannerOutlined />} onClick={scan} disabled={busy}
+              <Button variant="contained" startIcon={busy ? undefined : <QrCodeScannerOutlined />} onClick={() => validate(input)} disabled={busy}
                 sx={{ ...orgPrimaryButtonSx }}>
-                {busy ? 'Checking…' : 'Check In'}
+                {busy ? 'Validating…' : 'Validate'}
               </Button>
             </Box>
           )}
         </CardContent>
       </Card>
 
-      {result && (
+      {phase === 'validating' && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, my: 2 }}>
+          <CircularProgress size={22} />
+          <Typography variant="body2" color="text.secondary">Validating ticket…</Typography>
+        </Box>
+      )}
+
+      {validation && (phase === 'confirm' || phase === 'checking') && (
         <Card
           variant="outlined"
-          sx={{
-            ...orgCardSx,
-            borderColor: result.alreadyCheckedIn ? '#F59E0B' : '#16A34A',
-            borderWidth: 2,
-          }}
+          sx={{ ...orgCardSx, borderColor: validation.checkedIn ? '#F59E0B' : '#16A34A', borderWidth: 2 }}
         >
           <CardContent sx={{ p: { xs: 2, md: 3 } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
-              {result.alreadyCheckedIn ? (
+              {validation.checkedIn ? (
                 <ErrorOutlined sx={{ color: '#F59E0B', fontSize: 32 }} />
               ) : (
                 <CheckCircleOutlined sx={{ color: '#16A34A', fontSize: 32 }} />
               )}
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                  {result.alreadyCheckedIn ? 'Already checked in' : 'Check-in successful'}
+                  {validation.checkedIn ? 'Already checked in' : 'Valid ticket — confirm check-in'}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {result.event?.eventName || 'Event ticket'}
+                  {validation.event?.eventName || 'Event ticket'}
                 </Typography>
               </Box>
               <Chip
-                label={result.alreadyCheckedIn ? 'Duplicate scan' : 'Valid ticket'}
-                color={result.alreadyCheckedIn ? 'warning' : 'success'}
+                label={validation.checkedIn ? 'Duplicate scan' : validation.ticket.status}
+                color={validation.checkedIn ? 'warning' : 'success'}
                 sx={{ ml: 'auto' }}
               />
             </Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {[
-                ['Participant', registrantName(result.formData)],
-                ['Phone', result.phone || '—'],
+                ['Participant', participant],
+                ['Phone', validation.registration.phone || '—'],
+                ['Ticket ID', validation.ticket.code],
+                ['Payment', validation.registration.paymentStatus || '—'],
+                ...(validation.checkedIn && validation.ticket.checkedInAt
+                  ? [['Checked in at', formatEventDate(validation.ticket.checkedInAt)] as [string, string]]
+                  : []),
+              ].map(([k, v]) => (
+                <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                  <Typography variant="body2" color="text.secondary">{k}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right', overflowWrap: 'anywhere' }}>{v}</Typography>
+                </Box>
+              ))}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1.5, mt: 2.5, flexWrap: 'wrap' }}>
+              {!validation.checkedIn && (
+                <Button variant="contained" color="success" onClick={confirmCheckIn} disabled={busy}
+                  sx={{ ...orgPrimaryButtonSx, boxShadow: 'none' }}>
+                  {phase === 'checking' ? 'Checking in…' : 'Confirm Check In'}
+                </Button>
+              )}
+              <Button variant="outlined" onClick={() => reset()} disabled={busy}>
+                Scan next ticket
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
+
+      {result && phase === 'done' && (
+        <Card variant="outlined" sx={{ ...orgCardSx, borderColor: '#16A34A', borderWidth: 2, mt: 2 }}>
+          <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+              <CheckCircleOutlined sx={{ color: '#16A34A', fontSize: 32 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>Check-in successful</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {result.event?.eventName || 'Event ticket'}
+                </Typography>
+              </Box>
+              <Chip label="CHECKED IN" color="success" sx={{ ml: 'auto' }} />
+            </Box>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {[
+                ['Participant', result.participantName || '—'],
+                ['Ticket ID', result.ticketId || '—'],
                 ['Checked in at', result.checkedInAt ? formatEventDate(result.checkedInAt) : '—'],
               ].map(([k, v]) => (
                 <Box key={k} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
@@ -164,11 +223,8 @@ function CheckInContent() {
                 </Box>
               ))}
             </Box>
-            <Box sx={{ display: 'flex', gap: 1.5, mt: 2.5, flexWrap: 'wrap' }}>
-              <Button variant="outlined" color="warning" onClick={undo} disabled={busy}>
-                Revert check-in
-              </Button>
-              <Button variant="outlined" onClick={() => { setResult(null); setInput(''); }}>
+            <Box sx={{ display: 'flex', gap: 1.5, mt: 2.5 }}>
+              <Button variant="outlined" onClick={() => reset()}>
                 Scan next ticket
               </Button>
             </Box>

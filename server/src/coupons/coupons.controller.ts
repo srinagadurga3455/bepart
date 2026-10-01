@@ -30,7 +30,7 @@ export class CouponsController {
   @Roles(Role.STUDENT, Role.ORGANIZER, Role.ADMIN)
   @ApiOperation({
     summary: 'Preview coupon price (no persistence)',
-    description: 'Validates the code for the event and returns backend-calculated original/discount/total (paise). Used before payment.',
+    description: 'Validates the code for the event and returns backend-calculated original/discount/total (rupees). Used before payment.',
   })
   @ApiBody({ type: ValidateCouponDto })
   @ApiResponse({ status: 200, description: 'Price quote { originalAmount, discountAmount, totalAmount, coupon }' })

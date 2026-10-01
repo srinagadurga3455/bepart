@@ -4,12 +4,14 @@ export interface PendingPayment {
   id: string;
   phone: string;
   eventId: string;
+  // All amounts are RUPEES (backend converts to paise for Razorpay/storage).
   amount: number;
   originalAmount?: number | null;
   discountAmount?: number | null;
   couponCode?: string | null;
   status: string;
   couponId?: string | null;
+  // Present when Razorpay is configured; absent means offline/organizer flow.
   razorpayOrderId?: string | null;
   razorpayKeyId?: string | null;
   createdAt: string;
@@ -18,6 +20,7 @@ export interface PendingPayment {
 export interface InitPaymentPayload {
   eventId: string;
   phone: string;
+  // RUPEES (e.g. 500 = ₹500). Never paise.
   amount: number;
   couponCode?: string;
   formData?: Record<string, unknown>;
@@ -31,8 +34,10 @@ export interface VerifyPaymentPayload {
 
 export interface VerifyPaymentResult {
   success: boolean;
-  paymentId: string;
   alreadyPaid?: boolean;
+  paymentId?: string;
+  orderId?: string;
+  paymentIdRazorpay?: string;
 }
 
 export const participantPaymentsApi = {

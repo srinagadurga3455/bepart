@@ -5,6 +5,8 @@ import {
   Logger,
   HttpException,
   HttpStatus,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -18,6 +20,7 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService, NotificationTypes } from '../notifications/notifications.service';
 import { NotificationChannel } from '@prisma/client';
+import { MailerService } from '../mailer/mailer.service';
 import { Role as PrismaRole } from '@prisma/client';
 import { Role } from '../common/constants/roles';
 import { normalizePhone } from '../common/utils/phone';
@@ -36,6 +39,7 @@ export class AuthService {
     private readonly whatsappService: WhatsappService,
     private readonly emailService: EmailService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly mailerService?: MailerService,
   ) {}
 
   private sanitizeUser(user: any) {
@@ -131,12 +135,35 @@ export class AuthService {
       expiresAt,
     });
 
-    // Real delivery: email identifiers via Amazon SES, phone via WhatsApp.
-    // The OTP is never returned in the API response. In non-production the
-    // OTP is also logged so testing can proceed without provider credentials;
-    // production never logs it.
-    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    // OTP delivery keeps BOTH channels:
+    // - email identifiers go through Gmail/SMTP (mailer) and Amazon SES
+    //   (emailService via notifications); OTP generation/hashing/expiry/
+    //   attempts/single-use stay in the OtpVerification table — never an
+    //   in-memory store. The OTP is never returned in the API response and
+    //   never logged in production.
+    // - phone identifiers keep the WhatsApp path (text message + mock sendOtp).
+    // In non-production the OTP is ALWAYS printed to the server console so
+    // testing can proceed without checking provider inboxes.
+    const isProd = (this.config.get<string>('NODE_ENV', 'development') || 'development') === 'production';
+    if (!isProd) {
+      const roleLabel = user.role;
+      console.log(`[OTP] ${roleLabel} ${identifier} -> ${otp}`);
+      this.logger.log(`[OTP] ${roleLabel} ${identifier} dispatched (see server console in development)`);
+    } else {
+      this.logger.log(`OTP dispatched for ${user.role} ${identifier} (value hidden)`);
+    }
     if (isEmail) {
+      if (!this.mailerService) {
+        throw new ServiceUnavailableException('Email OTP delivery is not available');
+      }
+      try {
+        await this.mailerService.sendOtpEmail(identifier, otp, {
+          expiryMinutes: this.OTP_EXPIRY_MINUTES,
+        });
+      } catch (e) {
+        this.logger.warn(`Email OTP delivery failed for ${identifier}: ${(e as Error)?.message}`);
+        throw new ServiceUnavailableException('Failed to send OTP email. Please try again.');
+      }
       await this.notifications.sendOnce({
         type: NotificationTypes.OTP_EMAIL,
         channel: NotificationChannel.EMAIL,
@@ -146,19 +173,22 @@ export class AuthService {
       if (!this.emailService.isConfigured() && !isProd) {
         console.log(`[OTP] ${user.role} ${identifier} -> ${otp}`);
       }
-    } else {
-      await this.notifications.sendOnce({
-        type: NotificationTypes.OTP_WHATSAPP,
-        channel: NotificationChannel.WHATSAPP,
-        recipient: identifier,
-        sender: () => this.whatsappService.sendTextMessage(
-          identifier,
-          `Your BePart verification code is: ${otp}. It expires in ${this.OTP_EXPIRY_MINUTES} minutes.`,
-        ),
-      });
-      if (!this.whatsappService.isConfigured() && !isProd) {
-        console.log(`[OTP] ${user.role} ${identifier} -> ${otp}`);
-      }
+      return { message: 'OTP sent to your email. It expires in 5 minutes.', expiresAt };
+    }
+
+    await this.notifications.sendOnce({
+      type: NotificationTypes.OTP_WHATSAPP,
+      channel: NotificationChannel.WHATSAPP,
+      recipient: identifier,
+      sender: () => this.whatsappService.sendTextMessage(
+        identifier,
+        `Your BePart verification code is: ${otp}. It expires in ${this.OTP_EXPIRY_MINUTES} minutes.`,
+      ),
+    });
+    // Mock WhatsApp delivery (phone path unchanged)
+    await this.whatsappService.sendOtp(identifier, otp);
+    if (!this.whatsappService.isConfigured() && !isProd) {
+      console.log(`[OTP] ${user.role} ${identifier} -> ${otp}`);
     }
 
     return { message: 'OTP sent. It expires in 5 minutes.', expiresAt };

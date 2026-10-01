@@ -25,6 +25,13 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     consumeAtomic: jest.fn().mockImplementation(async (tx: any, couponId: string) => ({ id: couponId })),
   };
 
+  const mockTicketsService: any = {
+    issueTicketTx: jest.fn().mockImplementation(async (tx: any, registrationId: string, eventId: string) =>
+      tx.ticket.create({ data: { registrationId, eventId } }),
+    ),
+    findTicketForRegistration: jest.fn().mockResolvedValue(null),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockTx = {
@@ -33,6 +40,7 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
       payment: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
       coupon: { findUnique: jest.fn() },
       user: { findFirst: jest.fn() },
+      ticket: { create: jest.fn().mockImplementation(async (args: any) => ({ id: 'tick1', code: 'code1', status: 'VALID', ticketUrl: 'http://x/ticket/code1', ...args?.data })) },
     };
     mockRegistrationsRepo.findByRegistrationId = jest.fn();
     mockRegistrationsRepo.findOrganizerByUserId = jest.fn();
@@ -44,6 +52,7 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
         RegistrationsService,
         { provide: RegistrationsRepository, useValue: mockRegistrationsRepo },
         { provide: require('../coupons/coupons.service').CouponsService, useValue: mockCouponsService },
+        { provide: require('../tickets/tickets.service').TicketsService, useValue: mockTicketsService },
       ],
     }).compile();
     service = mod.get(RegistrationsService);
@@ -91,6 +100,41 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     expect(mockTx.payment.create).not.toHaveBeenCalled();
     expect(mockTx.registration.create).toHaveBeenCalled();
     expect(res.registrationId).toBe('rFree');
+  });
+
+  it('should create registration when optional fields arrive blank (real form payload)', async () => {
+    mockTx.event.findUnique.mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      status: 'PUBLISHED',
+      slots: 10,
+      closingTime: new Date(Date.now() + 1000000),
+      paymentRequired: false,
+      formStructure: {
+        title: 'Reg',
+        sections: [{
+          id: 's1',
+          title: 'Details',
+          fields: [
+            { name: 'fullName', label: 'Full Name', type: 'text', required: true },
+            { name: 'phone', label: 'Phone Number', type: 'tel', required: true },
+            { name: 'email', label: 'Email Address', type: 'email', required: false },
+            { name: 'branch', label: 'Branch', type: 'dropdown', options: ['CSE', 'ECE'], required: false },
+          ],
+        }],
+      },
+    });
+    mockTx.registration.count.mockResolvedValue(0);
+    mockTx.registration.findFirst.mockResolvedValue(null);
+    mockTx.registration.create.mockResolvedValue({ registrationId: 'rBlank', phone: '9876543210', eventId: '550e8400-e29b-41d4-a716-446655440000' });
+    const res = await service.create({
+      phone: '+919876543210',
+      eventId: '550e8400-e29b-41d4-a716-446655440000',
+      formData: { fullName: 'Asha', phone: '+919876543210', email: '', branch: '' },
+    } as any);
+    expect(mockTx.registration.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ eventId: '550e8400-e29b-41d4-a716-446655440000', phone: '9876543210' }),
+    }));
+    expect(res.registrationId).toBe('rBlank');
   });
 
   it('should normalize phone variations to same canonical value', async () => {
@@ -169,7 +213,7 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     mockTx.event.findUnique.mockResolvedValue({ id: '550e8400-e29b-41d4-a716-446655440020', status: 'PUBLISHED', slots: 10, closingTime: new Date(Date.now() + 1000000), paymentRequired: true });
     mockTx.registration.count.mockResolvedValue(0);
     mockTx.registration.findFirst.mockResolvedValue({ registrationId: 'rExist' });
-    await expect(service.create({ phone: '+91 9999999999', eventId: '550e8400-e29b-41d4-a716-446655440020', formData: {}, amount: 50000 } as any)).rejects.toThrow(ConflictException);
+    await expect(service.create({ phone: '+91 9999999999', eventId: '550e8400-e29b-41d4-a716-446655440020', formData: {}, amount: 500 } as any)).rejects.toThrow(ConflictException);
   });
 
   it('should restrict student to own phone', async () => {
@@ -185,7 +229,7 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     await expect(service.findOne('r1', 'user1', 'ORGANIZER')).rejects.toThrow(ForbiddenException);
   });
 
-  it('should snapshot coupon pricing from the PAID payment (100000 -> 80000 with CLUB20)', async () => {
+  it('should snapshot coupon pricing from the PAID payment (Rs1000 -> Rs800 with CLUB20)', async () => {
     const eventId = '550e8400-e29b-41d4-a716-446655440030';
     mockTx.event.findUnique.mockResolvedValue({ id: eventId, status: 'PUBLISHED', slots: 10, closingTime: new Date(Date.now() + 1000000), paymentRequired: true });
     mockTx.registration.count.mockResolvedValue(0);
@@ -204,7 +248,8 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
     expect(mockTx.registration.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ couponCode: 'CLUB20', originalAmount: 100000, discountAmount: 20000, totalAmount: 80000 }),
     }));
-    expect(res.pricing).toEqual({ originalAmount: 100000, discountAmount: 20000, totalAmount: 80000, coupon: { code: 'CLUB20' } });
+    // Stored paise, API pricing in rupees.
+    expect(res.pricing).toEqual({ originalAmount: 1000, discountAmount: 200, totalAmount: 800, coupon: { code: 'CLUB20' } });
   });
 
   it('should reject when requested coupon does not match the payment coupon (no silent full price)', async () => {
@@ -239,14 +284,21 @@ describe('RegistrationsService - Updated Schema Int EventId', () => {
   });
 });
 
-describe('RegistrationsService - QR check-in', () => {
+// The legacy /registrations/:id/check-in surface now delegates to
+// TicketsService (single check-in implementation). These tests assert the
+// delegation + response shape; ticket rules are covered in tickets.service.spec.ts.
+describe('RegistrationsService - legacy check-in delegation', () => {
   let service: RegistrationsService;
   const mockRepo: any = {
     findByRegistrationId: jest.fn(),
     findOrganizerByUserId: jest.fn(),
     findEventById: jest.fn(),
-    markCheckedIn: jest.fn(),
-    clearCheckedIn: jest.fn(),
+    deleteByRegistrationId: jest.fn(),
+  };
+  const mockTicketsService: any = {
+    checkIn: jest.fn(),
+    undoCheckIn: jest.fn(),
+    cancelForRegistration: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -256,58 +308,50 @@ describe('RegistrationsService - QR check-in', () => {
         RegistrationsService,
         { provide: RegistrationsRepository, useValue: mockRepo },
         { provide: require('../coupons/coupons.service').CouponsService, useValue: {} },
+        { provide: require('../tickets/tickets.service').TicketsService, useValue: mockTicketsService },
       ],
     }).compile();
     service = mod.get(RegistrationsService);
   });
 
-  const ownEvent = { id: 'ev1', organizerId: 'org1' };
-
-  it('should check in a valid ticket for the owning organizer', async () => {
-    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: null });
-    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'u1' });
-    mockRepo.findEventById.mockResolvedValue(ownEvent);
-    mockRepo.markCheckedIn.mockResolvedValue({ registrationId: 'r1', checkedInAt: new Date() });
-    const res: any = await service.checkIn('r1', 'u1', 'ORGANIZER');
-    expect(mockRepo.markCheckedIn).toHaveBeenCalledWith('r1');
-    expect(res.alreadyCheckedIn).toBe(false);
-    expect(res.checkedInAt).toBeDefined();
-  });
-
-  it('should report already-checked-in tickets without double check-in', async () => {
+  it('should delegate check-in to the ticket service', async () => {
     const at = new Date();
-    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: at });
-    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'u1' });
-    mockRepo.findEventById.mockResolvedValue(ownEvent);
+    mockTicketsService.checkIn.mockResolvedValue({
+      ticketId: 'code-1',
+      participantName: 'Asha',
+      phone: '9999999999',
+      event: { id: 'ev1', eventName: 'Tech Fest', date: at },
+      checkedInAt: at,
+      status: 'CHECKED_IN',
+    });
     const res: any = await service.checkIn('r1', 'u1', 'ORGANIZER');
-    expect(mockRepo.markCheckedIn).not.toHaveBeenCalled();
-    expect(res.alreadyCheckedIn).toBe(true);
-    expect(res.checkedInAt).toEqual(at);
-  });
-
-  it('should 404 on unknown ticket id', async () => {
-    mockRepo.findByRegistrationId.mockResolvedValue(null);
-    const { NotFoundException } = require('@nestjs/common');
-    await expect(service.checkIn('missing', 'u1', 'ORGANIZER')).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('should 403 when another organizer scans the ticket', async () => {
-    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: null });
-    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org2', userId: 'u2' });
-    mockRepo.findEventById.mockResolvedValue(ownEvent);
-    await expect(service.checkIn('r1', 'u2', 'ORGANIZER')).rejects.toBeInstanceOf(ForbiddenException);
-    expect(mockRepo.markCheckedIn).not.toHaveBeenCalled();
-  });
-
-  it('should allow ADMIN to check in any ticket and to revert check-in', async () => {
-    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', checkedInAt: null });
-    mockRepo.markCheckedIn.mockResolvedValue({ registrationId: 'r1', checkedInAt: new Date() });
-    const res: any = await service.checkIn('r1', 'admin1', 'ADMIN');
+    expect(mockTicketsService.checkIn).toHaveBeenCalledWith('r1', { userId: 'u1', role: 'ORGANIZER' });
     expect(res.alreadyCheckedIn).toBe(false);
-    mockRepo.clearCheckedIn.mockResolvedValue({ registrationId: 'r1', checkedInAt: null });
+    expect(res.checkedInAt).toEqual(at);
+    expect(res.event?.eventName).toBe('Tech Fest');
+  });
+
+  it('should propagate duplicate-scan 409 from the ticket service', async () => {
+    const { ConflictException } = require('@nestjs/common');
+    mockTicketsService.checkIn.mockRejectedValue(new ConflictException('Ticket already checked in'));
+    await expect(service.checkIn('r1', 'u1', 'ORGANIZER')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('should delegate check-in revert to the ticket service', async () => {
+    mockTicketsService.undoCheckIn.mockResolvedValue({ ticketId: 'code-1', checkedInAt: null, status: 'VALID' });
     const undone: any = await service.undoCheckIn('r1', 'admin1', 'ADMIN');
-    expect(mockRepo.clearCheckedIn).toHaveBeenCalledWith('r1');
+    expect(mockTicketsService.undoCheckIn).toHaveBeenCalledWith('r1', { userId: 'admin1', role: 'ADMIN' });
     expect(undone.checkedInAt).toBeNull();
+  });
+
+  it('should cancel the ticket before deleting a cancelled registration', async () => {
+    mockRepo.findByRegistrationId.mockResolvedValue({ registrationId: 'r1', eventId: 'ev1', phone: '9999999999' });
+    mockRepo.findOrganizerByUserId.mockResolvedValue({ id: 'org1', userId: 'u1' });
+    mockRepo.findEventById.mockResolvedValue({ id: 'ev1', organizerId: 'org1' });
+    const res: any = await service.cancel('r1', 'u1', 'ORGANIZER');
+    expect(mockTicketsService.cancelForRegistration).toHaveBeenCalledWith('r1');
+    expect(mockRepo.deleteByRegistrationId).toHaveBeenCalledWith('r1');
+    expect(res.message).toBe('Registration cancelled');
   });
 });
 

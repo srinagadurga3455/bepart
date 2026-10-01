@@ -5,7 +5,7 @@ import { ConfirmationNumber } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
 import { ticketsApi } from '../../participant/tickets/api/tickets';
 import { apiErrorMessage, unwrapList } from '../../app/api/client';
-import type { TicketItem } from '../../app/types';
+import type { PhoneTicketItem } from '../../app/types';
 
 type LookupState = 'idle' | 'loading' | 'success' | 'empty' | 'error';
 
@@ -15,7 +15,7 @@ function formatDateTime(iso: string | undefined): string {
   return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 }
 
-function TicketResultCard({ ticket }: { ticket: TicketItem }) {
+function TicketResultCard({ ticket }: { ticket: PhoneTicketItem }) {
   const navigate = useNavigate();
   const event = ticket.event;
   const ticketUrl = ticket.ticketUrl || `${window.location.origin}/ticket/${ticket.registrationId}`;
@@ -58,7 +58,7 @@ function TicketRecovery() {
   const [phone, setPhone] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [state, setState] = useState<LookupState>('idle');
-  const [tickets, setTickets] = useState<TicketItem[]>([]);
+  const [tickets, setTickets] = useState<PhoneTicketItem[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
 
   const lookup = async () => {
@@ -75,7 +75,7 @@ function TicketRecovery() {
     setState('loading');
     try {
       const res = await ticketsApi.getTicketsByPhone(value);
-      const list = unwrapList<TicketItem>(res);
+      const list = unwrapList<PhoneTicketItem>(res);
       setTickets(list);
       setState(list.length === 0 ? 'empty' : 'success');
     } catch (err) {

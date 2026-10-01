@@ -5,6 +5,7 @@ import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { PrismaService } from '../database/prisma.service';
 import { isCouponExpired } from './coupon-expiry.util';
 import { Role } from '../common/constants/roles';
+import { assertRupees, rupeesToPaise, toRupeesCoupon, toRupeesQuote } from '../common/utils/money';
 
 export interface CouponActor {
   userId: string;
@@ -12,6 +13,7 @@ export interface CouponActor {
 }
 
 export interface PriceQuote {
+  /** API-facing quotes are rupees; internal `quote()` amounts are paise. */
   originalAmount: number;
   discountAmount: number;
   totalAmount: number;
@@ -36,7 +38,10 @@ export class CouponsService {
     return code;
   }
 
-  /** Validate discount values. Percentage 1-100, FIXED > 0 (paise). */
+  /**
+   * Validate discount values on INTERNAL (paise) numbers. Callers convert
+   * API rupees to paise before calling. Percentage 1-100, FIXED > 0 (paise).
+   */
   static assertValidDiscount(discountType: string, discountValue: number) {
     if (!Number.isInteger(discountValue) || discountValue < 1) {
       throw new BadRequestException('discountValue must be an integer >= 1');
@@ -48,7 +53,9 @@ export class CouponsService {
 
   /**
    * ONE authoritative backend calculation (integer paise, no floats).
-   * Final amount is clamped at 0 so a discount can never make the total negative.
+   * INTERNAL: inputs and outputs are paise. API-facing callers use
+   * priceQuote (rupees) instead. Final amount is clamped at 0 so a
+   * discount can never make the total negative.
    */
   static quote(originalAmount: number, coupon: { discountType: string; discountValue: number }): Omit<PriceQuote, 'coupon'> {
     if (!Number.isInteger(originalAmount) || originalAmount < 1) {
@@ -100,7 +107,10 @@ export class CouponsService {
     const event = await this.prisma.event.findUnique({ where: { id: dto.eventId } });
     if (!event) throw new NotFoundException('Event not found');
     await this.assertEventOwnership(dto.eventId, actor);
-    CouponsService.assertValidDiscount(dto.discountType, dto.discountValue);
+    // API speaks rupees; FIXED discounts are stored as paise. PERCENTAGE is unit-free.
+    const discountValuePaise =
+      dto.discountType === 'FIXED' ? rupeesToPaise(assertRupees(dto.discountValue, 'discountValue')) : dto.discountValue;
+    CouponsService.assertValidDiscount(dto.discountType, discountValuePaise);
 
     let startsAt: Date | null = null;
     let expiresAt: Date | null = null;
@@ -115,25 +125,31 @@ export class CouponsService {
     if (startsAt && expiresAt && expiresAt < startsAt) {
       throw new BadRequestException('expiresAt must not be before startsAt');
     }
+    // An already-expired coupon can never be redeemed — reject it at creation
+    // instead of storing a dead row. Checked after the range validation so the
+    // inverted-window message keeps precedence.
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Coupon expiry must be in the future.');
+    }
 
     const code = dto.code ? CouponsService.normalizeCode(dto.code) : this.couponsRepo.generateCode();
     const payload = {
       eventId: dto.eventId,
       discountType: dto.discountType as any,
-      discountValue: dto.discountValue,
+      discountValue: discountValuePaise,
       isActive: dto.isActive ?? true,
       startsAt,
       expiresAt,
       usageLimit: dto.usageLimit ?? null,
     };
     try {
-      return await this.couponsRepo.createFull({ ...payload, code });
+      return toRupeesCoupon(await this.couponsRepo.createFull({ ...payload, code }));
     } catch (e: any) {
       if (e?.code !== 'P2002' || dto.code) throw e?.code === 'P2002' ? new ConflictException('Coupon code already exists') : e;
       // Auto-generated code collided (astronomically rare): retry with fresh codes.
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
-          return await this.couponsRepo.createFull({ ...payload, code: this.couponsRepo.generateCode() });
+          return toRupeesCoupon(await this.couponsRepo.createFull({ ...payload, code: this.couponsRepo.generateCode() }));
         } catch (retryErr: any) {
           if (retryErr?.code !== 'P2002') throw retryErr;
         }
@@ -146,7 +162,7 @@ export class CouponsService {
     const event = await this.prisma.event.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Event not found');
     await this.assertEventOwnership(eventId, actor);
-    return this.couponsRepo.findByEvent(eventId);
+    return (await this.couponsRepo.findByEvent(eventId)).map((c) => toRupeesCoupon(c as any));
   }
 
   async update(couponId: string, dto: UpdateCouponDto, actor?: CouponActor) {
@@ -155,7 +171,12 @@ export class CouponsService {
     await this.assertEventOwnership(existing.eventId, actor);
 
     const discountType = dto.discountType ?? existing.discountType;
-    const discountValue = dto.discountValue ?? existing.discountValue;
+    // API speaks rupees; a supplied FIXED discountValue is converted to paise.
+    // A stored value carried over untouched is already paise.
+    const discountValue =
+      dto.discountValue !== undefined && discountType === 'FIXED'
+        ? rupeesToPaise(assertRupees(dto.discountValue, 'discountValue'))
+        : (dto.discountValue ?? existing.discountValue);
     CouponsService.assertValidDiscount(discountType as string, discountValue);
 
     const startsAt = dto.startsAt === undefined ? undefined : dto.startsAt ? new Date(dto.startsAt) : null;
@@ -167,14 +188,16 @@ export class CouponsService {
     if (finalStarts && finalExpires && finalExpires < finalStarts) {
       throw new BadRequestException('expiresAt must not be before startsAt');
     }
-    return this.couponsRepo.updateById(couponId, {
-      discountType: dto.discountType as any,
-      discountValue: dto.discountValue,
-      isActive: dto.isActive,
-      startsAt,
-      expiresAt,
-      usageLimit: dto.usageLimit === undefined ? undefined : dto.usageLimit,
-    });
+    return toRupeesCoupon(
+      (await this.couponsRepo.updateById(couponId, {
+        discountType: dto.discountType as any,
+        discountValue: dto.discountValue !== undefined ? discountValue : undefined,
+        isActive: dto.isActive,
+        startsAt,
+        expiresAt,
+        usageLimit: dto.usageLimit === undefined ? undefined : dto.usageLimit,
+      })) as any,
+    );
   }
 
   async remove(couponId: string, actor?: CouponActor) {
@@ -183,7 +206,7 @@ export class CouponsService {
     await this.assertEventOwnership(existing.eventId, actor);
     // Payments/registrations reference the coupon with SetNull, and registrations
     // keep a couponCode/amount snapshot, so history survives deletion.
-    return this.couponsRepo.deleteById(couponId);
+    return toRupeesCoupon((await this.couponsRepo.deleteById(couponId)) as any);
   }
 
   /**
@@ -210,11 +233,13 @@ export class CouponsService {
     return coupon;
   }
 
-  /** Validate + price in one step. Used by payments and registration preview. */
-  async priceQuote(rawCode: string, eventId: string, originalAmount: number): Promise<PriceQuote> {
+  /** Validate + price in one step. API-facing: takes rupees, returns rupees. Used by payments and registration preview. */
+  async priceQuote(rawCode: string, eventId: string, originalAmountRupees: number): Promise<PriceQuote> {
+    const originalPaise = rupeesToPaise(assertRupees(originalAmountRupees, 'amount'));
     const coupon = await this.validateForRedemption(rawCode, eventId);
-    const amounts = CouponsService.quote(originalAmount, coupon as any);
-    return { ...amounts, coupon: { id: coupon.id, code: coupon.code } };
+    const amounts = CouponsService.quote(originalPaise, coupon as any);
+    const rupees = toRupeesQuote(amounts);
+    return { ...rupees, coupon: { id: coupon.id, code: coupon.code } };
   }
 
   /**
@@ -265,6 +290,7 @@ export class CouponsService {
   }
 
   calculateDiscountedAmount(originalAmount: number, coupon: any): number {
+    // INTERNAL (paise in/out): kept for backward compatibility.
     return CouponsService.quote(originalAmount, coupon).totalAmount;
   }
 

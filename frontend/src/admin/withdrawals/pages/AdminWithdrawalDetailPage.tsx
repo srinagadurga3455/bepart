@@ -10,7 +10,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSnackbar } from 'notistack';
 import { withdrawalsApi } from '../api/withdrawals';
-import { formatEventDate, formatPaise } from '../../../app/utils/format';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
 import { apiErrorMessage } from '../../../app/api/client';
 import AdminShell from '../../components/AdminShell';
 import ProofButton from '../../../app/components/ProofButton';
@@ -184,7 +184,7 @@ function DetailContent({ id }: { id: string }) {
                   lineHeight: 1.15,
                 }}
               >
-                {formatPaise(w.amount)}
+                {formatINR(w.amount)}
               </Typography>
               <Typography sx={{ fontSize: 13.5, color: MUTED, mt: 0.25 }}>
                 {w.event?.eventName || `Event ${w.eventId}`}
@@ -226,7 +226,7 @@ function DetailContent({ id }: { id: string }) {
             py: 0.5,
           }}
         >
-          <InfoRow label="Amount" value={formatPaise(w.amount)} />
+          <InfoRow label="Amount" value={formatINR(w.amount)} />
           <InfoRow label="UPI ID" value={w.upiId || '—'} />
           <InfoRow
             label="Event"
@@ -354,7 +354,7 @@ function DetailContent({ id }: { id: string }) {
                 <Typography sx={{ fontSize: 13.5, color: MUTED, mb: 2.5 }}>
                   Transfer{' '}
                   <Box component="span" sx={{ fontWeight: 700, color: INK }}>
-                    {formatPaise(w.amount)}
+                    {formatINR(w.amount)}
                   </Box>{' '}
                   to UPI ID{' '}
                   <Box component="span" sx={{ fontWeight: 700, color: INK }}>

@@ -8,6 +8,7 @@ import { AuthRepository } from './auth.repo';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MailerService } from '../mailer/mailer.service';
 import { Role } from '../common/constants/roles';
 
 const mockAuthRepo: any = {
@@ -36,8 +37,10 @@ const mockEmail = {
 };
 
 const mockNotifications = {
-  sendOnce: jest.fn().mockResolvedValue({ status: 'SENT' }),
+  sendOnce: jest.fn().mockImplementation(async ({ sender }: any) => sender?.()),
 };
+
+const mockMailer = { sendOtpEmail: jest.fn().mockResolvedValue({ delivered: true }) };
 
 describe('AuthService OTP', () => {
   let service: AuthService;
@@ -51,6 +54,7 @@ describe('AuthService OTP', () => {
         { provide: WhatsappService, useValue: mockWhatsapp },
         { provide: EmailService, useValue: mockEmail },
         { provide: NotificationsService, useValue: mockNotifications },
+        { provide: MailerService, useValue: mockMailer },
         {
           provide: ConfigService,
           useValue: {
@@ -82,6 +86,29 @@ describe('AuthService OTP', () => {
       expect(result).toHaveProperty('message');
       expect(mockAuthRepo.createOtp).toHaveBeenCalled();
       expect(mockEmail.sendOtpEmail).toHaveBeenCalledWith('admin@pravesh.local', expect.any(String), 5);
+    });
+
+    it('should deliver email OTP via Gmail/SMTP (mailer) for ADMIN', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 'admin@pravesh.local', role: Role.ADMIN, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp1b' });
+      const result = await service.requestOtp({ email: 'admin@pravesh.local' });
+      expect(result).toHaveProperty('message');
+      // Email identifiers go through Gmail/SMTP, not WhatsApp.
+      expect(mockMailer.sendOtpEmail).toHaveBeenCalledWith(
+        'admin@pravesh.local',
+        expect.stringMatching(/^\d{6}$/),
+        expect.objectContaining({ expiryMinutes: expect.any(Number) }),
+      );
+      expect(mockWhatsapp.sendOtp).not.toHaveBeenCalled();
+    });
+
+    it('should surface SMTP delivery failure without leaking the OTP', async () => {
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: 'admin@pravesh.local', role: Role.ADMIN, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp9' });
+      mockMailer.sendOtpEmail.mockRejectedValueOnce(new Error('SMTP send failed: boom'));
+      await expect(service.requestOtp({ email: 'admin@pravesh.local' })).rejects.toMatchObject({
+        status: 503,
+      });
     });
 
     it('should reject unknown user', async () => {
@@ -181,6 +208,10 @@ describe('AuthService OTP', () => {
       expect(result).toHaveProperty('message');
       expect(mockAuthRepo.findUserByPhone).toHaveBeenCalledWith('9876543224');
       expect(mockAuthRepo.createOtp).toHaveBeenCalledWith(expect.objectContaining({ identifier: '9876543224' }));
+      // Phone identifiers keep the WhatsApp path; SMTP must not be used.
+      expect(mockWhatsapp.sendOtp).toHaveBeenCalledWith('9876543224', expect.stringMatching(/^\d{6}$/));
+      expect(mockMailer.sendOtpEmail).not.toHaveBeenCalled();
+      expect(mockEmail.sendOtpEmail).not.toHaveBeenCalled();
     });
 
     it('should find organizer via normalized phone with spaces/hyphens', async () => {
