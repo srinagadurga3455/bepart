@@ -6,8 +6,16 @@ export class AuthRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   // User queries (auth domain)
+  // Case-insensitive on purpose: request identifiers are normalized to
+  // lowercase, but stored rows may predate normalization (e.g. a seeded
+  // ADMIN_EMAIL that kept its original case), and Postgres unique text
+  // matches are case-sensitive. An exact match here would 401 a valid user
+  // — and only for the differently-cased recipient. Email is unique, so at
+  // most one row matches either way.
   findUserByEmail(email: string) {
-    return this.prisma.user.findUnique({ where: { email } });
+    return this.prisma.user.findFirst({
+      where: { email: { equals: email.trim().toLowerCase(), mode: 'insensitive' } },
+    });
   }
 
   findUserByPhone(phone: string) {

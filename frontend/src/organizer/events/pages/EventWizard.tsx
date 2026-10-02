@@ -5,7 +5,7 @@ import {
   FormControlLabel, InputAdornment, Radio, RadioGroup,
   Step, StepLabel, Stepper, Switch, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
-import { ArrowBack, CheckCircleOutlined, UploadFileOutlined } from '@mui/icons-material';
+import { ArrowBack, CheckCircleOutlined, UploadFileOutlined, WhatsApp as WhatsAppIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { eventsApi, couponsApi } from '../api/events';
@@ -59,6 +59,7 @@ interface WizardDetails {
   slots: number | string;
   paymentType: string;
   feeAmount: string;
+  whatsappGroupLink: string;
 }
 
 interface CouponConfig {
@@ -101,6 +102,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
 
   const [details, setDetails] = useState<WizardDetails>({
     eventName: '', description: '', date: '', time: '', deadline: '', slots: 100, paymentType: 'free', feeAmount: '',
+    whatsappGroupLink: '',
   });
 
   // Image upload state
@@ -131,7 +133,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
   const [couponError, setCouponError] = useState('');
 
   // Field-level date errors shown inline under the offending input.
-  const [fieldErrors, setFieldErrors] = useState<{ eventStart?: string; deadline?: string; couponExpiry?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ eventStart?: string; deadline?: string; couponExpiry?: string; groupLink?: string }>({});
 
   // Template selection state
   const [templateChosen, setTemplateChosen] = useState(false);
@@ -153,6 +155,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
       time: toTimeInput(ev.date),
       deadline: toDeadlineInput(ev.closingTime),
       slots: ev.slots || 100,
+      whatsappGroupLink: ev.whatsappGroupLink || '',
       paymentType: ev.paymentRequired ? 'paid' : 'free',
       feeAmount: ev.paymentRequired && ev.formStructure?.payment?.amount != null
         ? String(ev.formStructure.payment.amount)
@@ -217,7 +220,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
 
   /** Validation failure tied to a specific form field (rendered inline). */
   class FieldValidationError extends Error {
-    field: 'eventStart' | 'deadline' | 'couponExpiry';
+    field: 'eventStart' | 'deadline' | 'couponExpiry' | 'groupLink';
     constructor(field: FieldValidationError['field'], message: string) {
       super(message);
       this.field = field;
@@ -254,6 +257,12 @@ export function EventWizardInner({ editId }: { editId?: string }) {
     const slots = parseInt(String(details.slots), 10);
     if (!Number.isFinite(slots) || slots < 1) throw new Error('Capacity must be at least 1.');
     if (details.paymentType === 'paid') parseFeeAmount();
+    // Optional group link: empty clears it (backend stores null), a value
+    // must be an http(s) URL (backend re-validates with @IsUrl).
+    const groupLink = details.whatsappGroupLink.trim();
+    if (groupLink && !/^https?:\/\/.+\..+/.test(groupLink)) {
+      throw new FieldValidationError('groupLink', 'Enter a valid URL starting with http:// or https:// (e.g. https://chat.whatsapp.com/...).');
+    }
     return {
       eventName: details.eventName.trim(),
       description: details.description.trim() || undefined,
@@ -261,6 +270,7 @@ export function EventWizardInner({ editId }: { editId?: string }) {
       slots,
       closingTime: new Date(closingMs).toISOString(),
       paymentRequired: details.paymentType === 'paid',
+      whatsappGroupLink: groupLink ? groupLink : null,
     };
   };
 
@@ -575,6 +585,13 @@ export function EventWizardInner({ editId }: { editId?: string }) {
               onChange={(e) => setDetails({ ...details, eventName: e.target.value })} fullWidth size="small" sx={{ mb: 2 }} />
             <TextField label="Description" placeholder="What is this event about?" value={details.description}
               onChange={(e) => setDetails({ ...details, description: e.target.value })} fullWidth size="small" multiline rows={3} sx={{ mb: 2 }} />
+            <TextField label="WhatsApp Group Link" placeholder="https://chat.whatsapp.com/..."
+              value={details.whatsappGroupLink}
+              onChange={(e) => { setDetails({ ...details, whatsappGroupLink: e.target.value }); setFieldErrors((p) => ({ ...p, groupLink: undefined })); }}
+              fullWidth size="small" error={!!fieldErrors.groupLink}
+              helperText={fieldErrors.groupLink || 'Optional — add the official WhatsApp group where participants can receive event announcements and updates.'}
+              slotProps={{ input: { startAdornment: <InputAdornment position="start"><WhatsAppIcon fontSize="small" sx={{ color: '#25D366' }} /></InputAdornment> } }}
+              sx={{ mb: 2 }} />
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: fieldErrors.eventStart ? 1 : 2 }}>
               <TextField label="Date" type="date" value={details.date}
                 onChange={(e) => { setDetails({ ...details, date: e.target.value }); setFieldErrors((p) => ({ ...p, eventStart: undefined })); }}

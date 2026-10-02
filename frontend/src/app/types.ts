@@ -160,6 +160,8 @@ export interface EventItem {
   formStructure?: FormStructure | null;
   posterSquareUrl?: string | null;
   posterRectangleUrl?: string | null;
+  /** Optional official WhatsApp group link (null when the event has none). */
+  whatsappGroupLink?: string | null;
   paymentRequired: boolean;
   createdAt: string;
   updatedAt: string;
@@ -182,6 +184,8 @@ export interface EventPayload {
   closingTime: string;
   formStructure?: FormStructure;
   paymentRequired?: boolean;
+  /** Optional official WhatsApp group link; null clears it on update. */
+  whatsappGroupLink?: string | null;
 }
 
 export interface PageMeta {

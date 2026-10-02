@@ -4,6 +4,7 @@ import * as nodemailer from 'nodemailer';
 import {
   buildOtpEmail,
   isValidEmail,
+  maskEmail,
   normalizeEmail,
 } from './templates/otp-email.template';
 
@@ -143,9 +144,12 @@ export class MailerService {
     const { subject, text, html } = buildOtpEmail({ otp, appName, expiryMinutes, logoUrl });
     const from = this.smtpFrom;
     const fromName = this.smtpFromName;
+    // Masked recipient in logs: proves which address the mailer attempted
+    // without persisting PII. OTP/password/token values are never logged.
+    const masked = maskEmail(cleanTo);
     try {
       this.logSmtpPresence('otp-send');
-      this.logger.log(`Sending OTP email to ${cleanTo}`);
+      this.logger.log(`Sending OTP email to ${masked}`);
       const info = await this.getTransporter().sendMail({
         from: fromName ? `"${fromName}" <${from}>` : from,
         to: cleanTo,
@@ -153,12 +157,22 @@ export class MailerService {
         text,
         html,
       });
-      this.logger.log(`OTP email sent to ${cleanTo} (id hidden)`);
+      this.logger.log(`OTP email accepted by SMTP for ${masked} (id hidden)`);
       return { delivered: true, messageId: info?.messageId };
     } catch (e) {
+      // Nodemailer errors carry code/responseCode/response (no secrets).
+      // Surface them so a recipient-specific rejection (mailbox unknown,
+      // suppressed, policy block) is distinguishable from a connection or
+      // auth failure. The caller maps this to a generic API error.
+      const err = e as any;
+      const code = err?.code || err?.responseCode;
+      const response = typeof err?.response === 'string' ? err.response : undefined;
       const reason = (e as Error)?.message || 'smtp-send-failed';
-      this.logger.warn(`OTP email to ${cleanTo} failed: ${reason}`);
-      throw new Error(`SMTP send failed: ${reason}`);
+      const detail = [code ? `code=${code}` : null, response ? `response=${response}` : null, reason]
+        .filter(Boolean)
+        .join(' | ');
+      this.logger.warn(`OTP email to ${masked} failed: ${detail}`);
+      throw new Error(`SMTP send failed: ${detail}`);
     }
   }
 }

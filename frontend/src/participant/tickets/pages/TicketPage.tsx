@@ -10,6 +10,7 @@ import {
 } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
 import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { ticketsApi } from '../api/tickets';
 import ParticipantNavbar from '../../components/ParticipantNavbar';
 import { BePartMark } from '../../../app/components/BePartBrand';
@@ -20,16 +21,38 @@ import {
   withDynamicRequired, getMemberGroupIndex,
 } from '../../registrations/utils/memberGroups';
 import { ErrorState, LoadingState } from '../../../app/components/Feedback';
-import type { FormDataRecord, FormDataValue } from '../../../app/types';
+import type { FormDataRecord, FormDataValue, TicketItem } from '../../../app/types';
+
+/**
+ * Unwrap the public ticket payload. The API returns either the raw
+ * TicketItem or the `{ success, data }` envelope — support both so the
+ * WhatsApp ticket URL always renders.
+ */
+export function unwrapTicketResponse(response: unknown): TicketItem | null {
+  const body = (response as { data?: unknown } | null | undefined)?.data;
+  if (!body || typeof body !== 'object') return null;
+  if ('success' in body && 'data' in body) {
+    const nested = (body as { data?: unknown }).data;
+    return (nested && typeof nested === 'object' ? nested : null) as TicketItem | null;
+  }
+  return body as TicketItem;
+}
+
+function errorStatus(err: unknown): number | undefined {
+  if (axios.isAxiosError(err)) return err.response?.status;
+  return (err as { response?: { status?: number } })?.response?.status;
+}
 
 function formatDate(d: string | undefined): string {
-  const dt = new Date(d ?? '');
+  if (!d) return '—';
+  const dt = new Date(d);
   if (isNaN(dt.getTime())) return '—';
   return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function formatTime(d: string | undefined): string {
-  const dt = new Date(d ?? '');
+  if (!d) return '—';
+  const dt = new Date(d);
   if (isNaN(dt.getTime())) return '—';
   return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
@@ -45,10 +68,13 @@ function formatValue(v: FormDataValue | undefined): string {
 
 export default function TicketPage() {
   const { ticketId } = useParams();
+  // Use the exact identifier from /ticket/:ticketId (code, QR token, or
+  // legacy registration ID). No auth is required for this public page.
+  const identifier = String(ticketId ?? '').trim();
   const { data: response, isLoading, error, refetch } = useQuery({
-    queryKey: ['ticket', ticketId],
-    queryFn: () => ticketsApi.getTicket(ticketId!),
-    enabled: !!ticketId,
+    queryKey: ['ticket', identifier],
+    queryFn: () => ticketsApi.getTicket(identifier),
+    enabled: !!identifier,
     retry: false,
   });
 
@@ -63,7 +89,31 @@ export default function TicketPage() {
     );
   }
 
-  if (error || !response?.data) {
+  const raw = unwrapTicketResponse(response);
+  const status = errorStatus(error);
+
+  // Genuine 404 (or a valid response without a ticket) → Ticket Not Found.
+  // Any other failure (network, 5xx, CORS) → generic error with retry so a
+  // transient outage is never misreported as a missing ticket.
+  if (error && status !== undefined && status !== 404) {
+    return (
+      <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
+        <ParticipantNavbar />
+        <Container maxWidth="sm" sx={{ py: 4 }}>
+          <ErrorState
+            title="Could not load ticket"
+            message="We could not load this ticket right now. Please check your connection and try again."
+            onRetry={() => refetch()}
+          />
+          <Button variant="contained" component={Link} to="/events" sx={{ mt: 2, borderRadius: 999, boxShadow: 'none' }}>
+            Back to Events
+          </Button>
+        </Container>
+      </Box>
+    );
+  }
+
+  if (!raw?.ticket) {
     return (
       <Box sx={{ bgcolor: '#F7F7F4', minHeight: '100vh' }}>
         <ParticipantNavbar />
@@ -81,30 +131,35 @@ export default function TicketPage() {
     );
   }
 
-  const raw = response.data;
   // New ticket API shape { ticket, registration, event } — mapped onto the
   // page's existing rendering (registrationId, formData, event, ticketUrl).
   // QR encodes the canonical public ticket URL (backend-provided), so a scan
-  // always resolves to this ticket.
-  const ticketUrl = raw.ticket.ticketUrl || `${window.location.origin}/ticket/${raw.ticket.code}`;
+  // always resolves to this ticket. Fall back to the current frontend URL
+  // only when the backend URL is missing. Never crash on missing optional
+  // event/form fields.
+  const ticketCode = raw.ticket?.code ?? identifier;
+  const ticketUrl = raw.ticket?.ticketUrl || `${window.location.origin}/ticket/${ticketCode}`;
   const ticket = {
-    registrationId: raw.registration.registrationId,
+    registrationId: raw.registration?.registrationId ?? ticketCode,
     ticketUrl,
-    ticketId: raw.ticket.code,
-    status: raw.ticket.status,
-    event: raw.event,
-    formData: (raw.registration.formData || {}) as FormDataRecord,
-    checkedInAt: raw.ticket.checkedInAt,
+    ticketId: ticketCode,
+    status: raw.ticket?.status ?? 'VALID',
+    event: raw.event ?? null,
+    formData: ((raw.registration?.formData || {}) as FormDataRecord) ?? {},
+    checkedInAt: raw.ticket?.checkedInAt ?? null,
   };
   const event = ticket.event;
   const poster = eventPoster(event);
   const formData: FormDataRecord = ticket.formData || {};
   const formStructure = event?.formStructure;
-  const sections = formStructure?.sections || [];
+  const sections = Array.isArray(formStructure?.sections) ? formStructure.sections : [];
   const selectedCount = getSelectedCount(formData, findCountFieldName(formStructure));
-  const registrant = raw.registration.participantName !== '—'
+  const participantName = typeof raw.registration?.participantName === 'string' && raw.registration.participantName.trim()
     ? raw.registration.participantName
-    : formData.teamName || formData.member1Name || formData.fullName || '—';
+    : null;
+  const registrant = participantName && participantName !== '—'
+    ? participantName
+    : (formData.teamName || formData.member1Name || formData.fullName || '—') as string;
   const checkedIn = !!raw.checkedIn;
   const cancelled = ticket.status === 'CANCELLED';
 

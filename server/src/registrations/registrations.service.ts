@@ -9,6 +9,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { frontendBaseUrl } from '../tickets/tickets.repo';
 
 @Injectable()
 export class RegistrationsService {
@@ -239,7 +240,9 @@ export class RegistrationsService {
   }
 
   private ticketUrl(registrationId: string): string {
-    const base = (this.configService?.get<string>('FRONTEND_URL') || 'http://localhost:5173').replace(/\/$/, '');
+    // Legacy registration-ID fallback only; live tickets always carry their
+    // own canonical ticketUrl (ticket code based, FRONTEND_URL stamped).
+    const base = frontendBaseUrl(this.configService?.get<string>('FRONTEND_URL'));
     return `${base}/ticket/${registrationId}`;
   }
 

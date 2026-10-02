@@ -12,7 +12,7 @@ export const ticketsApi = {
    * Public ticket lookup by ticket code, QR token, ticket URL, or a legacy
    * registration ID. Unauthenticated — this is what the QR/URL resolves to.
    */
-  getTicket: (id: string) => client.get<TicketItem>(`/tickets/${id}`),
+  getTicket: (id: string) => client.get<TicketItem>(`/tickets/${encodeURIComponent(String(id ?? '').trim())}`),
   // Public "my tickets" lookup: ALL registrations for a registered mobile
   // number (no OTP, no auth). Reuses GET /registrations/by-phone.
   getTicketsByPhone: (phone: string) =>

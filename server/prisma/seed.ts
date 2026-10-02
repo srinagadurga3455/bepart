@@ -6,8 +6,11 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding Pravesh database...');
 
-  // Admin bootstrap — ADMIN never via public signup, only via seed
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@pravesh.local';
+  // Admin bootstrap — ADMIN never via public signup, only via seed.
+  // Normalized once here so the stored row always matches the lowercase
+  // request identifier (OTP lookup is case-insensitive, but keeping storage
+  // canonical prevents future mismatches).
+  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@pravesh.local').toLowerCase().trim();
   const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
   const hashed = await bcrypt.hash(adminPassword, 10);
 
@@ -46,6 +49,43 @@ async function main() {
     },
   });
   console.log(`Admin profile: ${admin.companyName} (${admin.id}) status=${admin.status}`);
+
+  // Additional platform admin — idempotent via email unique.
+  // OTP login works through the normalized email; phone enables WhatsApp
+  // admin notifications (payout requests) via the Admin profile row.
+  const swapUser = await prisma.user.upsert({
+    where: { email: 'swapanth999@gmail.com' },
+    update: {
+      name: 'Swapanth',
+      role: Role.ADMIN,
+      isActive: true,
+      phone: '+917330873455',
+    },
+    create: {
+      email: 'swapanth999@gmail.com',
+      name: 'Swapanth',
+      role: Role.ADMIN,
+      isActive: true,
+      phone: '+917330873455',
+    },
+  });
+  console.log(`Admin user: ${swapUser.email} (${swapUser.id}) role=${swapUser.role} isActive=${swapUser.isActive}`);
+
+  await prisma.admin.upsert({
+    where: { id: swapUser.id },
+    update: {
+      phone: '+917330873455',
+      status: 'ACTIVE',
+    },
+    create: {
+      id: swapUser.id,
+      companyName: 'BePart',
+      description: 'Platform Admin',
+      phone: '+917330873455',
+      status: 'ACTIVE',
+    },
+  });
+  console.log(`Admin profile: BePart (${swapUser.id}) status=ACTIVE`);
 
   const organizerUser = await prisma.user.upsert({
     where: { email: 'organizer@pravesh.local' },

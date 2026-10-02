@@ -1,4 +1,4 @@
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useState } from 'react';
 import {
   Container,
@@ -9,7 +9,7 @@ import {
   CircularProgress,
   Paper,
 } from '@mui/material';
-import { ArrowBack, CheckCircleOutlined, ConfirmationNumber, ErrorOutlined } from '@mui/icons-material';
+import { ArrowBack, CheckCircleOutlined, ConfirmationNumber, ErrorOutlined, WhatsApp as WhatsAppIcon } from '@mui/icons-material';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { eventsApi } from '../../events/api/events';
 import { registrationsApi } from '../api/registrations';
@@ -18,6 +18,7 @@ import type { FormDataRecord, RegistrationItem } from '../../../app/types';
 import { eventPoster } from '../../../app/types';
 import RegistrationFlow from '../components/RegistrationFlow';
 import type { PaidRegistrationArgs } from '../components/PaymentStep';
+import { getWhatsappGroupLink } from '../utils/whatsappGroup';
 
 const BLUE = '#2557F5';
 
@@ -28,10 +29,13 @@ interface RegisterVariables {
 
 export default function RegisterPage() {
   const { eventId } = useParams();
-  const navigate = useNavigate();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  // Kept for mutation bookkeeping only (ticket creation still happens
+  // server-side). Never rendered or navigated to — the success screen stays
+  // on this confirmation and directs the participant to WhatsApp.
   const [ticketId, setTicketId] = useState<string | null>(null);
+  void ticketId;
 
   const { data: eventResponse, isLoading: eventLoading, error: eventError } = useQuery({
     queryKey: ['event', eventId],
@@ -262,7 +266,9 @@ export default function RegisterPage() {
 
           {/* Card body */}
           <Box sx={{ px: { xs: 3, sm: 4 }, py: { xs: 3, sm: 4 } }}>
-            {/* Success state */}
+            {/* Success state — confirmation only. No ticket preview, ticket ID,
+                QR, or View Ticket button here; the ticket is delivered over
+                WhatsApp and opened from there. */}
             {success && (
               <Box
                 sx={{
@@ -271,44 +277,113 @@ export default function RegisterPage() {
                   px: 2,
                 }}
               >
-                <CheckCircleOutlined sx={{ fontSize: 64, color: '#22C55E', mb: 2 }} />
+                <CheckCircleOutlined sx={{ fontSize: 72, color: '#22C55E', mb: 2 }} />
                 <Typography
                   sx={{
                     fontWeight: 800,
-                    fontSize: '1.35rem',
+                    fontSize: '1.5rem',
                     color: '#1E293B',
                     mb: 1,
                     fontFamily: '"DM Sans", sans-serif',
                   }}
                 >
-                  Registration Successful!
+                  Registration Confirmed!
                 </Typography>
-                <Typography sx={{ color: '#64748B', fontSize: 14.5, mb: 3.5 }}>
-                  Your registration for{' '}
+                <Typography sx={{ color: '#475569', fontSize: 15, mb: 2.5 }}>
+                  You are successfully registered for{' '}
                   <Box component="span" sx={{ fontWeight: 700, color: '#1E293B' }}>
                     {event.eventName}
-                  </Box>{' '}
-                  has been confirmed.
+                  </Box>
+                  .
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-                  {ticketId && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1.25,
+                    bgcolor: '#E7F7EE',
+                    border: '1px solid #BBE5C9',
+                    borderRadius: 3,
+                    px: 2.5,
+                    py: 2,
+                    mb: 1.5,
+                    maxWidth: 440,
+                    mx: 'auto',
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      bgcolor: '#25D366',
+                      display: 'grid',
+                      placeItems: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <WhatsAppIcon sx={{ fontSize: 20, color: '#FFFFFF' }} />
+                  </Box>
+                  <Typography
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: 14.5,
+                      color: '#15803D',
+                      textAlign: 'left',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Your ticket has been sent to your registered WhatsApp number.
+                  </Typography>
+                </Box>
+                <Typography sx={{ color: '#64748B', fontSize: 14, mb: 3.5, maxWidth: 440, mx: 'auto' }}>
+                  Open WhatsApp to access your ticket and QR code. Keep the ticket handy for entry.
+                </Typography>
+                {/* Optional official event WhatsApp group — rendered only
+                    when the event has a group link. Separate from ticket
+                    delivery; the participant explicitly clicks to join. */}
+                {getWhatsappGroupLink(event) && (
+                  <Box
+                    sx={{
+                      maxWidth: 440,
+                      mx: 'auto',
+                      mb: 3,
+                      px: 2.5,
+                      py: 2.5,
+                      borderRadius: 3,
+                      border: '1px solid #E2E8F0',
+                      bgcolor: '#F8FAFC',
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 800, fontSize: 15, color: '#1E293B', mb: 0.75 }}>
+                      📢 Join the official event WhatsApp group
+                    </Typography>
+                    <Typography sx={{ color: '#64748B', fontSize: 13.5, mb: 2 }}>
+                      Join the group for event announcements, updates, and important information.
+                    </Typography>
                     <Button
                       variant="contained"
-                      onClick={() => navigate(`/ticket/${ticketId}`)}
+                      href={getWhatsappGroupLink(event)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      startIcon={<WhatsAppIcon sx={{ fontSize: 20 }} />}
                       sx={{
-                        bgcolor: BLUE,
+                        bgcolor: '#25D366',
                         borderRadius: 2.5,
                         px: 3.5,
                         py: 1.25,
                         fontWeight: 700,
                         textTransform: 'none',
                         fontSize: 14.5,
-                        '&:hover': { bgcolor: '#1D46C8' },
+                        '&:hover': { bgcolor: '#1DA851' },
                       }}
                     >
-                      View Ticket
+                      Join WhatsApp Group
                     </Button>
-                  )}
+                  </Box>
+                )}
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
                   <Button
                     variant="outlined"
                     component={Link}

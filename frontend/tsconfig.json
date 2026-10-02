@@ -16,5 +16,8 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // node:test regression specs run under `node --test` (Node type-stripping),
+  // not the Vite bundle or tsc app check — keep them out of the app compile.
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -17,6 +17,18 @@ export class EventsService {
     private readonly couponsRepo: CouponsRepository,
   ) {}
 
+  /**
+   * Normalize the optional WhatsApp group link: trim, treat empty as null
+   * (link removed), leave undefined untouched (field not being changed).
+   * Format validation stays in the DTO (@IsUrl); this only normalizes.
+   */
+  private normalizeGroupLink(value: unknown): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const trimmed = String(value).trim();
+    return trimmed ? trimmed : null;
+  }
+
   private validateDates(date: string, closingTime: string) {
     const d = new Date(date);
     const c = new Date(closingTime);
@@ -66,6 +78,7 @@ export class EventsService {
       status: EventStatus.DRAFT,
       organizerId: organizer.id,
       paymentRequired: dto.paymentRequired,
+      whatsappGroupLink: this.normalizeGroupLink((dto as any).whatsappGroupLink) ?? null,
     });
     // YES: backend auto-generates the code and links exactly one coupon.
     // NO (or omitted): normal event, no coupon row.
@@ -177,6 +190,11 @@ export class EventsService {
       closingTime: dto.closingTime ? new Date(dto.closingTime) : undefined,
       formStructure: dto.formStructure as any,
       paymentRequired: dto.paymentRequired,
+      // Only touch the group link when the organizer supplied it: a value
+      // sets/replaces it, null/empty clears it, absent leaves it unchanged.
+      ...((dto as any).whatsappGroupLink !== undefined
+        ? { whatsappGroupLink: this.normalizeGroupLink((dto as any).whatsappGroupLink) }
+        : {}),
     });
   }
 

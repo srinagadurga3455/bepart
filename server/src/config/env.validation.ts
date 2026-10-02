@@ -20,6 +20,10 @@ export const envValidationSchema = Joi.object({
   STORAGE_PROVIDER: Joi.string().valid('local', 's3').default('local'),
   ADMIN_EMAIL: Joi.string().email({ tlds: { allow: ['local', 'com', 'org', 'net', 'io'] } }).allow('').optional(),
   ADMIN_PASSWORD: Joi.string().allow('').optional(),
+  // TEMPORARY test-only OTP logging (Render logs) while SMTP/SES delivery is
+  // deferred. Explicitly gated: TEST_OTP_MODE=true + ADMIN_EMAIL match only.
+  // Default false = production behavior unchanged. Disable after testing.
+  TEST_OTP_MODE: Joi.boolean().truthy('true').falsy('false').default(false),
   AZURE_STORAGE_CONNECTION_STRING: Joi.string().allow('').optional(),
   AZURE_STORAGE_CONTAINER: Joi.string().default('event-posters'),
 

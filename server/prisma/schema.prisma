@@ -171,6 +171,9 @@ model Event {
   formStructure      Json?
   posterSquareUrl    String?
   posterRectangleUrl String?
+  // Optional official WhatsApp group for event announcements. Null for
+  // events without a group (all pre-feature events). Never required.
+  whatsappGroupLink  String?
   paymentRequired    Boolean     @default(false)
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt

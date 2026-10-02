@@ -279,6 +279,132 @@ describe('AuthService OTP', () => {
     });
   });
 
+  describe('TEST_OTP_MODE gating (temporary, SMTP/SES deferred)', () => {
+    const ADMIN_TEST_EMAIL = 'admin@pravesh.local';
+    const OTHER_EMAIL = 'other@campus.edu';
+
+    async function buildServiceWithTestMode(testOtpMode: any, adminEmail: string) {
+      const testModule: TestingModule = await Test.createTestingModule({
+        providers: [
+          AuthService,
+          { provide: AuthRepository, useValue: mockAuthRepo },
+          { provide: WhatsappService, useValue: mockWhatsapp },
+          { provide: EmailService, useValue: mockEmail },
+          { provide: NotificationsService, useValue: mockNotifications },
+          { provide: MailerService, useValue: mockMailer },
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string, defaultValue?: any) => {
+                if (key === 'JWT_SECRET') return 'test-secret-min-32-chars-long!!';
+                if (key === 'JWT_EXPIRES_IN') return '7d';
+                if (key === 'BCRYPT_SALT_ROUNDS') return 4;
+                if (key === 'NODE_ENV') return 'production';
+                if (key === 'TEST_OTP_MODE') return testOtpMode;
+                if (key === 'ADMIN_EMAIL') return adminEmail;
+                return defaultValue;
+              }),
+            },
+          },
+          { provide: JwtService, useValue: { sign: jest.fn(() => 'mock.jwt.token') } },
+        ],
+      }).compile();
+      return testModule.get<AuthService>(AuthService);
+    }
+
+    function testOtpLogs(spy: jest.SpyInstance): string[] {
+      return spy.mock.calls
+        .map((args) => String(args[0] ?? ''))
+        .filter((line) => line.includes('[TEST OTP]'));
+    }
+
+    let consoleSpy: jest.SpyInstance;
+    beforeEach(() => {
+      consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      consoleSpy.mockRestore();
+    });
+
+    it('TEST_OTP_MODE=false does not log OTP and does not return OTP', async () => {
+      const svc = await buildServiceWithTestMode(false, ADMIN_TEST_EMAIL);
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: ADMIN_TEST_EMAIL, role: Role.ADMIN, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp-t1' });
+      const result = await svc.requestOtp({ email: ADMIN_TEST_EMAIL });
+      expect(testOtpLogs(consoleSpy)).toHaveLength(0);
+      expect(result).toHaveProperty('message');
+      expect(result).not.toHaveProperty('otp');
+      expect(mockAuthRepo.createOtp).toHaveBeenCalled();
+    });
+
+    it('TEST_OTP_MODE=true + ADMIN_EMAIL logs OTP but never returns it', async () => {
+      const svc = await buildServiceWithTestMode(true, ADMIN_TEST_EMAIL);
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: ADMIN_TEST_EMAIL, role: Role.ADMIN, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp-t2' });
+      const result = await svc.requestOtp({ email: ADMIN_TEST_EMAIL });
+      const logs = testOtpLogs(consoleSpy);
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatch(new RegExp(`${ADMIN_TEST_EMAIL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -> \\d{6}`));
+      expect(result).toHaveProperty('message');
+      expect(result).not.toHaveProperty('otp');
+    });
+
+    it('TEST_OTP_MODE=true for another email does NOT log OTP', async () => {
+      const svc = await buildServiceWithTestMode(true, ADMIN_TEST_EMAIL);
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '9', email: OTHER_EMAIL, role: Role.STUDENT, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp-t3' });
+      const result = await svc.requestOtp({ email: OTHER_EMAIL });
+      expect(testOtpLogs(consoleSpy)).toHaveLength(0);
+      expect(result).toHaveProperty('message');
+      expect(result).not.toHaveProperty('otp');
+    });
+
+    it('logged OTP validates via normal verifyOtp and is single-use', async () => {
+      const svc = await buildServiceWithTestMode(true, ADMIN_TEST_EMAIL);
+      mockAuthRepo.findUserByEmail.mockResolvedValue({ id: '1', email: ADMIN_TEST_EMAIL, role: Role.ADMIN, isActive: true });
+      mockAuthRepo.createOtp.mockResolvedValue({ id: 'otp-t4' });
+      await svc.requestOtp({ email: ADMIN_TEST_EMAIL });
+      const logs = testOtpLogs(consoleSpy);
+      expect(logs).toHaveLength(1);
+      const otp = (logs[0] as string).match(/(\d{6})/)?.[1];
+      expect(otp).toMatch(/^\d{6}$/);
+      const hash = await bcrypt.hash(otp as string, 4);
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue({
+        id: 'otp-t4',
+        identifier: ADMIN_TEST_EMAIL,
+        otpHash: hash,
+        purpose: 'ADMIN_LOGIN',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 0,
+        verified: false,
+      });
+      mockAuthRepo.findUserByEmailOrPhone.mockResolvedValue(null);
+      const verified = await svc.verifyOtp({ email: ADMIN_TEST_EMAIL, otp } as any);
+      expect(verified).toHaveProperty('accessToken');
+      expect(mockAuthRepo.markOtpVerified).toHaveBeenCalledWith('otp-t4');
+      // Single-use: consumed/verified record no longer resolves → verify rejects.
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue(null);
+      await expect(svc.verifyOtp({ email: ADMIN_TEST_EMAIL, otp } as any)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('expiry and attempt limits remain enforced with TEST_OTP_MODE=true', async () => {
+      const svc = await buildServiceWithTestMode(true, ADMIN_TEST_EMAIL);
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue(null);
+      await expect(svc.verifyOtp({ email: ADMIN_TEST_EMAIL, otp: '123456' } as any)).rejects.toBeInstanceOf(BadRequestException);
+      const hash = await bcrypt.hash('123456', 4);
+      mockAuthRepo.findLatestValidOtp.mockResolvedValue({
+        id: 'otp-t5',
+        identifier: ADMIN_TEST_EMAIL,
+        otpHash: hash,
+        purpose: 'ADMIN_LOGIN',
+        expiresAt: new Date(Date.now() + 60000),
+        attempts: 5,
+        verified: false,
+      });
+      await expect(svc.verifyOtp({ email: ADMIN_TEST_EMAIL, otp: '123456' } as any)).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
   describe('getMe', () => {
     it('should sanitize password', async () => {
       mockAuthRepo.findUserByIdWithProfile.mockResolvedValue({

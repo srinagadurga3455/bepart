@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { EventCouponConfigDto } from './event-coupon-config.dto';
@@ -80,6 +80,16 @@ export class CreateEventDto {
   @IsOptional()
   @IsBoolean()
   paymentRequired?: boolean;
+
+  @ApiPropertyOptional({
+    example: 'https://chat.whatsapp.com/AbCdEfGhIjKlMnOpQrStUv',
+    description: 'Optional official WhatsApp group link for event announcements and updates',
+  })
+  @IsOptional()
+  @IsString()
+  @IsUrl({}, { message: 'whatsappGroupLink must be a valid URL' })
+  @MaxLength(2048)
+  whatsappGroupLink?: string;
 
   @ApiPropertyOptional({
     description: 'Optional coupon: enabled=false (or omitted) = normal event. enabled=true = backend auto-generates a coupon code with your discount config.',

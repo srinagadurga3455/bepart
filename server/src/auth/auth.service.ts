@@ -24,6 +24,7 @@ import { MailerService } from '../mailer/mailer.service';
 import { Role as PrismaRole } from '@prisma/client';
 import { Role } from '../common/constants/roles';
 import { normalizePhone } from '../common/utils/phone';
+import { maskEmail } from '../mailer/templates/otp-email.template';
 
 @Injectable()
 export class AuthService {
@@ -87,23 +88,42 @@ export class AuthService {
     return 'STUDENT_LOGIN';
   }
 
+  /**
+   * TEMPORARY test-only gate while SMTP/SES delivery is deferred.
+   * Explicitly requires TEST_OTP_MODE=true. Accepts boolean true (Joi-coerced)
+   * or the raw string 'true' (unvalidated ConfigService). Defaults to false.
+   */
+  private isTestOtpMode(): boolean {
+    const v = this.config.get<unknown>('TEST_OTP_MODE', false);
+    return v === true || v === 'true';
+  }
+
   async requestOtp(dto: RequestOtpDto) {
     if (!dto.email && !dto.phone) {
       throw new BadRequestException('Either email or phone is required');
     }
     const identifier = this.normalizeIdentifier(dto);
     const isEmail = !!dto.email;
+    // Masked identifier for diagnostics: proves which recipient the flow
+    // resolved to without logging PII, OTPs, or secrets.
+    const masked = isEmail ? maskEmail(identifier) : 'phone';
+    this.logger.log(`[OTP] Request received (identifier=${masked})`);
 
     let user: any = null;
     if (isEmail) {
+      // Case-insensitive lookup (repo): a stored row with different casing
+      // must still resolve — otherwise exactly one recipient silently gets
+      // "User not found" while every other recipient works.
       user = await this.authRepo.findUserByEmail(identifier);
     } else {
       user = await this.findUserByPhoneFlexible(identifier);
     }
 
     if (!user) {
+      this.logger.warn(`[OTP] User not found (identifier=${masked}) — no OTP created, mailer not called`);
       throw new UnauthorizedException('User not found');
     }
+    this.logger.log(`[OTP] User found: true (identifier=${masked}, role=${user.role})`);
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
     }
@@ -134,6 +154,7 @@ export class AuthService {
       purpose: purpose as any,
       expiresAt,
     });
+    this.logger.log(`[OTP] OTP stored (identifier=${masked}, purpose=${purpose})`);
 
     // OTP delivery keeps BOTH channels:
     // - email identifiers go through Gmail/SMTP (mailer) and Amazon SES
@@ -152,24 +173,40 @@ export class AuthService {
     } else {
       this.logger.log(`OTP dispatched for ${user.role} ${identifier} (value hidden)`);
     }
+    // TEMPORARY TEST-ONLY OTP logging (Render logs) while SMTP/SES is deferred.
+    // - Requires TEST_OTP_MODE=true.
+    // - Restricted to the configured ADMIN_EMAIL only (email path only).
+    // - Logs to server console ONLY; never returned in the HTTP response.
+    // - OTP generation, hashing, expiry, attempts, cooldown, single-use and
+    //   verification are unchanged. Disable after testing.
+    if (isEmail && this.isTestOtpMode()) {
+      const adminEmail = (this.config.get<string>('ADMIN_EMAIL') || '').toLowerCase().trim();
+      if (adminEmail && identifier === adminEmail) {
+        console.log(`[TEST OTP] ${identifier} -> ${otp} (TEST_OTP_MODE=true, temporary — disable after testing)`);
+        this.logger.warn(`[TEST OTP] OTP logged for ${identifier} (TEST_OTP_MODE=true, temporary — disable after testing)`);
+      }
+    }
     if (isEmail) {
       if (!this.mailerService) {
         throw new ServiceUnavailableException('Email OTP delivery is not available');
       }
+      this.logger.log(`[OTP] Calling SMTP mailer (identifier=${masked})...`);
       try {
-        await this.mailerService.sendOtpEmail(identifier, otp, {
+        const mailRes = await this.mailerService.sendOtpEmail(identifier, otp, {
           expiryMinutes: this.OTP_EXPIRY_MINUTES,
         });
+        this.logger.log(`[OTP] SMTP mailer completed (identifier=${masked}, delivered=${mailRes.delivered})`);
       } catch (e) {
-        this.logger.warn(`Email OTP delivery failed for ${identifier}: ${(e as Error)?.message}`);
+        this.logger.warn(`[OTP] SMTP mailer failed (identifier=${masked}): ${(e as Error)?.message}`);
         throw new ServiceUnavailableException('Failed to send OTP email. Please try again.');
       }
-      await this.notifications.sendOnce({
+      const sesRes = await this.notifications.sendOnce({
         type: NotificationTypes.OTP_EMAIL,
         channel: NotificationChannel.EMAIL,
         recipient: identifier,
         sender: () => this.emailService.sendOtpEmail(identifier, otp, this.OTP_EXPIRY_MINUTES),
       });
+      this.logger.log(`[OTP] SES dispatch (identifier=${masked}, status=${sesRes.status})`);
       if (!this.emailService.isConfigured() && !isProd) {
         console.log(`[OTP] ${user.role} ${identifier} -> ${otp}`);
       }

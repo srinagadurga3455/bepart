@@ -4,6 +4,7 @@ import { NotificationChannel, NotificationStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../email/email.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { buildTicketUrl, frontendBaseUrl } from '../tickets/tickets.repo';
 
 export const NotificationTypes = {
   OTP_EMAIL: 'OTP_EMAIL',
@@ -118,8 +119,26 @@ export class NotificationsService {
   }
 
   private ticketUrl(registrationId: string): string {
-    const base = (this.config?.get<string>('FRONTEND_URL') || 'http://localhost:5173').replace(/\/$/, '');
+    const base = frontendBaseUrl(this.config?.get<string>('FRONTEND_URL'));
     return `${base}/ticket/${registrationId}`;
+  }
+
+  /**
+   * Canonical public ticket URL for notifications. Prefers the ticket row's
+   * own `ticketUrl` (stamped at creation from FRONTEND_URL); only builds a
+   * fresh URL from the ticket code when the stored one is missing. Falls
+   * back to the legacy registration-ID URL solely for backwards
+   * compatibility when no ticket exists yet.
+   */
+  private canonicalTicketUrl(ticket: any, registrationId: string): string {
+    const stored = typeof ticket?.ticketUrl === 'string' ? ticket.ticketUrl.trim() : '';
+    if (stored) return stored;
+    const code = typeof ticket?.code === 'string' ? ticket.code.trim() : '';
+    if (code) {
+      const base = frontendBaseUrl(this.config?.get<string>('FRONTEND_URL'));
+      return buildTicketUrl(base, code);
+    }
+    return this.ticketUrl(registrationId);
   }
 
   private emailFromFormData(formData: unknown): string | null {
@@ -154,7 +173,7 @@ export class NotificationsService {
     try {
       const reg = await this.prisma.registration.findUnique({
         where: { registrationId: input.registrationId },
-        include: { event: true },
+        include: { event: true, ticket: true },
       });
       if (!reg || !reg.event) return;
       const event = reg.event as any;
@@ -168,8 +187,12 @@ export class NotificationsService {
       } catch {
         // organizer name is cosmetic — proceed without it
       }
-      const ticketNumber = reg.registrationId;
-      const ticketUrl = this.ticketUrl(ticketNumber);
+      const ticket = (reg as any)?.ticket ?? null;
+      // WhatsApp URL button + links must open /ticket/<ticket-code> in
+      // production. The ticket code is canonical; the registration ID is
+      // only a legacy fallback when no ticket exists yet.
+      const ticketNumber = (ticket as any)?.code || reg.registrationId;
+      const ticketUrl = this.canonicalTicketUrl(ticket, reg.registrationId);
       const date = this.formatTicketDate(event.date);
       const time = this.formatTicketTime(event.date);
       const studentName = this.nameFromFormData(reg.formData, reg.phone || 'Participant');

@@ -2,14 +2,56 @@ import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
+/** Canonical production frontend origin for public ticket URLs. */
+export const PRODUCTION_FRONTEND_URL = 'https://www.bepart.in';
+
 /** Public ticket URL + QR value. QR encodes the URL; no image is stored. */
 export function buildTicketUrl(frontendBase: string, code: string): string {
   return `${frontendBase.replace(/\/$/, '')}/ticket/${code}`;
 }
 
+function isLocalOrLanHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return (
+    h === 'localhost' ||
+    h === '127.0.0.1' ||
+    h === '::1' ||
+    /^192\.168\.\d+\.\d+$/.test(h) ||
+    /^10\.\d+\.\d+\.\d+$/.test(h) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(h)
+  );
+}
+
+/**
+ * True when a ticket base URL must never be stamped onto a ticket in
+ * production: localhost, LAN IPs, or the Render backend origin itself.
+ */
+export function isNonPublicTicketBase(base: string): boolean {
+  const trimmed = String(base || '').trim();
+  if (!trimmed) return true;
+  let host = '';
+  try {
+    host = new URL(trimmed).hostname;
+  } catch {
+    return true;
+  }
+  if (isLocalOrLanHost(host)) return true;
+  // The API/backend origin (e.g. *.onrender.com) is never a ticket URL base.
+  if (/\.onrender\.com$/i.test(host)) return true;
+  return false;
+}
+
 export function frontendBaseUrl(configBase?: string | null): string {
   const fromEnv = typeof process !== 'undefined' ? process.env.FRONTEND_URL : undefined;
-  return (configBase || fromEnv || 'http://localhost:5173').replace(/\/$/, '');
+  const resolved = (configBase || fromEnv || 'http://localhost:5173').replace(/\/$/, '');
+  // Production tickets must always point at the public frontend. A missing
+  // FRONTEND_URL (localhost fallback), a LAN IP, or the Render backend URL
+  // would otherwise produce unscannable ticket links in WhatsApp/QR.
+  const nodeEnv = typeof process !== 'undefined' ? process.env.NODE_ENV : undefined;
+  if (nodeEnv === 'production' && isNonPublicTicketBase(resolved)) {
+    return PRODUCTION_FRONTEND_URL;
+  }
+  return resolved;
 }
 
 @Injectable()

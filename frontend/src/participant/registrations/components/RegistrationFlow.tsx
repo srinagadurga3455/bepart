@@ -26,6 +26,7 @@ export interface FlowEventInfo {
   date?: string;
   closingTime?: string;
   formStructure?: FormStructure | null;
+  whatsappGroupLink?: string | null;
 }
 
 interface RegistrationFlowProps {

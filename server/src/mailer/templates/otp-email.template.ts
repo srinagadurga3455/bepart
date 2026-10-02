@@ -32,6 +32,18 @@ export function normalizeEmail(to: unknown): string {
   return String(to ?? '').trim().toLowerCase();
 }
 
+/**
+ * Sanitized recipient for diagnostics: `Admin@Example.com` → `a***@example.com`.
+ * For non-email identifiers (phones) returns `***`. Never carries OTPs,
+ * passwords, tokens, or headers — safe for any environment's logs.
+ */
+export function maskEmail(email: unknown): string {
+  const clean = String(email ?? '').trim().toLowerCase();
+  const at = clean.lastIndexOf('@');
+  if (at <= 1) return '***';
+  return `${clean[0]}***@${clean.slice(at + 1)}`;
+}
+
 export function buildOtpEmail({
   otp,
   appName = 'BePart',

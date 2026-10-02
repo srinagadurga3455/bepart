@@ -113,4 +113,22 @@ describe('MailerService (Gmail/SMTP delivery only)', () => {
     const service = await serviceWith(smtpEnv);
     await expect(service.sendOtpEmail('admin@example.com', '654321')).rejects.toThrow('SMTP send failed');
   });
+
+  it('surfaces recipient-specific SMTP rejections (code/response) without credentials', async () => {
+    const rejection: any = new Error('Mailbox unavailable');
+    rejection.code = 'EENVELOPE';
+    rejection.responseCode = 550;
+    rejection.response = '550 5.1.1 The email account does not exist';
+    sendMail.mockRejectedValueOnce(rejection);
+    const service = await serviceWith(smtpEnv);
+    await expect(service.sendOtpEmail('ghost@example.com', '654321')).rejects.toThrow(
+      /SMTP send failed: .*EENVELOPE.*550/,
+    );
+  });
+
+  it('maskEmail sanitizes recipients for diagnostics', async () => {
+    const { maskEmail } = await import('./templates/otp-email.template');
+    expect(maskEmail('Friend@Gmail.com')).toBe('f***@gmail.com');
+    expect(maskEmail('not-an-email')).toBe('***');
+  });
 });
