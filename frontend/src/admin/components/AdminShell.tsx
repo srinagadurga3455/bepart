@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { authApi } from '../../auth/api/auth';
 import { logout } from '../../auth/components/RequireRole';
 import { adminNav } from '../routes';
-import { BePartMark } from '../../app/components/BePartBrand';
+import { BEPART_BRAND } from '../../app/config/support';
 
 // Sidebar application shell for the Admin Console.
 // Visual-only chrome: navigation + current admin identity + logout.
@@ -77,13 +77,39 @@ export default function AdminShell({ title, subtitle, hideBrand = false, childre
           py: 2,
         }}
       >
-        {/* Logo */}
+        {/* Logo - stacked: BePart above Admin Console */}
         <Box
           onClick={() => navigate('/admin')}
           sx={{ display: 'flex', alignItems: 'center', gap: 1.25, cursor: 'pointer', px: { xs: 0.5, sm: 1 }, mb: 2.5 }}
         >
-          <BePartMark size={34} fontSize={15} />
+          <Box
+            sx={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              bgcolor: '#2557F5',
+              color: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontSize: 34 * 0.56, fontWeight: 800, lineHeight: 1 }}>
+              B
+            </Typography>
+          </Box>
           <Box sx={{ display: { xs: 'none', sm: 'block' }, lineHeight: 1.2 }}>
+            <Typography
+              sx={{
+                fontFamily: 'Manrope, sans-serif',
+                fontSize: 15,
+                fontWeight: 800,
+                letterSpacing: '-0.05em',
+                color: '#101828',
+              }}
+            >
+              {BEPART_BRAND.name}
+            </Typography>
             <Typography sx={{ fontSize: 11, color: '#98A2B3' }}>
               Admin Console
             </Typography>
@@ -172,7 +198,7 @@ export default function AdminShell({ title, subtitle, hideBrand = false, childre
 
       {/* MAIN CONTENT */}
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {/* Top header: page title left, BePart brand + admin profile right */}
+        {/* Top header: page title left */}
         <Box
           component="header"
           sx={{
@@ -207,11 +233,6 @@ export default function AdminShell({ title, subtitle, hideBrand = false, childre
                   {subtitle}
                 </Typography>
               )}
-            </Box>
-            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <Avatar sx={{ width: 34, height: 34, bgcolor: '#2557F5', fontSize: 13, fontWeight: 700 }}>
-                {initials(me?.name, me?.email)}
-              </Avatar>
             </Box>
           </Box>
         </Box>
