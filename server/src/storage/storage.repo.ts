@@ -34,4 +34,18 @@ export class StorageRepository {
       data: { posterRectangleUrl },
     });
   }
+
+  clearEventPosterSquare(id: string) {
+    return this.prisma.event.update({
+      where: { id },
+      data: { posterSquareUrl: null },
+    });
+  }
+
+  clearEventPosterRectangle(id: string) {
+    return this.prisma.event.update({
+      where: { id },
+      data: { posterRectangleUrl: null },
+    });
+  }
 }

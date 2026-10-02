@@ -4,8 +4,11 @@ import { RegistrationsRepository } from './registrations.repo';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { validateFormData } from '../common/validators/form-structure.validator';
 import { canonicalPhone } from '../common/utils/phone';
+import { toRupeesRegistration } from '../common/utils/money';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TicketsService } from '../tickets/tickets.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class RegistrationsService {
@@ -14,8 +17,12 @@ export class RegistrationsService {
   constructor(
     private readonly registrationsRepo: RegistrationsRepository,
     private readonly couponsService: CouponsService,
+    private readonly ticketsService: TicketsService,
     @Optional() private readonly configService?: ConfigService,
     @Optional() private readonly notifications?: NotificationsService,
+    // Optional so pre-existing unit tests (which don't provide it) keep
+    // working unmodified; the module always provides it in production.
+    @Optional() private readonly whatsappService?: WhatsappService,
   ) {}
 
   async create(dto: CreateRegistrationDto, userId?: string) {
@@ -25,7 +32,7 @@ export class RegistrationsService {
       ? CouponsService.normalizeCode((dto as any).couponCode)
       : null;
 
-    const registration = await this.registrationsRepo.transaction(async (tx) => {
+    const { registration, ticket } = await this.registrationsRepo.transaction(async (tx) => {
       const event = await tx.event.findUnique({ where: { id: dto.eventId } });
       if (!event) throw new NotFoundException('Event not found');
       if ((event as any).status !== 'PUBLISHED') throw new BadRequestException('Event is not published / registration closed');
@@ -53,7 +60,9 @@ export class RegistrationsService {
           },
           include: { event: true },
         });
-        return registration;
+        // Free registration completes immediately: issue its ticket atomically.
+        const ticket = await this.ticketsService.issueTicketTx(tx, registration.registrationId, dto.eventId);
+        return { registration, ticket };
       }
 
       // Paid event: Registration only after PAID payment. Check for successful payment first (canonical).
@@ -155,10 +164,20 @@ export class RegistrationsService {
         data: { registrationId: registration.registrationId },
       });
 
-      return registration;
+      // Paid registration completes here: issue its ticket atomically.
+      const ticket = await this.ticketsService.issueTicketTx(tx, registration.registrationId, dto.eventId);
+
+      return { registration, ticket };
     });
 
-    // Post-registration ticket flow: console confirmation + ticket URL (no new model).
+    // Ticket confirmation over WhatsApp: only now that the registration AND
+    // ticket rows are committed. Never throws and never touches them —
+    // delivery failures are recorded on the WhatsappDelivery row alone.
+    if (this.whatsappService) {
+      await this.whatsappService.notifyTicketReady({ registrationId: (registration as any)?.registrationId });
+    }
+
+    // Post-registration ticket flow: console confirmation + ticket URL.
     this.logRegistrationConfirmation(registration, (registration as any)?.event, dto.formData);
     // Student confirmation email + WhatsApp ticket, best-effort and deduped
     // per registration. Failures never roll back the registration.
@@ -170,20 +189,42 @@ export class RegistrationsService {
     } catch (err) {
       this.logger.warn(`Post-registration notification failed: ${(err as Error)?.message}`);
     }
-    const pricing = {
-      originalAmount: (registration as any)?.originalAmount ?? 0,
+    // Stored snapshots are paise; the API pricing block is rupees.
+    const stored = toRupeesRegistration({
+      originalAmount: (registration as any)?.originalAmount ?? null,
       discountAmount: (registration as any)?.discountAmount ?? 0,
-      totalAmount: (registration as any)?.totalAmount ?? 0,
+      totalAmount: (registration as any)?.totalAmount ?? null,
+    });
+    const pricing = {
+      originalAmount: stored.originalAmount ?? 0,
+      discountAmount: stored.discountAmount ?? 0,
+      totalAmount: stored.totalAmount ?? 0,
       coupon: (registration as any)?.couponCode ? { code: (registration as any).couponCode } : null,
     };
-    return { ...registration, pricing, ticketUrl: this.ticketUrl((registration as any)?.registrationId) };
+    const ticketView = ticket
+      ? { code: (ticket as any).code, status: (ticket as any).status, ticketUrl: (ticket as any).ticketUrl }
+      : null;
+    return {
+      ...toRupeesRegistration(registration as any),
+      pricing,
+      ticket: ticketView,
+      ticketUrl: (ticket as any)?.ticketUrl || this.ticketUrl((registration as any)?.registrationId),
+    };
   }
 
   // Public ticket lookup by registration ID (shareable /ticket/:id page, no auth, no listing).
   async findTicketById(registrationId: string) {
     const reg = await this.registrationsRepo.findTicketWithEvent(registrationId);
     if (!reg) throw new NotFoundException('Ticket not found');
-    return { ...reg, ticketUrl: this.ticketUrl(reg.registrationId) };
+    const ticket = await this.ticketsService.findTicketForRegistration(registrationId);
+    const ticketView = ticket
+      ? { code: (ticket as any).code, status: (ticket as any).status, ticketUrl: (ticket as any).ticketUrl }
+      : null;
+    return {
+      ...toRupeesRegistration(reg as any),
+      ticket: ticketView,
+      ticketUrl: (ticket as any)?.ticketUrl || this.ticketUrl(reg.registrationId),
+    };
   }
 
   // Public "my tickets" lookup by registered mobile number (no OTP, no auth).
@@ -275,16 +316,18 @@ export class RegistrationsService {
 
   async findAllForUser(userId: string, role: string) {
     if (role === 'ADMIN') {
-      return this.registrationsRepo.findAll();
+      return (await this.registrationsRepo.findAll()).map((r) => toRupeesRegistration(r as any));
     }
     if (role === 'ORGANIZER') {
       const organizer = await this.registrationsRepo.findOrganizerByUserId(userId);
       if (!organizer) return [];
-      return this.registrationsRepo.findByOrganizerId(organizer.id);
+      return (await this.registrationsRepo.findByOrganizerId(organizer.id)).map((r) => toRupeesRegistration(r as any));
     }
     const user = await this.registrationsRepo.findUserById(userId);
     if (user?.phone) {
-      return this.registrationsRepo.findByPhone(canonicalPhone(user.phone));
+      return (await this.registrationsRepo.findByPhone(canonicalPhone(user.phone))).map((r) =>
+        toRupeesRegistration(r as any),
+      );
     }
     return [];
   }
@@ -304,7 +347,7 @@ export class RegistrationsService {
       const ev = await this.registrationsRepo.findEventById(reg.eventId);
       if (!organizer || !ev || ev.organizerId !== organizer.id) throw new ForbiddenException('You can only view registrations for your events');
     }
-    return reg;
+    return toRupeesRegistration(reg as any);
   }
 
   async cancel(registrationId: string, userId: string, role: string) {
@@ -321,39 +364,36 @@ export class RegistrationsService {
       const ev = await this.registrationsRepo.findEventById(reg.eventId);
       if (!org || !ev || ev.organizerId !== org.id) throw new ForbiddenException('Cannot cancel others events');
     }
+    // A cancelled registration must never keep a valid entry ticket. The
+    // ticket is cancelled first so a scan is refused even if the row is
+    // briefly re-checked during teardown.
+    await this.ticketsService.cancelForRegistration(registrationId);
     await this.registrationsRepo.deleteByRegistrationId(registrationId);
     return { message: 'Registration cancelled', registrationId };
   }
 
-  // QR / ticket check-in at event entry. ORGANIZER may only check in tickets
-  // for their own events; ADMIN may check in any ticket. An already-checked-in
-  // ticket is reported (not double-counted) so scanners show the prior time.
-  private async assertCheckInStaff(reg: { eventId: string }, userId: string, role: string) {
-    if (role === 'ADMIN') return;
-    if (role !== 'ORGANIZER') throw new ForbiddenException('Only organizers or admins can check in tickets');
-    const org = await this.registrationsRepo.findOrganizerByUserId(userId);
-    const ev = await this.registrationsRepo.findEventById(reg.eventId);
-    if (!org || !ev || ev.organizerId !== org.id) {
-      throw new ForbiddenException('You can only check in tickets for your own events');
-    }
-  }
-
+  // Legacy /registrations/:id/check-in surface. The ticket system owns all
+  // check-in state now; this delegates so there is a single implementation.
   async checkIn(registrationId: string, userId: string, role: string) {
-    const reg = await this.registrationsRepo.findByRegistrationId(registrationId);
-    if (!reg) throw new NotFoundException('Ticket not found');
-    await this.assertCheckInStaff(reg, userId, role);
-    if ((reg as any).checkedInAt) {
-      return { ...(reg as any), alreadyCheckedIn: true, message: 'Ticket already checked in' };
-    }
-    const updated = await this.registrationsRepo.markCheckedIn(registrationId);
-    return { ...updated, alreadyCheckedIn: false, message: 'Check-in successful' };
+    const res = await this.ticketsService.checkIn(registrationId, { userId, role });
+    return {
+      registrationId,
+      checkedInAt: res.checkedInAt,
+      alreadyCheckedIn: false,
+      message: 'Check-in successful',
+      phone: res.phone,
+      event: res.event,
+    };
   }
 
   async undoCheckIn(registrationId: string, userId: string, role: string) {
-    const reg = await this.registrationsRepo.findByRegistrationId(registrationId);
-    if (!reg) throw new NotFoundException('Ticket not found');
-    await this.assertCheckInStaff(reg, userId, role);
-    const updated = await this.registrationsRepo.clearCheckedIn(registrationId);
-    return { ...updated, message: 'Check-in reverted' };
+    const res = await this.ticketsService.undoCheckIn(registrationId, { userId, role });
+    return {
+      registrationId,
+      checkedInAt: res.checkedInAt ?? null,
+      message: 'Check-in reverted',
+      phone: res.phone,
+      event: res.event,
+    };
   }
 }

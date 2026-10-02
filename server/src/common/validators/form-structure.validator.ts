@@ -95,10 +95,16 @@ export function validateFormData(formStructure: any, formData: any): void {
     if (field.required && isMissing) throw new BadRequestException(`Field '${field.label}' (${field.name}) is required`);
   }
 
-  // Validate each provided value
+  // Validate each provided value. Untouched optional inputs arrive as ''/[]
+  // from the form — the required loop above already rejected empty REQUIRED
+  // fields, so empty values here are always optional and skip type checks.
   for (const [key, val] of Object.entries(formData as any)) {
     const field = fieldMap.get(key);
     if (!field) throw new BadRequestException(`Unknown field '${key}' not in formStructure`);
+    const isEmpty = val === undefined || val === null
+      || (typeof val === 'string' && !val.trim())
+      || (Array.isArray(val) && val.length === 0);
+    if (isEmpty) continue;
     switch (field.type) {
       case 'text':
       case 'textarea':

@@ -11,7 +11,7 @@ import OrganizerShell from '../../components/OrganizerShell';
 import { eventsApi } from '../../events/api/events';
 import { couponsApi } from '../api/coupons';
 import { apiErrorMessage, unwrapList } from '../../../app/api/client';
-import { formatEventDate } from '../../../app/utils/format';
+import { formatEventDate, formatINR } from '../../../app/utils/format';
 import type { CouponDiscountType, CouponItem, EventItem } from '../../../app/types';
 import { orgCardSx, orgPrimaryButtonSx, orgSectionTitleSx, orgSmallButtonSx } from '../../components/organizerStyles';
 import ConfirmDialog from '../../../app/components/ConfirmDialog';
@@ -27,7 +27,8 @@ function toDateTimeLocal(iso: string | null | undefined): string {
 }
 
 function discountLabel(c: CouponItem): string {
-  return c.discountType === 'PERCENTAGE' ? `${c.discountValue}% off` : `₹${(c.discountValue / 100).toFixed(2)} off`;
+  // API amounts are RUPEES (percentages are unit-free).
+  return c.discountType === 'PERCENTAGE' ? `${c.discountValue}% off` : `${formatINR(c.discountValue)} off`;
 }
 
 interface CouponFormState {
@@ -66,10 +67,11 @@ function CouponDialog({
 
   const submit = async (evId: string) => {
     setError('');
-    const value = parseInt(form.discountValue, 10);
-    if (!Number.isFinite(value) || value < 1) { setError('Enter a valid discount value.'); return; }
-    if (form.discountType === 'PERCENTAGE' && value > 100) { setError('Percentage discount cannot exceed 100.'); return; }
-    if (form.discountType === 'FIXED' && value < 100) { setError('Fixed discount is in paise (e.g. 5000 = ₹50). Minimum 100 paise.'); return; }
+    // API speaks RUPEES (FIXED) or percent (PERCENTAGE); up to 2 decimals.
+    const value = Number(form.discountValue);
+    if (!Number.isFinite(value) || value < 0.01) { setError('Enter a valid discount value (min ₹0.01).'); return; }
+    if (form.discountType === 'PERCENTAGE' && (!Number.isInteger(value) || value < 1 || value > 100)) { setError('Percentage discount must be a whole number between 1 and 100.'); return; }
+    if (form.discountType === 'FIXED' && Math.round(value * 100) !== value * 100) { setError('Fixed discount supports at most 2 decimal places.'); return; }
     const usage = form.usageLimit.trim() ? parseInt(form.usageLimit, 10) : null;
     if (usage !== null && (!Number.isFinite(usage) || usage < 1)) { setError('Usage limit must be at least 1.'); return; }
     setBusy(true);
@@ -124,10 +126,10 @@ function CouponDialog({
             <Select label="Type" value={form.discountType}
               onChange={(e) => setForm({ ...form, discountType: e.target.value as CouponDiscountType })}>
               <MenuItem value="PERCENTAGE">Percentage (%)</MenuItem>
-              <MenuItem value="FIXED">Fixed amount (paise)</MenuItem>
+              <MenuItem value="FIXED">Fixed amount (₹)</MenuItem>
             </Select>
           </FormControl>
-          <TextField label={form.discountType === 'PERCENTAGE' ? 'Percent (1–100)' : 'Amount in paise'}
+          <TextField label={form.discountType === 'PERCENTAGE' ? 'Percent (1–100)' : 'Amount in rupees (₹)'}
             type="number" value={form.discountValue}
             onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
             size="small" sx={{ flex: '1 1 160px' }} />

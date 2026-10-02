@@ -272,7 +272,23 @@ export class StorageService {
   }
 
   async uploadProof(file: Express.Multer.File, withdrawalId: string): Promise<{ url: string; key: string }> {
+    if (!file?.buffer?.length) throw new BadRequestException('Payment screenshot is required');
     const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    // Prefer R2 so the stored proof is a public HTTPS URL usable directly as
+    // a WhatsApp image header (Meta cannot fetch local:// or private URLs).
+    if (this.getR2Client()) {
+      let ext = path.extname(sanitized).replace(/^\./, '').toLowerCase();
+      if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+        try {
+          ext = this.getExtensionFromMimetype(file.mimetype);
+        } catch {
+          ext = 'jpg';
+        }
+      }
+      const key = `proofs/${withdrawalId}-${randomUUID()}.${ext}`;
+      const url = await this.uploadToR2(file.buffer, key, file.mimetype);
+      return { url, key };
+    }
     const filename = `${withdrawalId}-${randomUUID()}-${sanitized}`;
     if (this.containerClient) {
       const container = await this.ensureContainer();
@@ -388,6 +404,39 @@ export class StorageService {
     const updated = await this.storageRepo.updateEventPosterSquare(eventId, url);
     if (oldUrl && oldUrl !== url) await this.deleteR2ByUrl(oldUrl).catch(() => {});
     return { message: 'Event square poster uploaded successfully', posterSquareUrl: updated.posterSquareUrl };
+  }
+
+  private async assertPosterOwnership(eventId: string, user: RequestUser) {
+    if (!this.storageRepo) throw new BadRequestException('Storage repository not configured');
+    const event = await this.storageRepo.findEventById(eventId);
+    if (!event) throw new NotFoundException('Event not found');
+    const userId = user.userId || user.id;
+    if (user.role !== Role.ORGANIZER) {
+      throw new ForbiddenException('Only organizer can manage posters');
+    }
+    const organizer = await this.storageRepo.findOrganizerByUserId(userId);
+    if (!organizer || event.organizerId !== organizer.id) {
+      throw new ForbiddenException('You do not own this event');
+    }
+    return event;
+  }
+
+  async handleEventPosterSquareDelete(eventId: string, user: RequestUser) {
+    const event = await this.assertPosterOwnership(eventId, user);
+    const oldUrl = (event as any).posterSquareUrl as string | null;
+    const updated = await this.storageRepo!.clearEventPosterSquare(eventId);
+    if (oldUrl) await this.deleteR2ByUrl(oldUrl).catch(() => {});
+    await this.deleteR2ByPrefix(this.sanitizeId(eventId), 'poster-square').catch(() => {});
+    return { message: 'Event square poster removed successfully', posterSquareUrl: updated.posterSquareUrl };
+  }
+
+  async handleEventPosterRectangleDelete(eventId: string, user: RequestUser) {
+    const event = await this.assertPosterOwnership(eventId, user);
+    const oldUrl = (event as any).posterRectangleUrl as string | null;
+    const updated = await this.storageRepo!.clearEventPosterRectangle(eventId);
+    if (oldUrl) await this.deleteR2ByUrl(oldUrl).catch(() => {});
+    await this.deleteR2ByPrefix(this.sanitizeId(eventId), 'poster-rectangle').catch(() => {});
+    return { message: 'Event banner removed successfully', posterRectangleUrl: updated.posterRectangleUrl };
   }
 
   async handleEventPosterRectangleUpload(file: Express.Multer.File, eventId: string, user: RequestUser) {

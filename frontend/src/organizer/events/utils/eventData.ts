@@ -4,7 +4,6 @@ import type {
   WithdrawalItem,
   WithdrawalStatus,
 } from '../../../app/types';
-import { paiseToRupees } from '../../../app/utils/format';
 
 export { registrantName } from '../../../app/utils/registrations';
 
@@ -49,15 +48,14 @@ export interface WithdrawalPosition {
 }
 
 // Per-event withdrawal position from the organizer's own withdrawal records.
-// Backend amounts are PAISE; totals are normalized to RUPEES to match the
-// fee-based collected math above.
+// All API amounts are RUPEES, matching the fee-based collected math above.
 export function withdrawalsByEvent(withdrawals: WithdrawalItem[]): Record<string, WithdrawalPosition> {
   const map: Record<string, WithdrawalPosition> = {};
   (withdrawals || []).forEach((w) => {
     const entry: WithdrawalPosition = (map[w.eventId] =
       map[w.eventId] || { open: null, paidTotal: 0, openTotal: 0, history: [] });
     entry.history.push(w);
-    const rupees = paiseToRupees(w.amount);
+    const rupees = Number(w.amount) || 0;
     if (w.status === 'PAID') entry.paidTotal += rupees;
     else if (OPEN_WITHDRAWAL.includes(w.status)) {
       entry.openTotal += rupees;

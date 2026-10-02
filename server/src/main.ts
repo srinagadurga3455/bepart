@@ -60,8 +60,8 @@ async function bootstrap() {
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    // In development, allow localhost variants
-    if (configService.get('NODE_ENV') === 'development' && origin.startsWith('http://localhost')) {
+    // In development, allow localhost variants + LAN IPs (same-WiFi phone testing)
+    if (configService.get('NODE_ENV') !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)) {
       return callback(null, true);
     }
     callback(new Error('CORS: Origin not allowed'), false);
@@ -102,6 +102,11 @@ async function bootstrap() {
   });
 
   const port = configService.get<number>('PORT', 3000);
-  await app.listen(port);
+  // Bind to 0.0.0.0 so LAN devices (same Wi-Fi) can reach the API.
+  // `app.listen(port)` alone only guarantees localhost on some setups,
+  // which causes ERR_CONNECTION_TIMED_OUT from phones/other PCs.
+  await app.listen(port, '0.0.0.0');
+  // eslint-disable-next-line no-console
+  console.log(`API listening on port ${port}`);
 }
 bootstrap();

@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { CouponDiscountType } from '@prisma/client';
 
 // Update DTO intentionally does NOT extend PartialType(CreateCouponDto):
@@ -10,10 +11,11 @@ export class UpdateCouponDto {
   @IsEnum(CouponDiscountType)
   discountType?: CouponDiscountType;
 
-  @ApiPropertyOptional({ example: 20 })
+  @ApiPropertyOptional({ example: 20, description: 'Discount value in rupees for FIXED, or percent 1-100 for PERCENTAGE' })
   @IsOptional()
-  @IsInt()
-  @Min(1)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
   discountValue?: number;
 
   @ApiPropertyOptional({ example: true })
@@ -47,9 +49,10 @@ export class ValidateCouponDto {
   @IsOptional()
   code?: string;
 
-  @ApiPropertyOptional({ example: 100000, description: 'Original ticket amount in paise for a price preview' })
+  @ApiPropertyOptional({ example: 500, description: 'Original ticket amount in rupees for a price preview' })
   @IsOptional()
-  @IsInt()
-  @Min(1)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
   amount?: number;
 }

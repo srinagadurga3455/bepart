@@ -60,6 +60,12 @@ enum CouponDiscountType {
   FIXED
 }
 
+enum TicketStatus {
+  VALID
+  CHECKED_IN
+  CANCELLED
+}
+
 // ─────────────────────────────────────
 // Core Models — Preserved User for Auth/RBAC
 // ─────────────────────────────────────
@@ -175,6 +181,7 @@ model Event {
   registrations Registration[]
   coupons       Coupon[]
   withdrawals   Withdrawal[]
+  tickets       Ticket[]
 
   @@index([organizerId])
   @@index([status])
@@ -198,8 +205,11 @@ model Registration {
 
   payment Payment?
 
+  ticket Ticket?
+
   // Coupon pricing snapshot (nullable so pre-feature registrations stay valid).
-  // Amounts are Int paise, matching the project's existing money approach.
+  // STORAGE is Int paise; the API speaks rupees (₹500 <-> 50000) and services
+  // convert at the boundary (see src/common/utils/money.ts).
   // originalAmount = price before discount, discountAmount = discount applied,
   // totalAmount = final amount actually payable (what the payment gateway gets).
   couponId       String?
@@ -217,7 +227,8 @@ model Registration {
 
 // Organizer fund settlement: organizer requests withdrawal of collected
 // registration fees per event; admin pays manually and uploads proof.
-// Amounts are Int paise (consistent with Payment.amount): 50000 = ₹500.00.
+// STORAGE is Int paise (e.g. 50000 = ₹500.00); the API speaks rupees and
+// services convert at the boundary (see src/common/utils/money.ts).
 model Withdrawal {
   id              String           @id @default(uuid())
   amount          Int
@@ -240,6 +251,8 @@ model Withdrawal {
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
+  notifications WithdrawalNotification[]
+
   @@index([organizerId])
   @@index([eventId])
   @@index([status])
@@ -260,8 +273,9 @@ model Payment {
   coupon          Coupon?       @relation(fields: [couponId], references: [id], onDelete: SetNull)
   // Denormalized code snapshot: survives coupon deletion/rename.
   couponCode      String?
-  // Pricing audit (Int paise): amount is ALWAYS the final payable amount.
-  // originalAmount = event price before discount, discountAmount = discount applied.
+  // Pricing audit (STORAGE Int paise; API rupees): amount is ALWAYS the final
+  // payable amount. originalAmount = event price before discount,
+  // discountAmount = discount applied.
   originalAmount  Int?
   discountAmount  Int?          @default(0)
   // Razorpay integration (order creation + webhook verification).
@@ -346,4 +360,93 @@ model Coupon {
   @@index([isUsed])
   @@index([isActive])
   @@map("coupons")
+}
+
+// Event ticket issued automatically when a registration completes
+// (free event, or paid event with PAID payment). The public ticket code +
+// QR token are random UUIDs (never sequential IDs). QR data is the public
+// ticketUrl; no image is stored. Check-in flips status to CHECKED_IN and
+// mirrors checkedInAt onto the registration for legacy views.
+model Ticket {
+  id             String       @id @default(uuid())
+  // Public ticket identifier used in URLs, QR scans and check-in APIs.
+  code           String       @unique @default(uuid())
+  registrationId String       @unique
+  registration   Registration @relation(fields: [registrationId], references: [registrationId], onDelete: Cascade)
+  eventId        String
+  event          Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketUrl      String
+  // Secure token accepted by the check-in APIs as an alternative to code.
+  qrToken        String       @unique @default(uuid())
+  status         TicketStatus @default(VALID)
+  checkedInAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Reverse side of the WhatsApp delivery audit relation (no extra column).
+  whatsappDeliveries WhatsappDelivery[]
+
+  @@index([eventId])
+  @@index([status])
+  @@map("tickets")
+}
+
+enum WhatsappDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum WithdrawalNotificationKind {
+  PAYOUT_REQUEST
+  PAYOUT_SUCCESS
+  PAYOUT_REJECTED
+}
+
+enum WithdrawalNotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// Idempotency + audit record for the post-payment ticket confirmation sent
+// over Meta WhatsApp Cloud API. One row per ticket (ticketId unique), so
+// webhook replays, retries and repeated requests can never double-send.
+// A FAILED row never affects the payment, registration or ticket.
+model WhatsappDelivery {
+  id                String                  @id @default(uuid())
+  ticketId          String                  @unique
+  ticket            Ticket                  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  phone             String
+  status            WhatsappDeliveryStatus  @default(PENDING)
+  providerMessageId String?
+  attempts          Int                     @default(0)
+  lastError         String?                 @db.Text
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([status])
+  @@map("whatsapp_deliveries")
+}
+
+// Audit record for payout/withdrawal WhatsApp side effects (organizer
+// payout request -> admin, payout paid/rejected -> organizer). One row per
+// send attempt; a FAILED row never affects the withdrawal itself.
+model WithdrawalNotification {
+  id                String                       @id @default(uuid())
+  withdrawalId      String
+  withdrawal        Withdrawal                   @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+  kind              WithdrawalNotificationKind
+  to                String
+  template          String
+  status            WithdrawalNotificationStatus @default(PENDING)
+  providerMessageId String?
+  attempts          Int                          @default(0)
+  lastError         String?                      @db.Text
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  @@index([withdrawalId])
+  @@index([status])
+  @@map("withdrawal_notifications")
 }

@@ -1,7 +1,7 @@
-import { IsInt, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength, Min } from 'class-validator';
-import { IsEventId } from '../../common/validators/event-id.validator';
+import { IsInt, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { IsEventId } from '../../common/validators/event-id.validator';
 
 export class CreatePendingPaymentDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Event ID (UUID or legacy numeric ID) for paid event' })
@@ -15,10 +15,10 @@ export class CreatePendingPaymentDto {
   @MaxLength(20)
   phone: string;
 
-  @ApiProperty({ example: 50000, description: 'Amount in paise (50000 = ₹500) - original amount before discount, backend will calculate final' })
+  @ApiProperty({ example: 500, description: 'Amount in rupees (500 = ₹500, up to 2 decimals) - original ticket price before discount, backend calculates the final payable amount' })
   @Type(() => Number)
-  @IsInt()
-  @Min(1)
+  @IsNumber()
+  @Min(0.01)
   amount: number;
 
   @ApiPropertyOptional({ example: 'AICLUB20', description: 'Coupon code (case-insensitive). Backend validates and calculates the discount.' })

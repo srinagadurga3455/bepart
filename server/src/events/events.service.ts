@@ -20,8 +20,13 @@ export class EventsService {
   private validateDates(date: string, closingTime: string) {
     const d = new Date(date);
     const c = new Date(closingTime);
-    if (c >= d) throw new BadRequestException('closingTime must be before date');
     if (isNaN(d.getTime()) || isNaN(c.getTime())) throw new BadRequestException('Invalid date format');
+    // Epoch-ms comparisons (timezone-safe): both instants must lie ahead of
+    // "now", and registration must close before the event starts.
+    const now = Date.now();
+    if (d.getTime() <= now) throw new BadRequestException('Event date must be in the future.');
+    if (c.getTime() <= now) throw new BadRequestException('Registration deadline must be in the future.');
+    if (c.getTime() >= d.getTime()) throw new BadRequestException('Registration deadline must be before the event starts.');
   }
 
   async create(dto: CreateEventDto, userId: string, role: string = 'ORGANIZER') {
@@ -38,6 +43,14 @@ export class EventsService {
       }
       CouponsService.assertValidDiscount(cfg.discountType, cfg.discountValue);
       CouponsService.assertValidWindow(cfg.startsAt, cfg.expiresAt);
+      // Fail fast on a duplicate custom code BEFORE creating the event, so a
+      // conflicting code can never leave behind a coupon-less orphan event.
+      if (cfg.code) {
+        const normalized = CouponsService.normalizeCode(cfg.code);
+        const clash = await this.couponsRepo.findByCode(normalized);
+        if (clash) throw new ConflictException('Coupon code already exists');
+        cfg.code = normalized;
+      }
     }
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
     if (!organizer) throw new NotFoundException('Organizer profile not found');
@@ -65,6 +78,7 @@ export class EventsService {
     const coupon = await this.couponsService.create(
       {
         eventId: event.id,
+        ...(cfg.code ? { code: cfg.code } : {}),
         discountType: cfg.discountType,
         discountValue: cfg.discountValue,
         isActive: cfg.isActive,
@@ -148,9 +162,9 @@ export class EventsService {
     if (!event) throw new NotFoundException('Event not found');
     const organizer = await this.eventsRepo.findOrganizerByUserId(userId);
     if (!organizer || event.organizerId !== organizer.id) throw new ForbiddenException('You do not own this event');
-    if (event.status === EventStatus.PUBLISHED || event.status === EventStatus.COMPLETED || event.status === EventStatus.CANCELLED) {
-      if (event.status === EventStatus.PUBLISHED) throw new ForbiddenException('Cannot update published event directly. Cancel if needed.');
-    }
+    // PUBLISHED events stay editable by their owning organizer. updateEvent
+    // never touches status, so the event remains PUBLISHED after editing.
+    // All other guards below (dates, form structure) apply unchanged.
     if (dto.date && dto.closingTime) this.validateDates(dto.date, dto.closingTime);
     if (dto.date && !dto.closingTime) this.validateDates(dto.date, event.closingTime.toISOString());
     if (!dto.date && dto.closingTime) this.validateDates(event.date.toISOString(), dto.closingTime);
